@@ -1,0 +1,159 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: autohr-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-autohr}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-autohr_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-autohr}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-autohr}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: autohr-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    container_name: autohr-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-autohr}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-autohr_dev_secret}
+      # 启用内置 single-key KMS 让 SSE-S3（AES-256）在 MinIO 可用，与生产 S3 行为一致
+      # 格式：<key-name>:<32-byte base64>
+      MINIO_KMS_SECRET_KEY: ${MINIO_KMS_SECRET_KEY:-autohr-dev-kms-key:P35h6DBJhqXxPWi2u+WXwLF2ehdi+1XpDuXhAyb1gJM=}
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  createbuckets:
+    image: minio/mc:latest
+    container_name: autohr-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      sleep 2;
+      mc alias set autohr http://minio:9000 ${MINIO_ROOT_USER:-autohr} ${MINIO_ROOT_PASSWORD:-autohr_dev_secret};
+      mc mb autohr/${MINIO_BUCKET:-resumes} --ignore-existing;
+      mc anonymous set download autohr/${MINIO_BUCKET:-resumes} || true;
+      exit 0;
+      "
+    restart: "no"
+
+  backend:
+    build:
+      context: ./backend
+      target: development
+    container_name: autohr-backend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-autohr}:${POSTGRES_PASSWORD:-autohr_dev}@postgres:5432/${POSTGRES_DB:-autohr}
+      REDIS_URL: redis://redis:6379/0
+      MINIO_ENDPOINT: minio:9000
+      JWT_PRIVATE_KEY_PATH: /app/keys/private.pem
+      JWT_PUBLIC_KEY_PATH: /app/keys/public.pem
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - ./backend:/app
+      - ./backend/keys:/app/keys:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  worker:
+    build:
+      context: ./backend
+      target: development
+    container_name: autohr-worker
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-autohr}:${POSTGRES_PASSWORD:-autohr_dev}@postgres:5432/${POSTGRES_DB:-autohr}
+      REDIS_URL: redis://redis:6379/0
+      MINIO_ENDPOINT: minio:9000
+    volumes:
+      - ./backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: celery -A app.workers.celery_app worker --loglevel=info --concurrency=2
+
+  beat:
+    build:
+      context: ./backend
+      target: development
+    container_name: autohr-beat
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-autohr}:${POSTGRES_PASSWORD:-autohr_dev}@postgres:5432/${POSTGRES_DB:-autohr}
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./backend:/app
+    depends_on:
+      - worker
+    command: celery -A app.workers.celery_app beat --loglevel=info
+
+  frontend:
+    build:
+      context: ./frontend
+      target: development
+    container_name: autohr-frontend
+    restart: unless-stopped
+    environment:
+      # 浏览器侧 API 调用走宿主机端口（与 BACKEND_PORT 一致）
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:${BACKEND_PORT:-8000}
+      # 开发期：容器内 next dev 监听 3000，宿主机通过 FRONTEND_PORT 映射进来
+      PORT: "3000"
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      - backend
+    command: pnpm dev
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:

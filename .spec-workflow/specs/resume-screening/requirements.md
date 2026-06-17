@@ -1,0 +1,209 @@
+# Requirements Document
+
+## Introduction
+
+**AutoHR** 是面向 HR / 招聘负责人的智能简历筛选 Web 应用。系统接收多渠道来源的简历（用户上传、招聘平台导出、邮箱投递），自动解析为结构化候选人档案，再基于用户配置的职位描述（JD）与硬性条件进行筛选、评分、排序，并为每位候选人生成推荐理由与定制化面试问题，将 HR 从大量重复性初筛工作中解放出来。
+
+核心价值：
+- **多源归一**：PDF / Word / 图片 / 招聘平台导出 / 邮件附件，统一进入同一候选人池。
+- **AI 双引擎**：同时接入智谱 GLM-4 与通义千问，可在任务级切换 / 降级，规避单模型可用性风险。
+- **可解释决策**：每条评分、淘汰结论均附带理由，HR 可复核。
+- **多用户协作**：支持团队共享候选人池与职位结果。
+
+## Alignment with Product Vision
+
+> 注：项目尚处于冷启动阶段，未单独建立 `steering/product.md`。本节作为产品愿景锚点，后续若新增 steering 文档需保持一致。
+
+产品愿景：**让 HR 在 10 分钟内完成过去 4 小时的初筛工作量**，同时保持筛选过程的可控、可解释、可审计。本 spec 实现愿景的最小可用闭环——从简历进入系统到输出可决策的候选人列表。
+
+## Requirements
+
+### Requirement 1: 用户与团队管理
+
+**User Story:** 作为 HR 团队负责人，我希望团队成员可以各自登录并在共享候选人池中协作，以便统一管理招聘流程。
+
+#### Acceptance Criteria
+
+1. WHEN 未登录用户访问任意受保护页面 THEN 系统 SHALL 重定向到登录页。
+2. WHEN 用户提交有效邮箱+密码 THEN 系统 SHALL 颁发 JWT 会话并返回用户身份与角色。
+3. IF 用户角色为 admin THEN 系统 SHALL 允许其邀请成员、管理职位；否则 SHALL 仅允许查看与处理被分配的职位。
+4. WHEN 同一邮箱被多次注册 THEN 系统 SHALL 拒绝并返回 "邮箱已注册" 错误。
+
+### Requirement 2: 职位（JD）管理
+
+**User Story:** 作为 HR，我希望创建并维护一个职位（包含 JD 文本与硬性条件），以便系统按统一标准筛选简历。
+
+#### Acceptance Criteria
+
+1. WHEN 用户提交职位表单（职位名、JD 富文本、硬性条件结构化字段）THEN 系统 SHALL 持久化职位并生成唯一 `job_id`。
+2. WHEN 用户编辑已有职位 THEN 系统 SHALL 保留历史版本快照（含硬性条件变更），已完成的评分结果不自动重算。
+3. IF 用户在硬性条件中指定 "学历 ≥ 硕士"、"必备技能包含 Python"、"最低工作年限 3 年" THEN 系统 SHALL 在筛选阶段按这些字段执行硬性淘汰。
+4. WHEN 用户请求列出职位 THEN 系统 SHALL 返回分页列表，支持按状态（草稿/进行中/已关闭）过滤。
+
+### Requirement 3: 简历文件批量上传
+
+**User Story:** 作为 HR，我希望一次性拖拽上传几十份简历文件（PDF/Word/图片），以便快速批量进入候选池。
+
+#### Acceptance Criteria
+
+1. WHEN 用户上传文件 THEN 系统 SHALL 仅接受 `.pdf` `.doc` `.docx` `.png` `.jpg` `.jpeg` 后缀，单文件 ≤ 20 MB，单批 ≤ 100 份。
+2. IF 文件类型 / 大小不合法 THEN 系统 SHALL 在前端拒绝并给出明确原因。
+3. WHEN 上传开始 THEN 系统 SHALL 异步解析，前端通过任务进度条实时显示 "上传中 / 解析中 / 解析完成 / 失败"。
+4. IF 解析失败（损坏文件、OCR 失败、提取文本为空）THEN 系统 SHALL 标记该文件为失败并保留原始文件供人工查看，不阻塞批次中其他文件。
+
+### Requirement 4: 招聘平台数据导入
+
+**User Story:** 作为 HR，我希望从 Boss 直聘 / 智联 / 猎聘等平台导出的简历包（zip 或 Excel）批量导入，以便复用平台已结构化的数据。
+
+#### Acceptance Criteria
+
+1. WHEN 用户上传招聘平台导出包 THEN 系统 SHALL 自动识别平台类型（通过文件命名 / 内部结构特征）。
+2. IF 平台导出为标准结构化字段（JSON/Excel）THEN 系统 SHALL 直接映射到候选人字段，跳过 OCR 步骤。
+3. IF 平台导出为简历附件包（PDF/Word）THEN 系统 SHALL 走与 Requirement 3 相同的解析链路。
+4. WHEN 系统 SHALL 不支持的平台导出 THEN 系统 SHALL 返回 "暂不支持的平台格式" 并提供反馈入口。
+
+### Requirement 5: 邮件附件自动抓取
+
+**User Story:** 作为 HR，我希望绑定招聘邮箱后，系统自动抓取投递邮件中的简历附件进入候选池，以便无需手动下载上传。
+
+#### Acceptance Criteria
+
+1. WHEN 用户配置 IMAP 邮箱凭据后 THEN 系统 SHALL 每 15 分钟轮询新邮件一次（间隔可在后台配置）。
+2. IF 邮件含简历附件（按文件类型 + 关键词识别）THEN 系统 SHALL 抓取附件并把发件人邮箱、主题、抓取时间记入候选人来源元数据。
+3. WHEN 同一邮件被多次抓取（去重键 = 邮件 Message-ID + 附件指纹）THEN 系统 SHALL 跳过已处理的邮件。
+4. IF IMAP 认证失败或网络错误 THEN 系统 SHALL 进入退避重试（最多 5 次），超过则告警并暂停轮询，等待人工介入。
+
+### Requirement 6: 简历解析与文本提取
+
+**User Story:** 作为系统，我需要把多格式简历转换为统一纯文本（图片走 OCR），以便后续结构化字段抽取。
+
+#### Acceptance Criteria
+
+1. WHEN 输入为 PDF（含扫描版）THEN 系统 SHALL 优先使用文本层提取；当文本层字符密度低于阈值时 SHALL 回退到 OCR。
+2. WHEN 输入为 Word（.doc/.docx）THEN 系统 SHALL 提取正文与表格文本。
+3. WHEN 输入为图片 THEN 系统 SHALL 调用 OCR；中英文混排场景 SHALL 同时识别。
+4. IF 提取后纯文本长度 < 50 字符 THEN 系统 SHALL 标记为 "提取失败" 并保留原始文件供人工处理。
+
+### Requirement 7: 结构化字段抽取
+
+**User Story:** 作为 HR，我希望系统把简历文本自动抽取为标准字段（姓名 / 联系方式 / 学历 / 工作年限 / 技能栈 / 期望薪资等），以便后续筛选与检索。
+
+#### Acceptance Criteria
+
+1. WHEN 简历文本通过 LLM 抽取 THEN 系统 SHALL 输出固定 schema（`name`, `phone`, `email`, `education`, `years_of_experience`, `skills[]`, `expected_salary`, `current_company`, `raw_text` 等）。
+2. IF 字段无法确定 THEN 系统 SHALL 填充 `null` 并附 `confidence` 评分（0-1），不臆造。
+3. WHEN 抽取完成 THEN 系统 SHALL 持久化结构化结果，并支持前端表格视图按任意字段排序与筛选。
+4. IF LLM 返回不符合 schema THEN 系统 SHALL 通过 schema validator 重试一次（带提示），仍失败则降级为 "部分抽取" 状态。
+
+### Requirement 8: 硬性条件筛选（淘汰制）
+
+**User Story:** 作为 HR，我希望系统先按 JD 中的硬性条件一票否决不达标候选人，以便后续评分只针对合格候选池。
+
+#### Acceptance Criteria
+
+1. WHEN 触发筛选 THEN 系统 SHALL 对每位候选人逐条比对硬性条件（学历、必备技能、最低工作年限等），任一不满足即标记 `disqualified=true`。
+2. WHEN 候选人被淘汰 THEN 系统 SHALL 记录具体被淘汰的硬性条件（如 "学历不达标：本科 vs 要求硕士"）。
+3. IF 候选人某关键字段缺失（如工作年限未抽到）THEN 系统 SHALL 默认按 "不通过硬性筛选" 处理，并在结果中显式提示 "字段缺失"，允许 HR 手动复核后改判。
+4. WHEN HR 在前端将某候选人手动改判 THEN 系统 SHALL 记录改判人、时间、原因，原硬性筛选结果作为历史保留。
+
+### Requirement 9: 综合评分与排名
+
+**User Story:** 作为 HR，我希望系统对通过硬性筛选的候选人按与 JD 的综合匹配度评分排名，以便我优先查看头部候选人。
+
+#### Acceptance Criteria
+
+1. WHEN 触发评分 THEN 系统 SHALL 调用 LLM 输出 0-100 整数分与分维度子分（技能匹配、经验匹配、学历匹配、稳定性、潜力等）。
+2. WHEN 多份候选人完成评分 THEN 系统 SHALL 按总分倒序排名，支持前端切换子维度排序。
+3. IF 同分 THEN 系统 SHALL 按技能匹配子分 > 经验子分 > 姓名字典序二级排序。
+4. WHEN 评分使用 A 模型失败 THEN 系统 SHALL 自动降级到 B 模型重试，结果元数据记录 "实际使用模型"。
+
+### Requirement 10: 推荐理由生成
+
+**User Story:** 作为 HR，我希望看到每位候选人的推荐 / 不推荐理由，以便快速判断是否进入下一轮。
+
+#### Acceptance Criteria
+
+1. WHEN 系统完成评分 THEN 系统 SHALL 同时生成 3-5 条要点形式的推荐理由（针对该候选人的亮点）。
+2. WHEN 候选人被硬性淘汰 THEN 系统 SHALL 生成对应的淘汰理由，明确指向被违反的条件。
+3. IF LLM 生成的理由中包含候选人简历中不存在的事实 THEN 系统 SHALL 在最终输出前由二次校验步骤过滤（"事实一致性校验"）。
+
+### Requirement 11: 面试问题建议
+
+**User Story:** 作为 HR / 面试官，我希望系统针对每位候选人自动生成定制化面试问题，以便面试时快速进入正题。
+
+#### Acceptance Criteria
+
+1. WHEN 候选人评分完成 THEN 系统 SHALL 生成 5-8 个面试问题，覆盖：技能深挖、项目经历追问、潜在短板验证、文化匹配。
+2. IF 候选人有明显短板（如某必备技能仅"了解"）THEN 系统 SHALL 至少包含一条针对该短板的追问。
+3. WHEN 用户点击 "重新生成" THEN 系统 SHALL 使用更高 temperature 重新生成一批，并保留历史批次。
+4. WHEN 面试完成 THEN 系统 SHALL 允许 HR 在每条问题后附加面试官反馈，用于后续训练与复盘。
+
+### Requirement 12: 候选人去重
+
+**User Story:** 作为 HR，我希望系统自动识别同一人的多次投递（不同渠道 / 不同职位），以便避免重复评估。
+
+#### Acceptance Criteria
+
+1. WHEN 新候选人进入系统 THEN 系统 SHALL 基于组合键（手机号 + 邮箱 + 姓名拼音 + 身份证后 4 位，按可得性加权）匹配已有候选人。
+2. IF 命中已有候选人 THEN 系统 SHALL 合并新简历到该候选人档案下，新来源作为新记录追加，不覆盖已有结构化字段（除非新值 confidence 更高）。
+3. WHEN 命中多个候选（多对一冲突）THEN 系统 SHALL 标记为 "疑似同人，待人工确认"，不自动合并。
+
+### Requirement 13: 双 LLM 模型适配与切换
+
+**User Story:** 作为系统管理员，我希望在智谱 GLM-4 与通义千问之间切换 / 配置降级策略，以便应对某家服务不稳定或限流场景。
+
+#### Acceptance Criteria
+
+1. WHEN 管理员在后台配置 `primary_model`、`fallback_model` 与单模型超时阈值 THEN 系统 SHALL 按该策略调度。
+2. IF primary 模型连续 3 次失败 THEN 系统 SHALL 自动临时切换到 fallback（5 分钟冷却）并告警。
+3. WHEN 用户在职位级别指定模型 THEN 系统 SHALL 优先使用职位级配置，未指定时回落到全局配置。
+4. WHEN 调用任一模型 THEN 系统 SHALL 记录 token 用量、延迟、成本到统计表，供管理员查看。
+
+### Requirement 14: 历史结果查询与导出
+
+**User Story:** 作为 HR，我希望按职位查看候选人列表、详情、并导出 Excel，以便线下汇报与归档。
+
+#### Acceptance Criteria
+
+1. WHEN 用户访问职位详情 THEN 系统 SHALL 展示通过 / 淘汰 / 待复核三个分组，支持按评分、子维度、抽取字段任意组合筛选。
+2. WHEN 用户点击候选人 THEN 系统 SHALL 展示原始简历预览、结构化字段、评分细项、推荐理由、面试问题、操作日志（含改判历史）。
+3. WHEN 用户请求导出 THEN 系统 SHALL 生成包含所有可见字段 + 评分 + 理由的 Excel（.xlsx），文件大小或行数超阈值时异步生成并邮件通知。
+4. IF 用户没有该职位权限 THEN 系统 SHALL 在所有 API 与导出入口拒绝访问。
+
+## Non-Functional Requirements
+
+### Code Architecture and Modularity
+
+- **分层清晰**：前端 `app/`（路由）/ `components/`（UI）/ `lib/`（API 客户端）/ `hooks/`；后端 `api/`（路由）/ `services/`（业务）/ `adapters/`（LLM、OCR、邮件、存储适配器）/ `models/`（数据）/ `workers/`（异步任务）。
+- **适配器模式隔离外部依赖**：智谱、通义、OCR、IMAP、对象存储均通过统一 interface 接入，便于替换 / Mock 测试。
+- **接口契约**：API 使用 Pydantic schema 定义请求与响应，前端基于 OpenAPI 生成的类型消费。
+- **单一职责**：解析、抽取、筛选、评分、生成理由、生成面试问题各为独立 service，互不直接调用对方内部实现，仅通过 service 接口或事件总线协作。
+
+### Performance
+
+- 单份简历从上传到结构化抽取完成 ≤ 30 秒（PDF/Word），图片 OCR 场景 ≤ 60 秒（P95）。
+- 单份候选人评分（含理由 + 面试问题）≤ 15 秒（P95）。
+- 列表 API（候选人、职位）P95 ≤ 500 ms（10 万级行数据）。
+- 前端首屏 LCP ≤ 2.5 秒。
+
+### Security
+
+- 简历文件静态加密存储（服务端加密 SSE），下载链接使用短期签名 URL。
+- LLM API Key、邮箱 IMAP 凭据、数据库连接串等敏感配置通过环境变量 / 密钥管理服务注入，禁止入库或写日志。
+- 简历含 PII（姓名、手机号、邮箱、身份证），数据库列级加密；日志中默认脱敏。
+- 所有 API 强制 JWT 鉴权；跨用户资源访问返回 404 而非 403（避免资源存在性泄露）。
+- 文件上传做 MIME 嗅探（不仅看扩展名）+ 病毒扫描钩子位。
+
+### Reliability
+
+- LLM 调用必须带超时 + 重试 + fallback；任意单点失败不阻塞批次。
+- 异步任务（解析、评分、邮件抓取）持久化到任务表，进程重启可断点续作。
+- OCR / 解析失败的简历不丢失，进入 "失败队列" 供人工处理或重试。
+- 数据库每日全量备份 + 增量 WAL 归档；备份加密异地存储。
+
+### Usability
+
+- 上传 / 解析 / 评分全流程进度可视化，失败项可单独重试。
+- 候选人列表支持表格密度切换、列自定义、保存视图。
+- 每个不可解释的 AI 结论（评分、淘汰、推荐理由）均提供 "查看依据" 入口，链接到原始简历片段。
+- 移动端可读（查看候选人详情、审批），但创建职位 / 批量上传引导到桌面端。

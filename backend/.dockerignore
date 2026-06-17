@@ -1,0 +1,52 @@
+# VCS
+.git
+.gitignore
+.gitattributes
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+
+# Virtual env
+.venv/
+venv/
+env/
+
+# Cache
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+.cache/
+
+# Secrets / Keys（绝不进镜像）
+keys/
+*.pem
+*.key
+.env
+.env.*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Tests（开发镜像不 COPY 测试代码，加速构建）
+tests/
+
+# Docker
+Dockerfile
+.dockerignore
+
+# Logs
+*.log
+logs/

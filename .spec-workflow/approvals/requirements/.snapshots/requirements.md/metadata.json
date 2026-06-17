@@ -1,0 +1,22 @@
+{
+  "filePath": ".spec-workflow/specs/resume-screening/requirements.md",
+  "currentVersion": 2,
+  "snapshots": [
+    {
+      "version": 1,
+      "filename": "snapshot-001.json",
+      "timestamp": "2026-06-15T05:15:32.987Z",
+      "trigger": "initial",
+      "approvalId": "approval_1781500532986_u58bf465p",
+      "approvalTitle": "resume-screening 需求文档 v1"
+    },
+    {
+      "version": 2,
+      "filename": "snapshot-002.json",
+      "timestamp": "2026-06-15T05:45:24.370Z",
+      "trigger": "approved",
+      "approvalId": "approval_1781500532986_u58bf465p",
+      "approvalTitle": "resume-screening 需求文档 v1"
+    }
+  ]
+}
