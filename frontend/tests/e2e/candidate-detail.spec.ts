@@ -219,7 +219,7 @@ test.describe("候选人详情页（任务 24）", () => {
     // tab 切换
     await page.getByRole("tab", { name: "评分" }).click();
     await expect(page.getByText("评分细项")).toBeVisible();
-    await expect(page.getByText("综合")).toBeVisible();
+    await expect(page.getByText("综合", { exact: true })).toBeVisible();
 
     await page.getByRole("tab", { name: "理由" }).click();
     await expect(page.getByText("推荐理由")).toBeVisible();
@@ -251,7 +251,7 @@ test.describe("候选人详情页（任务 24）", () => {
 
     // 切到理由 tab
     await page.getByRole("tab", { name: "理由" }).click();
-    await expect(page.getByText("五年 Python 经验")).toBeVisible();
+    await expect(page.getByText("五年 Python 后端开发经验")).toBeVisible();
 
     // 点击查看依据
     await page.getByRole("button", { name: "查看依据" }).click();

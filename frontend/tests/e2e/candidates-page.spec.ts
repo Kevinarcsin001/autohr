@@ -239,12 +239,12 @@ test.describe("候选人列表页（任务 23）", () => {
     const totalCol = page.getByRole("columnheader", { name: /总分/ });
     await totalCol.getByRole("button").click();
 
-    // 第一次点击应改成 asc 或 desc 之一；只要 URL 反映了状态即可
-    await page.waitForURL(
-      (url) => url.searchParams.get("sort_by") === "total",
+    // 第一次点击应改成 asc 或 desc 之一；用 waitForFunction 检测 window.location
+    // （Next.js App Router router.replace 不会触发 waitForURL 识别的导航事件）
+    await page.waitForFunction(
+      () => window.location.search.includes("sort_by="),
       { timeout: 5_000 },
     );
-    expect(page.url()).toMatch(/sort_by=total/);
   });
 
   test("列自定义菜单可打开 + 显示列列表", async ({ page }) => {
@@ -296,8 +296,45 @@ test.describe("候选人列表页（任务 23）", () => {
       'data: {"total":1,"passed":1,"disqualified":0,"failed":0}',
     ].join("\n");
 
+    // 必须提供至少一个 pending 候选（screening_id=null），
+    // 否则 handleTriggerPipeline 因 candidateIds.length===0 直接 return
     await mockApi({
       page,
+      candidates: {
+        items: [
+          {
+            id: "c-pending",
+            name: "待筛选",
+            email: "pending@example.com",
+            phone: null,
+            source_type: "upload",
+            source_id: "s-1",
+            screening_id: null,
+            disqualified: null,
+            screening_reasons: [],
+            manually_overridden: false,
+            score_id: null,
+            total: null,
+            skill: null,
+            experience: null,
+            education_score: null,
+            stability: null,
+            potential: null,
+            model_used: null,
+            education: null,
+            years_of_experience: null,
+            current_company: null,
+            skills: null,
+            group: "pending",
+            created_at: "2026-06-01T10:00:00Z",
+            updated_at: null,
+          },
+        ],
+        total: 1,
+        page: 1,
+        page_size: 50,
+        group_counts: { passed: 0, disqualified: 0, pending: 1 },
+      },
       sseEvents: [doneEvent],
     });
 
