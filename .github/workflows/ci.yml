@@ -104,11 +104,11 @@ jobs:
 
       - name: Init MinIO bucket
         run: |
-          docker run --rm --network=host minio/mc:latest sh -c "
+          docker run --rm --network=host --entrypoint sh minio/mc:latest -c '
             sleep 2;
             mc alias set ci http://localhost:9000 autohr autohr_dev_secret;
             mc mb ci/resumes --ignore-existing || true;
-          "
+          '
 
       - name: Run migrations
         working-directory: backend
