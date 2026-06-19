@@ -57,7 +57,6 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-          server /data
 
     env:
       DATABASE_URL: postgresql+asyncpg://autohr:autohr_dev@localhost:5432/autohr
