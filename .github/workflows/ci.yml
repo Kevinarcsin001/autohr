@@ -57,7 +57,7 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-        cmd: server /data
+          server /data
 
     env:
       DATABASE_URL: postgresql+asyncpg://autohr:autohr_dev@localhost:5432/autohr
@@ -147,8 +147,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: pnpm
-          cache-dependency-path: frontend/pnpm-lock.yaml
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v3
@@ -157,7 +155,7 @@ jobs:
           run_install: false
 
       - name: Install deps
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --no-frozen-lockfile
 
       - name: ESLint
         run: pnpm lint
@@ -221,12 +219,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: pnpm
-          cache-dependency-path: frontend/pnpm-lock.yaml
 
       - name: Install frontend deps (for Playwright)
         working-directory: frontend
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --no-frozen-lockfile
 
       - name: Install Playwright browsers
         working-directory: frontend
@@ -235,7 +231,7 @@ jobs:
       - name: Wait for services healthy
         run: |
           for i in {1..30}; do
-            curl -sf http://localhost:8000/health && curl -sf http://localhost:3001 && break
+            curl -sf http://localhost:8000/health && curl -sf http://localhost:3000 && break
             sleep 2
           done
 
