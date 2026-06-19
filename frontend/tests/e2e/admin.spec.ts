@@ -96,9 +96,9 @@ test.describe("Admin LLM 配置（任务 25/26）", () => {
     // 列表 badge 是精确文本（下拉 option 含 — 后缀），用 exact: true 避免歧义
     await expect(page.getByText("结构化抽取", { exact: true })).toBeVisible();
     await expect(page.getByText("评分", { exact: true })).toBeVisible();
-    // 全局 / 本团队标签
-    await expect(page.getByText("全局")).toBeVisible();
-    await expect(page.getByText("本团队")).toBeVisible();
+    // 全局 / 本团队 badge（多处含「全局」字样，用 exact）
+    await expect(page.getByText("全局", { exact: true })).toBeVisible();
+    await expect(page.getByText("本团队", { exact: true })).toBeVisible();
   });
 
   test("upsert 新配置 → 列表刷新", async ({ page }) => {

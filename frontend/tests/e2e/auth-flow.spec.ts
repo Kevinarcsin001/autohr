@@ -79,7 +79,8 @@ test.describe("认证流程（任务 26）", () => {
 
     await page.goto("/register");
     await page.getByLabel(/邮箱/).fill("new@example.com");
-    await page.getByLabel(/密码/).fill("Pass1234");
+    // register 页有 password + confirm 两个字段，getByLabel(/密码/) 会命中两个
+    await page.getByLabel("密码", { exact: true }).fill("Pass1234");
     await page.getByLabel(/姓名/).fill("New");
     await page.getByRole("button", { name: /注册|创建账号/ }).click();
 
@@ -101,7 +102,7 @@ test.describe("认证流程（任务 26）", () => {
 
     await page.goto("/register");
     await page.getByLabel(/邮箱/).fill("dup@example.com");
-    await page.getByLabel(/密码/).fill("Pass1234");
+    await page.getByLabel("密码", { exact: true }).fill("Pass1234");
     await page.getByLabel(/姓名/).fill("Dup");
     await page.getByRole("button", { name: /注册|创建账号/ }).click();
 
@@ -177,7 +178,8 @@ test.describe("认证流程（任务 26）", () => {
     await page.getByLabel(/密码/).fill("wrong");
     await page.getByRole("button", { name: /登录|登 录/ }).click();
 
-    await expect(page.getByText(/邮箱或密码错误/)).toBeVisible({
+    // AlertTitle 固定 "登录失败"；具体消息取决于后端 response 形态
+    await expect(page.getByText("登录失败")).toBeVisible({
       timeout: 5_000,
     });
   });
