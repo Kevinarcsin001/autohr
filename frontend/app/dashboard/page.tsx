@@ -100,6 +100,18 @@ export default function DashboardPage() {
             >
               邮箱抓取配置 →
             </Link>
+            <Link
+              href="/admin/llm"
+              className="text-primary hover:underline"
+            >
+              LLM 路由配置 →
+            </Link>
+            <Link
+              href="/admin/stats"
+              className="text-primary hover:underline"
+            >
+              LLM 调用统计 →
+            </Link>
           </CardContent>
         </Card>
       )}

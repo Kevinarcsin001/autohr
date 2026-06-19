@@ -299,25 +299,53 @@ extract_structured = async_task(name="extract_structured", task_type="extract")(
 )
 
 
-# --- run_screening（任务 15-17 接入 ScreeningService） ---
+# --- run_screening（任务 20 接入 ScreeningOrchestrator） ---
 
 
 async def run_screening_handler(
     target_id: uuid.UUID | None, payload: dict[str, Any] | None
 ) -> dict[str, Any] | None:
-    """对候选人跑筛选规则（硬性条件 + 软性加权）。
+    """对候选人跑完整编排：Filter → Scorer(+Reasoning) → Interview。
 
     Args:
-        target_id: candidate.id
-        payload: {"job_id": str}
+        target_id: job_id（编排任务以 job 为单位）
+        payload: {
+            "candidate_ids": [str, ...],   # 要跑的候选人列表
+            "run_id": str (可选),           # 进度推送 run_id
+        }
 
-    TODO(task-15/16/17): 接 ScreeningService。
+    设计：
+    - 调 ScreeningOrchestrator.run 走完整流水线
+    - 任一阶段失败不阻塞其他候选人；failed_reasons 聚合到 result
+    - 不直接调 LLM adapter；全部走各 service
     """
-    logger.info(
-        "run_screening_stub_called",
-        target_id=str(target_id) if target_id else None,
+    from app.services.screening_orchestrator import (
+        ScreeningOrchestrator,
+        progress_store,
     )
-    return {"status": "stub", "implemented_in": "task-15-17"}
+
+    if target_id is None:
+        raise ValueError("run_screening requires target_id (job_id)")
+    if not payload or "candidate_ids" not in payload:
+        raise ValueError("run_screening requires payload['candidate_ids']")
+
+    job_id = target_id
+    candidate_ids = [uuid.UUID(str(c)) for c in payload["candidate_ids"]]
+    run_id = uuid.UUID(str(payload["run_id"])) if payload.get("run_id") else uuid.uuid4()
+
+    await progress_store.create(run_id, total=len(candidate_ids))
+    orchestrator = ScreeningOrchestrator()
+    summary = await orchestrator.run(
+        run_id=run_id,
+        job_id=job_id,
+        candidate_ids=candidate_ids,
+    )
+
+    return {
+        "run_id": str(run_id),
+        "job_id": str(job_id),
+        **summary.to_dict(),
+    }
 
 
 run_screening = async_task(name="run_screening", task_type="screen")(
@@ -325,25 +353,48 @@ run_screening = async_task(name="run_screening", task_type="screen")(
 )
 
 
-# --- score_candidate（任务 18-20 接入 ScorerService + LLMReasoner） ---
+# --- score_candidate（任务 17 接入 ScorerService；任务 18/19/20 接 ReasoningService） ---
 
 
 async def score_candidate_handler(
     target_id: uuid.UUID | None, payload: dict[str, Any] | None
 ) -> dict[str, Any] | None:
-    """对候选人评分（数值 + recommend/disqualify 原因）。
+    """对候选人评分（数值 + 6 个子维度）。
 
     Args:
         target_id: candidate.id
-        payload: {"job_id": str}
+        payload: {"job_id": str, "team_id": str (可选)}
 
-    TODO(task-18/19/20): 接 ScorerService + ReasoningService。
+    永久失败条件（不重试）：
+    - candidate 不存在 / 无 ParsedStructure / Job 不存在
     """
-    logger.info(
-        "score_candidate_stub_called",
-        target_id=str(target_id) if target_id else None,
+    from app.workers.scorer_task import (
+        CandidateNotFound,
+        JobNotFound,
+        StructureMissing,
+        run_score,
     )
-    return {"status": "stub", "implemented_in": "task-18-20"}
+
+    if target_id is None:
+        raise ValueError("score_candidate requires target_id (candidate.id)")
+
+    async with AsyncSessionLocal() as session:
+        try:
+            summary = await run_score(
+                db=session,
+                target_id=target_id,
+                payload=payload,
+            )
+        except (CandidateNotFound, JobNotFound, StructureMissing) as exc:
+            await session.commit()
+            raise PermanentScoreFailure(str(exc)) from exc
+        await session.commit()
+
+    return summary
+
+
+class PermanentScoreFailure(PermanentFailure):
+    """Scorer 任务永久失败（不可重试）。"""
 
 
 score_candidate = async_task(name="score_candidate", task_type="score")(
@@ -357,19 +408,54 @@ score_candidate = async_task(name="score_candidate", task_type="score")(
 async def run_export_handler(
     target_id: uuid.UUID | None, payload: dict[str, Any] | None
 ) -> dict[str, Any] | None:
-    """批量导出候选人列表到 xlsx/csv。
+    """批量导出候选人列表到 xlsx（异步任务，任务 22 接入 ExportService）。
 
     Args:
-        target_id: 异步导出任务的发起人 user_id（可选）
-        payload: {"job_id": str, "format": "xlsx"|"csv", "filter": {...}}
+        target_id: 异步导出任务的发起人 user_id
+        payload: {
+            "job_id": str,
+            "team_id": str,
+            "user_id": str,
+            "format": "xlsx"|"csv",
+            "filters": {...},
+        }
 
-    TODO(task-22): 接 ExportService → 写文件 → 生成下载 URL。
+    实现：handler 内直接调 ``ExportService._generate`` + ``_notify_user``，
+    返回的 dict 通过 ``@async_task`` 包装的 ``mark_success`` 自动落到
+    ``payload['result']``（供 GET /api/exports/jobs/{job_id} 查询接口读）。
+    邮件通知为占位（未接 SMTP，仅 logger.info）。
     """
-    logger.info(
-        "run_export_stub_called",
-        target_id=str(target_id) if target_id else None,
-    )
-    return {"status": "stub", "implemented_in": "task-22"}
+    from app.services.export import ExportService
+
+    if not payload or "job_id" not in payload:
+        raise ValueError("run_export requires payload['job_id']")
+
+    job_id = uuid.UUID(str(payload["job_id"]))
+    team_id = uuid.UUID(str(payload["team_id"]))
+    filters = payload.get("filters") or {}
+
+    async with AsyncSessionLocal() as session:
+        service = ExportService(session)
+        file_key, file_size = await service._generate(
+            job_id=job_id,
+            team_id=team_id,
+            filters=filters,
+        )
+        row_count = await service._count_candidates(team_id, job_id, filters)
+        email_sent = await service._notify_user(
+            user_id=target_id or uuid.uuid4(),
+            team_id=team_id,
+            file_key=file_key,
+            row_count=row_count,
+        )
+        await session.commit()
+
+    return {
+        "file_key": file_key,
+        "file_size": file_size,
+        "row_count": row_count,
+        "email_sent": email_sent,
+    }
 
 
 run_export = async_task(name="run_export", task_type="export")(run_export_handler)
@@ -446,6 +532,7 @@ __all__ = [
     "PermanentFailure",
     "PermanentParseFailure",
     "PermanentExtractFailure",
+    "PermanentScoreFailure",
     "parse_resume",
     "parse_resume_handler",
     "extract_structured",

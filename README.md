@@ -66,6 +66,107 @@ make backend-shell  # 进入 backend 容器 shell
 make clean          # ⚠️ 清理所有数据卷
 ```
 
+## 生产部署
+
+### 服务拓扑
+
+生产通过 `docker-compose.prod.yml` 部署：
+
+```
+                 ┌──────────────────────────────────┐
+                 │  nginx :80（唯一对外端口）        │
+                 └───────────┬──────────────────────┘
+                             │
+        ┌────────────────────┼─────────────────────┐
+        ▼                    ▼                     ▼
+   frontend:3000        backend:8000           （静态/SSR）
+                       (FastAPI + workers)
+                             │
+        ┌──────────┬─────────┼──────────┬──────────┐
+        ▼          ▼         ▼          ▼          ▼
+   postgres     redis     minio       worker      beat
+   (5432)       (6379)    (9000)      (celery)    (celery)
+```
+
+- 所有内部服务仅在内网 `internal` 网络互通，**不暴露端口**
+- 镜像从 GHCR 拉取：`ghcr.io/<owner>/<repo>/{backend,frontend}:latest`
+- 后端 / worker / beat 共用同一镜像，仅 `command` 不同
+
+### 首次部署
+
+```bash
+# 1. 准备生产密钥（务必使用强随机值，切勿复用开发值）
+cp .env.example .env.prod
+#   - 把 POSTGRES_PASSWORD / MINIO_SECRET_KEY / SECRET_KEY / FERNET_KEY 全部换为强随机
+#   - 设置 GITHUB_REPO=<owner>/<repo>
+#   - 填入 ZHIPU_API_KEY / DASHSCOPE_API_KEY
+
+# 2. 生成 JWT 密钥对（与 backend/keys/ 共用）
+make gen-keys
+
+# 3. 拉取镜像并启动
+docker compose -f docker-compose.prod.yml up -d
+
+# 4. 执行数据库迁移
+docker compose -f docker-compose.prod.yml exec backend alembic upgrade head
+
+# 5. 健康检查
+curl http://localhost/healthz        # nginx：{"status":"ok"}
+curl http://localhost/api/health     # backend：/health
+```
+
+### CI/CD
+
+GitHub Actions 三条流水线（见 `.github/workflows/ci.yml`）：
+
+1. **backend-test** — ruff lint + pytest（覆盖率门槛 70%）+ alembic 迁移验证
+2. **frontend-test** — ESLint + tsc + Vitest + Next build
+3. **e2e** — 完整 docker-compose 起栈 + Playwright 4 场景
+
+`main` 分支合并后自动构建并推送 backend/frontend 镜像到 GHCR，多平台（amd64 + arm64）。
+
+### 部署清单（上线前确认）
+
+- [ ] `.env.prod` 中所有密钥使用强随机值（`openssl rand -hex 32`）
+- [ ] `backend/keys/{private,public}.pem` 已生成且权限 600
+- [ ] `POSTGRES_PASSWORD` 与 `MINIO_SECRET_KEY` 至少 32 字节
+- [ ] 服务器开放端口 80（如需 HTTPS，前置一层 Caddy / Traefik 自动签证书）
+- [ ] 首次部署执行 `alembic upgrade head`
+- [ ] `/healthz` 与 `/api/health` 均返回 200
+- [ ] CORS_ALLOWED_ORIGINS 配置为正式域名
+
+### 升级流程
+
+```bash
+# 拉取最新镜像
+docker compose -f docker-compose.prod.yml pull
+
+# 滚动重启
+docker compose -f docker-compose.prod.yml up -d
+
+# 执行新迁移（如有）
+docker compose -f docker-compose.prod.yml exec backend alembic upgrade head
+
+# 回滚（如需）
+docker compose -f docker-compose.prod.yml rollback   # 等价 docker compose up -d --no-deps backend@sha256:<prev>
+```
+
+### 环境变量清单
+
+完整变量见 [`.env.example`](./.env.example)。生产关键变量：
+
+| 变量 | 必填 | 说明 |
+|---|---|---|
+| `SECRET_KEY` | ✅ | 至少 32 字节，JWT 签名兜底 |
+| `POSTGRES_PASSWORD` | ✅ | PostgreSQL 强随机密码 |
+| `FERNET_KEY` | ✅ | PII 字段加密（手机号等） |
+| `ZHIPU_API_KEY` | ⚠️ | 智谱 GLM；缺失将无法解析 |
+| `DASHSCOPE_API_KEY` | ⚠️ | 通义千问；作为 fallback |
+| `MINIO_SECRET_KEY` | ✅ | 对象存储根密码 |
+| `MINIO_KMS_SECRET_KEY` | ✅ | SSE-S3 加密用 KMS 密钥 |
+| `GITHUB_REPO` | ✅ | 生产拉取镜像路径 |
+| `CORS_ALLOWED_ORIGINS` | ✅ | 正式域名 |
+
 ## 技术栈
 
 | 层 | 技术 |

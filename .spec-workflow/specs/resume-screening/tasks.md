@@ -117,7 +117,7 @@
   - _Requirements: 7.1, 7.2, 7.3, 7.4_
   - _Prompt: Implement the task for spec resume-screening, first run spec-workflow-guide to get the workflow guide then implement the task: Role: 后端 / Prompt 工程师 | Task: 实现 CandidateStructure Pydantic schema（每字段附 confidence）+ Extractor service（prompt 构造 + LLMRouter 调用 + schema 校验 + 失败重试 + 持久化）+ Celery 任务。tasks.md 改 [-]。 | Restrictions: 字段无法确定时填 null + confidence=0，绝不臆造；prompt 中必须显式要求 JSON 输出 + 给出 schema 示例；schema 校验失败重试一次（带错误反馈），仍失败标 'partial_extracted'；不要把完整简历原文写日志（脱敏后写） | _Leverage: 任务 4 LLMRouter、任务 13 ParserService | _Requirements: 7.1,7.2,7.3,7.4 | Success: 用 MockAdapter 单测覆盖正常抽取/null 字段/schema 不合重试；集成测试用 1 个真实 fixture 简历（Mock LLM）端到端。`log-implementation` 记录 CandidateStructure schema、prompt 模板、重试逻辑，tasks.md 改 [x]_
 
-- [ ] 15. DedupService
+- [x] 15. DedupService
   - Files: `backend/app/services/dedup.py`
   - 内容：计算 dedup_key = sha1(normalize(name) + last4(phone) + prefix(email))；新候选人入库前查匹配；命中 1 条 → 合并（新简历作为 candidate_resumes 追加，结构化字段按 confidence 取胜更新 candidates 主字段）；命中 ≥ 2 → 写 dedup_matches 状态 'pending_review'；提供 merge(a, b) / flag_for_review API
   - Purpose: 完成需求 12
@@ -125,7 +125,7 @@
   - _Requirements: 12.1, 12.2, 12.3_
   - _Prompt: Implement the task for spec resume-screening, first run spec-workflow-guide to get the workflow guide then implement the task: Role: 后端工程师 | Task: 实现 DedupService（dedup_key 计算 + 匹配 + 合并 + 多对一标记 pending_review）+ /api/candidates/merge 路由。tasks.md 改 [-]。 | Restrictions: 合并时 candidates 主字段更新需 confidence 比较逻辑（高 confidence 覆盖低，相同则保留旧值）；不要自动合并疑似候选（必须人工 review）；姓名归一化（去空格/全半角/拼音小写）；不要保留重复 candidate_resumes（合并后引用更新到主候选人） | _Leverage: design.md DedupService、models | _Requirements: 12.1,12.2,12.3 | Success: 单测覆盖同名同手机合并、多对一标记、姓名归一化；集成测试模拟同人多次投递。`log-implementation` 记录 dedup_key 算法、合并策略、merge endpoint，tasks.md 改 [x]_
 
-- [ ] 16. FilterService（硬性条件筛选）
+- [x] 16. FilterService（硬性条件筛选）
   - Files: `backend/app/services/filter.py`, `backend/app/api/screening.py`
   - 内容：纯逻辑（不调 LLM）；输入 job.hard_requirements + candidate.parsed_structure；逐条比对（学历等级映射、最低年限、必备技能集合包含、竞业排除）；任一不满足 disqualified=true + reasons[]；字段缺失默认 disqualified + "字段缺失" 标记；写 screening_results；提供 manual override API + 写 manual_overrides
   - Purpose: 完成需求 8
@@ -133,7 +133,7 @@
   - _Requirements: 8.1, 8.2, 8.3, 8.4_
   - _Prompt: Implement the task for spec resume-screening, first run spec-workflow-guide to get the workflow guide then implement the task: Role: 后端工程师 | Task: 实现 FilterService（硬性条件逐条比对 + 字段缺失标记 + 持久化 screening_results）+ manual override API + manual_overrides 记录。tasks.md 改 [-]。 | Restrictions: 不调用任何 LLM（纯规则）；字段缺失默认 disqualified + 显式标记 "字段缺失"；学历等级映射（`high_school < bachelor < master < phd`）；HR 改判必须记 actor/old/new/reason；不要直接修改原 screening_results（写 manual_overrides 并设 manually_overridden=true） | _Leverage: 任务 7、任务 14 | _Requirements: 8.1,8.2,8.3,8.4 | Success: 单测覆盖学历不达标/技能缺失/字段缺失/HR 改判；集成测试端到端。`log-implementation` 记录 FilterService 接口、规则集、override endpoint，tasks.md 改 [x]_
 
-- [ ] 17. ScorerService（综合评分 + 子维度）
+- [x] 17. ScorerService（综合评分 + 子维度）
   - Files: `backend/app/services/scorer.py`, `backend/app/schemas/score.py`, `backend/app/workers/scorer_task.py`
   - 内容：prompt 构造（JD + 结构化字段 + 简历关键片段）；调用 LLMRouter（scope='scorer'）输出 JSON `{total, skill, experience, education, stability, potential}`；schema 校验；写 scores（含 model_used + llm_call_id）；Celery 任务（接任务 12）；失败由 LLMRouter 自动 fallback
   - Purpose: 完成需求 9
@@ -141,7 +141,7 @@
   - _Requirements: 9.1, 9.2, 9.3, 9.4_
   - _Prompt: Implement the task for spec resume-screening, first run spec-workflow-guide to get the workflow guide then implement the task: Role: 后端 / Prompt 工程师 | Task: 实现 ScorerService（prompt + LLMRouter scope='scorer' + 子维度 schema + 持久化 scores 含 model_used）+ Celery 任务。tasks.md 改 [-]。 | Restrictions: 评分必须是 0-100 整数；prompt 要求 LLM 引用具体简历片段作为打分依据；同分排名二级排序 skill>experience>name；fallback 触发后 scores.model_used 必须反映真实使用模型；不要把简历原文整体塞进 prompt（取关键片段）以省 token | _Leverage: 任务 4、任务 16 | _Requirements: 9.1,9.2,9.3,9.4 | Success: MockAdapter 单测覆盖正常评分 + fallback；同分排序单测；集成测试用 1 候选人端到端。`log-implementation` 记录 prompt 模板、子维度 schema、fallback 行为，tasks.md 改 [x]_
 
-- [ ] 18. ReasoningService（推荐理由 + 事实校验）
+- [x] 18. ReasoningService（推荐理由 + 事实校验）
   - Files: `backend/app/services/reasoning.py`, `backend/app/schemas/reason.py`
   - 内容：与评分同批调用（或紧接其后）生成 3-5 条推荐理由；硬性淘汰者生成淘汰理由指向被违反条件；事实一致性校验：对每条理由在 raw_text 中查找支持片段（字符串匹配 + 简单同义词词典），找不到则剔除；持久化 score_reasons（含 validated 标记）
   - Purpose: 完成需求 10
@@ -149,7 +149,7 @@
   - _Requirements: 10.1, 10.2, 10.3_
   - _Prompt: Implement the task for spec resume-screening, first run spec-workflow-guide to get the workflow guide then implement the task: Role: 后端 / Prompt + NLP 工程师 | Task: 实现 ReasoningService（推荐理由生成 + 淘汰理由 + 事实一致性校验）+ 持久化 score_reasons。tasks.md 改 [-]。 | Restrictions: 理由格式必须是要点（bullet）3-5 条；事实校验必须找到原文支持（字符串匹配 + 简单同义词），找不到则剔除并在 validated=false；淘汰理由必须明确指向硬性条件（如 "学历不达标：本科 vs 要求硕士"）；不要把无法验证的"事实"输出给用户 | _Leverage: 任务 17、任务 16 | _Requirements: 10.1,10.2,10.3 | Success: 单测覆盖推荐理由生成/事实校验剔除/淘汰理由生成；集成测试覆盖端到端。`log-implementation` 记录 prompt、事实校验算法、reason schema，tasks.md 改 [x]_
 
-- [ ] 19. InterviewService（面试问题生成）
+- [x] 19. InterviewService（面试问题生成）
   - Files: `backend/app/services/interview.py`, `backend/app/schemas/interview.py`, `backend/app/api/interview.py`
   - 内容：评分完成后生成 5-8 个问题（覆盖技能/项目/短板/文化）；命中短板（如某必备技能 confidence 低）至少 1 条追问；regenerate 接口（temperature=0.8 + 保留历史 batch）；HR 反馈接口（写 interview_feedbacks）
   - Purpose: 完成需求 11
@@ -157,7 +157,7 @@
   - _Requirements: 11.1, 11.2, 11.3, 11.4_
   - _Prompt: Implement the task for spec resume-screening, first run spec-workflow-guide to get the workflow guide then implement the task: Role: 后端 / Prompt 工程师 | Task: 实现 InterviewService（生成 5-8 题 + 短板追问 + regenerate + 反馈记录）+ /api/interview 路由。tasks.md 改 [-]。 | Restrictions: 必备技能 `confidence < 0.7` 时至少 1 条短板追问；regenerate 必须 temperature=0.8 并保留历史 batch_id；反馈记录 reviewer_id + rating 1-5 + 文本；不要在前端默认显示反馈输入框（仅面试后开启） | _Leverage: 任务 17、任务 14 | _Requirements: 11.1,11.2,11.3,11.4 | Success: MockAdapter 单测覆盖正常生成/短板识别/regenerate；集成测试覆盖反馈记录。`log-implementation` 记录 prompt、问题维度 schema、endpoints，tasks.md 改 [x]_
 
-- [ ] 20. 编排服务（Screen+Score+Reason+Interview 一体触发）
+- [x] 20. 编排服务（Screen+Score+Reason+Interview 一体触发）
   - Files: `backend/app/services/screening_orchestrator.py`, `backend/app/api/screening.py`
   - 内容：run_screening(job_id, candidate_ids[]) 编排：① 调 Filter → ② 通过者入 Scorer 队列 → ③ Scorer 完成后触发 Reasoning + Interview（并行）；前端 /api/screening/run 提交 + SSE/WebSocket 进度推送（candidates 总数/已完成/失败）
   - Purpose: 把任务 16-19 串成可一键触发的流水线
@@ -165,7 +165,7 @@
   - _Requirements: 8, 9, 10, 11_
   - _Prompt: Implement the task for spec resume-screening, first run spec-workflow-guide to get the workflow guide then implement the task: Role: 后端 / 编排工程师 | Task: 实现 screening_orchestrator（Filter → Scorer → Reasoning+Interview 并行）+ /api/screening/run + SSE 进度推送。tasks.md 改 [-]。 | Restrictions: 任一阶段失败不阻塞其他候选人（错误聚合到 async_jobs.failed_reasons）；SSE 必须支持断线重连（基于 Last-Event-ID）；orchestrator 不允许直接调 LLM adapter（必须走各 service） | _Leverage: 任务 12、16、17、18、19 | _Requirements: 8,9,10,11 | Success: 集成测试用 5 候选人 mock 触发 run_screening 验证全流程；SSE 进度单测覆盖推送与断线。`log-implementation` 记录 orchestrator 接口、SSE 端点、错误聚合策略，tasks.md 改 [x]_
 
-- [ ] 21. AuditLogService + middleware
+- [x] 21. AuditLogService + middleware
   - Files: `backend/app/services/audit_log.py`, `backend/app/core/middleware/audit.py`
   - 内容：AuditLogService.log(actor, action, target_type, target_id, before, after)；FastAPI middleware 拦截所有写方法（POST/PUT/PATCH/DELETE）+ 显式 service 调用补充业务语义 action；前端查询 /api/audit-logs（admin only）
   - Purpose: 满足非功能需求（可靠/安全）+ 需求 8.4 改判追溯
@@ -173,7 +173,7 @@
   - _Requirements: 8.4, 安全非功能_
   - _Prompt: Implement the task for spec resume-screening, first run spec-workflow-guide to get the workflow guide then implement the task: Role: 后端 / 安全工程师 | Task: 实现 AuditLogService + FastAPI middleware（拦截写方法 + 显式 service 调用）+ /api/audit-logs 查询（admin only）。tasks.md 改 [-]。 | Restrictions: middleware 只记录写方法且只记录成功响应；敏感字段（password/token）必须脱敏；查询接口强制 admin；audit_logs 不可删除（应用层禁止 DELETE）；记录 IP 与 user-agent | _Leverage: models/audit_log.py | _Requirements: 8.4, 安全 | Success: 集成测试覆盖改判/职位更新/成员邀请均写审计；普通成员查 audit-logs 返回 403。`log-implementation` 记录 middleware 拦截规则、敏感字段白名单、endpoint，tasks.md 改 [x]_
 
-- [ ] 22. ExportService（Excel 异步导出）
+- [x] 22. ExportService（Excel 异步导出）
   - Files: `backend/app/services/export.py`, `backend/app/api/exports.py`, `frontend/components/ExportButton.tsx`
   - 内容：request_export(job_id, filters) 入 async_jobs；run_export 用 openpyxl 生成 xlsx（含可见字段 + 评分 + 理由 + 面试问题）；行数 > 阈值（如 5000）异步生成 + 邮件通知；download_url 返回 5min 签名 URL；跨 team 访问 404
   - Purpose: 完成需求 14.3
@@ -181,7 +181,7 @@
   - _Requirements: 14.3, 14.4_
   - _Prompt: Implement the task for spec resume-screening, first run spec-workflow-guide to get the workflow guide then implement the task: Role: 后端工程师 | Task: 实现 ExportService（request + run via Celery + 大文件异步邮件通知 + 签名 URL 下载）+ /api/exports 路由 + 前端 ExportButton。tasks.md 改 [-]。 | Restrictions: 行数 > 5000 强制异步；导出内容仅包含当前用户可见字段（按权限）；下载 URL 5min 过期；跨 team 访问返回 404；不要在前端直连对象存储 | _Leverage: 任务 8、任务 12、openpyxl | _Requirements: 14.3,14.4 | Success: 集成测试覆盖小文件同步导出、大文件异步 + 邮件、跨 team 404。`log-implementation` 记录 endpoints、Excel schema、阈值配置，tasks.md 改 [x]_
 
-- [ ] 23. 前端候选人列表页（三分组 + 排序 + 筛选 + 列自定义）
+- [x] 23. 前端候选人列表页（三分组 + 排序 + 筛选 + 列自定义）
   - Files: `frontend/app/jobs/[id]/candidates/page.tsx`, `frontend/components/CandidateTable.tsx`, `frontend/components/CandidateFilters.tsx`
   - 内容：三分组（通过/淘汰/待复核）+ 按总分倒序默认排序 + 子维度切换 + 任意字段筛选（学历、年限、技能、来源、评分区间）+ 表格密度切换 + 列自定义 + 保存视图（localStorage）；SSE 订阅筛选进度
   - Purpose: 完成需求 14.1, 9.2
@@ -189,15 +189,15 @@
   - _Requirements: 9.2, 14.1_
   - _Prompt: Implement the task for spec resume-screening, first run spec-workflow-guide to get the workflow guide then implement the task: Role: 前端工程师 | Task: 实现候选人列表页（三分组 + 排序 + 筛选 + 列自定义 + 保存视图 + SSE 进度订阅）。tasks.md 改 [-]。 | Restrictions: 列表分页（默认 50/页）+ 无限滚动可选；筛选条件持久化到 URL query（便于分享）；表格必须支持键盘导航；不要在前端做评分计算（一律走后端） | _Leverage: 任务 20、TanStack Table、shadcn/ui | _Requirements: 9.2,14.1 | Success: Playwright 覆盖排序/筛选/列自定义/视图保存/ESE 进度更新；Lighthouse 性能评分 ≥ 85。`log-implementation` 记录页面路由、组件树、TanStack Table 配置，tasks.md 改 [x]_
 
-- [ ] 24. 前端候选人详情页
-  - Files: `frontend/app/candidates/[id]/page.tsx`, `frontend/components/{ResumePreview, StructuredFields, ScoreBreakdown, ReasonsList, InterviewQuestions}.tsx`
+- [x] 24. 前端候选人详情页
+  - Files: `frontend/app/jobs/[id]/candidates/[candidateId]/page.tsx`, `frontend/components/{ResumePreview, StructuredFields, ScoreBreakdown, ReasonsList, InterviewQuestions, OverrideDialog, ActivityLog}.tsx`, `backend/app/schemas/candidate_detail.py`, `backend/app/services/candidate_detail.py`, `backend/app/api/candidates.py`（追加 3 端点）`
   - 内容：左侧原始简历预览（PDF.js / 图片）+ 右侧 tab：结构化字段 / 评分细项（含雷达图）/ 推荐理由（含"查看依据"高亮原文）/ 面试问题（含反馈输入）；底部操作日志（含改判历史）；HR 改判按钮 + 弹窗填理由
   - Purpose: 完成需求 14.2, 8.4, 11.4
   - _Leverage: 任务 16-21 后端 API；PDF.js_
   - _Requirements: 8.4, 10, 11.4, 14.2_
   - _Prompt: Implement the task for spec resume-screening, first run spec-workflow-guide to get the workflow guide then implement the task: Role: 前端工程师 | Task: 实现候选人详情页（简历预览 + 结构化字段 tab + 评分细项雷达图 + 推荐理由含依据高亮 + 面试问题含反馈 + 操作日志 + HR 改判）。tasks.md 改 [-]。 | Restrictions: "查看依据"必须高亮原文 span（基于 reasoning 携带的 char_offset 或 substring）；改判必须填理由；面试反馈输入默认折叠；详情页加载性能 LCP ≤ 2.5s | _Leverage: 任务 16-21 API、PDF.js、recharts | _Requirements: 8.4,10,11.4,14.2 | Success: Playwright 覆盖：打开详情 → 切 tab → 点击查看依据高亮 → 提交反馈 → HR 改判并查看日志。`log-implementation` 记录路由、tab 组件树、改判流程，tasks.md 改 [x]_
 
-- [ ] 25. Admin 后台（成员/LLM/邮箱/统计）
+- [x] 25. Admin 后台（成员/LLM/邮箱/统计）
   - Files: `frontend/app/admin/{members,llm,email,stats}/page.tsx`, `backend/app/api/admin.py`
   - 内容：成员管理（接任务 6）+ LLM 配置（primary/fallback/scope overrides/单模型超时/熔断阈值）+ 邮箱配置（接任务 11）+ 统计（token 用量、延迟 P95、成本、成功率，按 scope/模型/时间分组图表）
   - Purpose: 完成需求 13 + 管理需求
@@ -205,7 +205,7 @@
   - _Requirements: 13.1, 13.2, 13.3, 13.4_
   - _Prompt: Implement the task for spec resume-screening, first run spec-workflow-guide to get the workflow guide then implement the task: Role: 全栈工程师 | Task: 后端 /api/admin 路由（llm_config CRUD + stats 聚合查询）+ 前端 admin 4 个子页面（成员/LLM/邮箱/统计）。tasks.md 改 [-]。 | Restrictions: admin 路由强制 admin 角色；LLM 配置变更需写 audit_log；统计查询必须走索引（按 called_at + scope 复合索引）；图表默认 7 天可切 30 天；不要在前端做大数据聚合 | _Leverage: 任务 4、6、11、audit_logs、llm_calls | _Requirements: 13.1,13.2,13.3,13.4 | Success: Playwright 覆盖 admin 4 页面 CRUD + 统计图表渲染；权限边界测试。`log-implementation` 记录 endpoints、4 个 admin 页面组件、统计 SQL 聚合，tasks.md 改 [x]_
 
-- [ ] 26. 测试套件 + CI/CD + 生产部署
+- [x] 26. 测试套件 + CI/CD + 生产部署
   - Files: `backend/tests/**`, `frontend/__tests__/**`, `frontend/e2e/**`, `.github/workflows/{backend,frontend,e2e}.yml`, `docker-compose.prod.yml`, `README.md`
   - 内容：后端 pytest 覆盖率 ≥ 70% + testcontainers 集成测试；前端 Vitest + React Testing Library；Playwright 4 大 E2E 场景（详见 design.md `### End-to-End Testing`）；GitHub Actions（后端测试/前端测试/E2E/构建推送镜像）；生产 docker-compose（含 nginx 反向代理、PostgreSQL 持久卷、MinIO、backend/worker/beat/frontend）；README 部署文档
   - Purpose: 满足非功能需求（可靠/性能）+ 上线就绪

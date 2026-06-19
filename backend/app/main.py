@@ -14,15 +14,25 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.admin import router as admin_router
 from app.api.auth import router as auth_router
+from app.api.audit_logs import router as audit_logs_router
+from app.api.candidates import router as candidates_router
 from app.api.email_configs import router as email_configs_router
+from app.api.exports import router as exports_router
+from app.api.interview import router as interview_router
+from app.api.job_candidates import router as job_candidates_router
 from app.api.jobs import router as jobs_router
 from app.api.platform_imports import router as platform_imports_router
+from app.api.reasons import router as reasons_router
+from app.api.scores import router as scores_router
+from app.api.screening import router as screening_router
 from app.api.teams import router as teams_router
 from app.api.uploads import router as uploads_router
 from app.core.config import settings
 from app.core.db import engine
 from app.core.logging import configure_logging, get_logger
+from app.core.middleware.audit import AuditMiddleware
 from app.core.middleware.error_handler import install_error_handlers
 from app.core.middleware.request_id import RequestIdMiddleware
 
@@ -56,7 +66,9 @@ def create_app() -> FastAPI:
 
     # 中间件（执行顺序 LIFO：后添加的先执行）
     # RequestId 必须先添加（最外层），异常处理才能取到 request_id
+    # AuditMiddleware 在最内层（拿到 response 后才写审计）
     app.add_middleware(RequestIdMiddleware)
+    app.add_middleware(AuditMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
@@ -73,9 +85,18 @@ def create_app() -> FastAPI:
     app.include_router(auth_router, prefix="/api")
     app.include_router(teams_router, prefix="/api")
     app.include_router(jobs_router, prefix="/api")
+    app.include_router(job_candidates_router, prefix="/api")
+    app.include_router(candidates_router, prefix="/api")
+    app.include_router(screening_router, prefix="/api")
+    app.include_router(scores_router, prefix="/api")
+    app.include_router(reasons_router, prefix="/api")
+    app.include_router(interview_router, prefix="/api")
     app.include_router(uploads_router, prefix="/api")
     app.include_router(platform_imports_router, prefix="/api")
     app.include_router(email_configs_router, prefix="/api")
+    app.include_router(audit_logs_router, prefix="/api")
+    app.include_router(exports_router, prefix="/api")
+    app.include_router(admin_router, prefix="/api")
 
     @app.get("/health", tags=["system"])
     async def health() -> dict[str, str]:

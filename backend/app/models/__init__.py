@@ -25,6 +25,7 @@ from app.models.interview import InterviewFeedback, InterviewQuestion
 from app.models.invite import TeamInvite
 from app.models.job import Job, JobHardRequirement, JobVersion
 from app.models.llm_call import LLMCall
+from app.models.llm_config import LLMConfig
 from app.models.score import Score, ScoreReason
 from app.models.screening import ManualOverride, ScreeningResult
 from app.models.team import Team
@@ -57,6 +58,7 @@ __all__ = [
     "DedupMatch",
     # llm / async / email / audit
     "LLMCall",
+    "LLMConfig",
     "AsyncJob",
     "EmailConfig",
     "AuditLog",

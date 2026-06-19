@@ -287,22 +287,29 @@ async def test_extract_structured_handler_requires_target_id() -> None:
         await worker_tasks.extract_structured_handler(None, None)
 
 
-async def test_run_screening_stub_returns_status_marker() -> None:
-    result = await worker_tasks.run_screening_handler(
-        uuid.uuid4(), {"job_id": str(uuid.uuid4())}
-    )
-    assert result == {"status": "stub", "implemented_in": "task-15-17"}
+async def test_run_screening_handler_missing_target_raises() -> None:
+    """run_screening_handler 必须有 target_id（job_id）+ payload['candidate_ids']。"""
+    with pytest.raises(ValueError, match="target_id"):
+        await worker_tasks.run_screening_handler(None, {"candidate_ids": []})
 
 
-async def test_score_candidate_stub_returns_status_marker() -> None:
-    result = await worker_tasks.score_candidate_handler(
-        uuid.uuid4(), {"job_id": str(uuid.uuid4())}
-    )
-    assert result == {"status": "stub", "implemented_in": "task-18-20"}
+async def test_run_screening_handler_missing_candidate_ids_raises() -> None:
+    """run_screening_handler 缺 candidate_ids 应抛 ValueError。"""
+    with pytest.raises(ValueError, match="candidate_ids"):
+        await worker_tasks.run_screening_handler(uuid.uuid4(), {"job_id": str(uuid.uuid4())})
 
 
-async def test_run_export_stub_returns_status_marker() -> None:
-    result = await worker_tasks.run_export_handler(
-        uuid.uuid4(), {"format": "xlsx"}
-    )
-    assert result == {"status": "stub", "implemented_in": "task-22"}
+async def test_score_candidate_permanent_failure_on_missing_candidate() -> None:
+    """score_candidate_handler 现在接 ScorerService；候选人不存在 → PermanentScoreFailure。"""
+    from app.workers.tasks import PermanentScoreFailure
+
+    with pytest.raises(PermanentScoreFailure):
+        await worker_tasks.score_candidate_handler(
+            uuid.uuid4(), {"job_id": str(uuid.uuid4())}
+        )
+
+
+async def test_run_export_handler_missing_job_id_raises() -> None:
+    """run_export_handler 已接入任务 22 真实逻辑；缺 payload['job_id'] 抛 ValueError。"""
+    with pytest.raises(ValueError, match="job_id"):
+        await worker_tasks.run_export_handler(uuid.uuid4(), {"format": "xlsx"})

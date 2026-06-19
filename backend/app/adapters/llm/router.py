@@ -256,7 +256,11 @@ class LLMRouter:
         success: bool,
         error: str | None = None,
     ) -> None:
-        """写 llm_calls 表（best-effort：DB 失败不阻塞主流程）。"""
+        """写 llm_calls 表（best-effort：DB 失败不阻塞主流程）。
+
+        成功写入后把 ``call.id`` 回写到 ``response.extra["llm_call_id"]``，
+        让调用方能在持久化业务数据时引用。
+        """
         try:
             from app.core.db import AsyncSessionLocal
             from app.models.llm_call import LLMCall
@@ -283,6 +287,8 @@ class LLMRouter:
                 )
                 session.add(call)
                 await session.commit()
+                if response is not None and success:
+                    response.extra["llm_call_id"] = call.id
         except Exception as e:
             _logger.warning(
                 "llm_call_log_failed",

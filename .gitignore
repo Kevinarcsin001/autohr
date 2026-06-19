@@ -83,3 +83,5 @@ keys/
 *.tmp
 *.bak
 .cache/
+celerybeat-schedule
+celerybeat-schedule.db
