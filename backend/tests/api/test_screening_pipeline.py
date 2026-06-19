@@ -31,7 +31,6 @@ from app.schemas.score import ScoreDimensions
 from app.services.interview import InterviewService
 from app.services.screening_orchestrator import progress_store
 
-
 # ============================================================================
 # DB 清理 / fixtures
 # ============================================================================

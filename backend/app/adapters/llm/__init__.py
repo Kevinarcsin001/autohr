@@ -35,7 +35,6 @@ def build_default_router() -> LLMRouter:
 
 from app.core.config import settings  # noqa: E402
 
-
 __all__ = [
     "BaseLLMAdapter",
     "Message",

@@ -17,9 +17,7 @@ refresh token 策略：
 """
 from __future__ import annotations
 
-from uuid import UUID
-
-from fastapi import APIRouter, Cookie, Depends, Response, status
+from fastapi import APIRouter, Cookie, Response, status
 from sqlalchemy import select
 
 from app.core.deps import AdminUser, CurrentUser, DbSession

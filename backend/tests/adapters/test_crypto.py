@@ -13,7 +13,6 @@ import pytest
 from app.adapters import crypto
 from app.core.config import settings
 
-
 # ============================================================================
 # 工具：测试用 Fernet key 注入
 # ============================================================================

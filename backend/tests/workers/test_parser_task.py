@@ -24,14 +24,13 @@ from app.models.candidate import (
     CandidateSource,
 )
 from app.models.team import Team
-from app.services.parser.ocr import OCRAdapter
 from app.services.parser import ParserService
+from app.services.parser.ocr import OCRAdapter
 from app.workers.parser_task import (
     ResumeNotFound,
     StorageObjectMissing,
     run_parse,
 )
-
 
 # ============================================================================
 # Fake
@@ -80,8 +79,9 @@ def _make_text_pdf(text: str) -> bytes:
 
 
 def _make_scanned_pdf() -> bytes:
-    from PIL import Image
     import io
+
+    from PIL import Image
 
     img = Image.new("RGB", (200, 300), color="white")
     buf = io.BytesIO()

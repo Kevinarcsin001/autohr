@@ -17,9 +17,9 @@ from sqlalchemy import select, text
 from app.core.db import AsyncSessionLocal
 from app.models.async_job import AsyncJob
 from app.services.async_job_service import (
-    AsyncJobService,
     ERROR_SUMMARY_MAX_CHARS,
     MAX_ATTEMPTS,
+    AsyncJobService,
 )
 
 

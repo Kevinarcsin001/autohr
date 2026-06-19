@@ -18,13 +18,12 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.storage import S3StorageAdapter, get_storage
 from app.core.logging import get_logger
 from app.models.candidate import CandidateResume
-from app.services.parser import ParserService, ParsedResult
+from app.services.parser import ParsedResult, ParserService
 
 logger = get_logger(__name__)
 

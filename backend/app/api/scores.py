@@ -14,7 +14,6 @@
 from __future__ import annotations
 
 from uuid import UUID
-from typing import Optional
 
 from fastapi import APIRouter, Query, status
 from sqlalchemy import select
@@ -87,7 +86,8 @@ async def run_scores(
         )
     )
     valid_candidates = list(result.scalars().all())
-    valid_ids = {c.id for c in valid_candidates}
+    # 过滤有效 candidate；后续 service 会再次按 id 查询，此处仅做 team 校验
+    _ = {c.id for c in valid_candidates}
 
     service = ScorerService(db)
 

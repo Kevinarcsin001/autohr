@@ -28,7 +28,6 @@ from app.models.team import Team
 from app.models.user import User
 from app.services.dedup import DedupService
 
-
 # ============================================================================
 # 纯函数单测
 # ============================================================================
@@ -417,9 +416,12 @@ class TestFlagForReview:
         assert match.similarity == {"phone_match": 1.0}
 
     async def test_same_id_raises(self) -> None:
+        from app.core.middleware.error_handler import ValidationError
+
         cid = uuid.uuid4()
         async with AsyncSessionLocal() as session:
-            with pytest.raises(Exception):  # ValidationError
+            # B017：使用具体异常类，避免断言 blind Exception
+            with pytest.raises(ValidationError):
                 await DedupService(session).flag_for_review(
                     candidate_a=cid, candidate_b=cid, similarity={}
                 )

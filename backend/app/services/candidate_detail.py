@@ -18,12 +18,11 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import select, union_all, literal, func
+from sqlalchemy import func, literal, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
-from app.core.logging import get_logger
 from app.adapters.storage import S3StorageAdapter, get_storage
+from app.core.logging import get_logger
 from app.models.audit import AuditLog
 from app.models.candidate import (
     Candidate,

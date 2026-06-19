@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.adapters.llm import LLMRouter
 from app.core.logging import get_logger
 from app.models.candidate import CandidateResume, ParsedStructure
-from app.services.extractor import ExtractResult, ExtractorService
+from app.services.extractor import ExtractorService, ExtractResult
 
 logger = get_logger(__name__)
 

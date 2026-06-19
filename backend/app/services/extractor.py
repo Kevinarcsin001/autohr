@@ -19,18 +19,16 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import uuid
 from dataclasses import dataclass
-from typing import Literal
 
 from pydantic import ValidationError
 
 from app.adapters.llm import (
-    LLMSchemaError,
     LLMError,
     LLMResponse,
     LLMRouter,
+    LLMSchemaError,
     Message,
 )
 from app.core.logging import get_logger

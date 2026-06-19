@@ -12,7 +12,6 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-
 # ============================================================================
 # LLM 输出 schema（response_schema 用）
 # ============================================================================

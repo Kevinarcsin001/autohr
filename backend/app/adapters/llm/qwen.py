@@ -84,7 +84,7 @@ class QwenAdapter:
                     temperature=temperature,
                     timeout=timeout,
                 )
-            except asyncio.TimeoutError as e:
+            except TimeoutError as e:
                 raise LLMTimeoutError(f"qwen timeout after {timeout}s") from e
             except Exception as e:
                 msg = str(e).lower()

@@ -21,7 +21,6 @@
 from __future__ import annotations
 
 from uuid import UUID
-from typing import Optional
 
 from fastapi import APIRouter, Query
 
@@ -29,10 +28,10 @@ from app.core.deps import CurrentUser, DbSession
 from app.core.middleware.error_handler import ForbiddenError, NotFoundError
 from app.models.job import Job
 from app.schemas.candidate_list import (
-    CandidateListResponse,
     CandidateListFilters,
+    CandidateListResponse,
 )
-from app.services.candidate_list import CandidateListService, DEFAULT_PAGE_SIZE
+from app.services.candidate_list import DEFAULT_PAGE_SIZE, CandidateListService
 
 router = APIRouter(prefix="/jobs", tags=["job-candidates"])
 
@@ -64,15 +63,15 @@ async def list_job_candidates(
     user: CurrentUser,
     db: DbSession,
     group: str = Query(default="all", pattern="^(all|passed|disqualified|pending)$"),
-    min_score: Optional[int] = Query(default=None, ge=0, le=100),
-    max_score: Optional[int] = Query(default=None, ge=0, le=100),
-    education: Optional[str] = Query(
+    min_score: int | None = Query(default=None, ge=0, le=100),
+    max_score: int | None = Query(default=None, ge=0, le=100),
+    education: str | None = Query(
         default=None, pattern="^(high_school|bachelor|master|phd|other)$"
     ),
-    min_years: Optional[int] = Query(default=None, ge=0, le=80),
-    max_years: Optional[int] = Query(default=None, ge=0, le=80),
-    skill: Optional[str] = Query(default=None, max_length=100),
-    source: Optional[str] = Query(
+    min_years: int | None = Query(default=None, ge=0, le=80),
+    max_years: int | None = Query(default=None, ge=0, le=80),
+    skill: str | None = Query(default=None, max_length=100),
+    source: str | None = Query(
         default=None, pattern="^(upload|platform|email)$"
     ),
     sort_by: str = Query(

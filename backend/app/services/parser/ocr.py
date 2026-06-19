@@ -113,8 +113,8 @@ class PaddleOCRAdapter(OCRAdapter):
         assert self._engine is not None
         # PaddleOCR 接受文件路径或 numpy array；用 PIL 转 ndarray
         try:
-            from PIL import Image  # type: ignore[import-not-found]
             import numpy as np  # type: ignore[import-not-found]
+            from PIL import Image  # type: ignore[import-not-found]
         except ImportError as exc:
             raise RuntimeError(
                 "Pillow/numpy 未安装，无法将字节流转为 PaddleOCR 输入"

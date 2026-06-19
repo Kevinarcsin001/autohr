@@ -18,7 +18,6 @@ from app.models.candidate import (
 from app.models.job import Job, JobHardRequirement
 from app.models.screening import ScreeningResult
 
-
 # ============================================================================
 # 工具
 # ============================================================================

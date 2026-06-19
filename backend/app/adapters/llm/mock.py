@@ -15,15 +15,14 @@ from typing import Any, TypeVar
 
 from pydantic import BaseModel
 
+from app.adapters.llm._json import parse_to_schema
 from app.adapters.llm.base import (
     LLMError,
     LLMResponse,
-    LLMSchemaError,
     Message,
     _Latency,
     estimate_cost_cny,
 )
-from app.adapters.llm._json import parse_to_schema
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -31,8 +30,8 @@ T = TypeVar("T", bound=BaseModel)
 def _build_mock_json(schema: type[BaseModel]) -> str:
     """根据 schema 字段类型构造合法 mock JSON。"""
     import json
-    from typing import get_args, get_origin, get_type_hints
     import uuid
+    from typing import get_args, get_origin, get_type_hints
 
     sample: dict[str, Any] = {}
     hints = get_type_hints(schema)

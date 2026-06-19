@@ -34,14 +34,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.llm import (
     LLMError,
-    LLMSchemaError,
     LLMResponse,
     LLMRouter,
+    LLMSchemaError,
     Message,
 )
 from app.core.logging import get_logger
 from app.models.score import Score, ScoreReason
-from app.schemas.reason import DisqualifyReasons, RecommendReasons
+from app.schemas.reason import RecommendReasons
 
 logger = get_logger(__name__)
 

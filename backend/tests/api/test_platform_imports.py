@@ -14,7 +14,6 @@ from app.core.db import AsyncSessionLocal
 from app.main import app
 from app.models.candidate import Candidate
 
-
 # ============================================================================
 # 工具
 # ============================================================================

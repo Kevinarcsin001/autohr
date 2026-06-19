@@ -16,7 +16,7 @@ from typing import Any
 import pytest
 from sqlalchemy import select, text
 
-from app.adapters.llm import LLMError, LLMSchemaError, LLMResponse, MockAdapter
+from app.adapters.llm import LLMError, LLMResponse, LLMSchemaError, MockAdapter
 from app.adapters.llm.router import LLMRouter
 from app.core.db import AsyncSessionLocal
 from app.core.middleware.error_handler import NotFoundError, ValidationError
@@ -32,13 +32,12 @@ from app.models.team import Team
 from app.models.user import User
 from app.schemas.interview import FeedbackRequest, InterviewQuestions
 from app.services.interview import (
-    InterviewError,
-    InterviewService,
     _FIRST_TEMPERATURE,
     _LOW_CONFIDENCE_THRESHOLD,
     _REGENERATE_TEMPERATURE,
+    InterviewError,
+    InterviewService,
 )
-
 
 # ============================================================================
 # DB 清理

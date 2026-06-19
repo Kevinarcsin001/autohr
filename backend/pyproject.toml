@@ -79,11 +79,30 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "N", "RUF"]
-ignore = ["E501"]
+# RUF001/002/003：中文标点 / 全角字符识别（项目大量使用中文，误报噪声）
+# RUF022：__all__ 排序（无功能性影响）
+# RUF100：未使用的 noqa（与 ignore 配合时易误报）
+# RUF059：未使用的 unpacked 变量（测试 fixture 解构常见）
+# B008：函数默认值调用（FastAPI Depends 必备模式）
+# N818：异常类后缀（与项目命名约定冲突）
+# UP017：UTC 时区字面量（不影响功能）
+ignore = [
+    "E501",
+    "RUF001",
+    "RUF002",
+    "RUF003",
+    "RUF022",
+    "RUF100",
+    "RUF059",
+    "B008",
+    "N818",
+    "UP017",
+]
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
 "alembic/versions/*" = ["E", "F", "W", "I", "B", "UP", "N"]
+"tests/**/*.py" = ["F401", "F841"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

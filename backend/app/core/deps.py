@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_db
 from app.core.logging import get_logger
-from app.core.middleware.error_handler import ForbiddenError, UnauthorizedError
+from app.core.middleware.error_handler import ForbiddenError
 from app.core.security import JWTError, decode_token
 from app.models.user import User
 

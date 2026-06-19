@@ -31,7 +31,6 @@ from app.models.screening import ScreeningResult
 from app.models.team import Team
 from app.models.user import User
 
-
 # ============================================================================
 # DB 清理 / fixtures
 # ============================================================================

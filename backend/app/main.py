@@ -15,8 +15,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.admin import router as admin_router
-from app.api.auth import router as auth_router
 from app.api.audit_logs import router as audit_logs_router
+from app.api.auth import router as auth_router
 from app.api.candidates import router as candidates_router
 from app.api.email_configs import router as email_configs_router
 from app.api.exports import router as exports_router

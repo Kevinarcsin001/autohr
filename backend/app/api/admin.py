@@ -21,7 +21,6 @@ from app.core.deps import AdminUser, DbSession
 from app.core.middleware.error_handler import NotFoundError
 from app.schemas.admin import (
     LLMConfigListResponse,
-    LLMConfigOut,
     LLMConfigUpsertRequest,
     LLMConfigUpsertResponse,
     StatsRange,
@@ -167,15 +166,12 @@ async def get_stats(
     """
     if admin.team_id is None:
         # 无 team → 返回空统计（避免 403 阻塞 UI）
-        from datetime import datetime, timezone
-
         from app.schemas.admin import (
             StatsByDimension,
             StatsSummary,
             StatsTimeSeries,
         )
 
-        now = datetime.now(timezone.utc)
         empty_summary = StatsSummary(
             range=range,  # type: ignore[arg-type]
             total_calls=0,

@@ -7,10 +7,8 @@
 from __future__ import annotations
 
 import uuid
-from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
-
 
 # ============================================================================
 # LLM 输出 schema（response_schema 用）

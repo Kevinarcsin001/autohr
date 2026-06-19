@@ -10,7 +10,6 @@ from sqlalchemy import text
 from app.core.db import AsyncSessionLocal
 from app.main import app
 
-
 # ============================================================================
 # 工具
 # ============================================================================
@@ -453,6 +452,7 @@ async def test_cross_team_access_returns_403(client: AsyncClient) -> None:
 
     async with AsyncSessionLocal() as session:
         from sqlalchemy import select
+
         from app.models.user import User
 
         team_b = Team(name="TeamB")

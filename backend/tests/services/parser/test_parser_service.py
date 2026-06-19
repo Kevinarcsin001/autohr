@@ -26,11 +26,10 @@ import pytest
 from docx import Document
 from PIL import Image, ImageDraw, ImageFont
 
-from app.services.parser import ParserService, ParsedResult
+from app.services.parser import ParsedResult, ParserService
 from app.services.parser.docx_parser import DOCXParseError, parse_docx
 from app.services.parser.ocr import OCRAdapter, StubOCRAdapter
 from app.services.parser.pdf_parser import PDFParseError, parse_pdf
-
 
 # ============================================================================
 # Fixture 工厂

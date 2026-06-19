@@ -17,7 +17,7 @@ rasterizer 跳过。
 from __future__ import annotations
 
 import io
-from typing import Any, Callable
+from collections.abc import Callable
 
 import pdfplumber
 

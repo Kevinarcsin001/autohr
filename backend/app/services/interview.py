@@ -26,7 +26,6 @@ from __future__ import annotations
 import hashlib
 import uuid
 from dataclasses import dataclass
-from typing import Any
 
 from pydantic import ValidationError
 from sqlalchemy import select
@@ -34,13 +33,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.llm import (
     LLMError,
-    LLMSchemaError,
     LLMResponse,
     LLMRouter,
+    LLMSchemaError,
     Message,
 )
 from app.core.logging import get_logger
-from app.core.middleware.error_handler import NotFoundError, ValidationError as AppValidationError
+from app.core.middleware.error_handler import NotFoundError
+from app.core.middleware.error_handler import ValidationError as AppValidationError
 from app.models.candidate import (
     Candidate,
     CandidateResume,
@@ -53,7 +53,6 @@ from app.models.user import User
 from app.schemas.candidate_structure import CandidateStructure
 from app.schemas.interview import (
     FeedbackRequest,
-    InterviewQuestionOut,
     InterviewQuestions,
 )
 

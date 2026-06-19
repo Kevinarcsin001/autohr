@@ -31,7 +31,6 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import AsyncSessionLocal
 from app.core.logging import get_logger
@@ -39,7 +38,6 @@ from app.models.candidate import Candidate
 from app.models.screening import ScreeningResult
 from app.services.filter import FilterService
 from app.services.interview import InterviewError, InterviewService
-from app.services.scorer import ScorerError, ScorerService, ScoringInput, build_scoring_snippet
 from app.workers.scorer_task import (
     CandidateNotFound,
     JobNotFound,
@@ -194,7 +192,7 @@ class ProgressStore:
                     return e
             try:
                 await asyncio.wait_for(cond.wait(), timeout=timeout)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 return None
             events = self._events.get(run_id, [])
             for e in events:

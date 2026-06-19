@@ -16,7 +16,7 @@ import uuid
 import pytest
 from sqlalchemy import select, text
 
-from app.adapters.llm import LLMError, LLMSchemaError, LLMResponse, MockAdapter
+from app.adapters.llm import LLMError, LLMResponse, LLMSchemaError, MockAdapter
 from app.adapters.llm.router import LLMRouter
 from app.core.db import AsyncSessionLocal
 from app.models.candidate import (
@@ -34,7 +34,6 @@ from app.workers.extractor_task import (
     ResumeTextMissing,
     run_extract,
 )
-
 
 # ============================================================================
 # DB 清理

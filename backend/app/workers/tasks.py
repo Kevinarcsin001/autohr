@@ -27,7 +27,7 @@ from celery.signals import worker_process_init
 
 from app.core.db import AsyncSessionLocal
 from app.core.logging import get_logger
-from app.services.async_job_service import AsyncJobService, MAX_ATTEMPTS
+from app.services.async_job_service import MAX_ATTEMPTS, AsyncJobService
 from app.services.ingestion.email_fetcher import fetch_all_active_configs
 from app.workers.celery_app import app as celery_app
 
@@ -83,7 +83,7 @@ def async_task(
                 return asyncio.run(_run_handler(_wrapped.__name__, task_type, job_id, handler, autoretry_backoff, self))
             except _RetrySignal as rs:
                 # 我们的 handler 决定抛 _RetrySignal 而非 Exception 来避免 celery 直接转 failed
-                raise self.retry(exc=rs.cause, countdown=rs.countdown)
+                raise self.retry(exc=rs.cause, countdown=rs.countdown) from rs
             except Exception:
                 # 真正的失败：已经写过 mark_failed，不要让 celery 再自动重试
                 logger.exception(

@@ -30,7 +30,6 @@ from app.models.team import Team
 from app.models.user import User
 from app.workers.scorer_task import run_score
 
-
 # ============================================================================
 # DB 清理
 # ============================================================================

@@ -16,10 +16,9 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import Any, Literal, Protocol, runtime_checkable, TypeVar
+from typing import Any, Literal, Protocol, TypeVar, runtime_checkable
 
 from pydantic import BaseModel
-
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -138,7 +137,7 @@ class _Latency:
     def __init__(self) -> None:
         self.ms: int = 0
 
-    def __enter__(self) -> "_Latency":
+    def __enter__(self) -> _Latency:
         self._start = time.perf_counter()
         return self
 

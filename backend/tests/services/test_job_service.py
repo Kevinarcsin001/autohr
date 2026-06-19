@@ -15,7 +15,7 @@ from __future__ import annotations
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import select, text
 
 from app.core.db import AsyncSessionLocal
 from app.core.middleware.error_handler import ForbiddenError, NotFoundError
@@ -26,8 +26,6 @@ from app.schemas.job import (
     JobUpdateRequest,
 )
 from app.services import auth_service, job_service
-from sqlalchemy import select
-
 
 # ============================================================================
 # 工具

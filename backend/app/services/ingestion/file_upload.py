@@ -20,7 +20,6 @@
 """
 from __future__ import annotations
 
-import logging
 import uuid
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING

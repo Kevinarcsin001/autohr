@@ -60,7 +60,7 @@ class UserOut(BaseModel):
     team_id: str | None = None
 
     @classmethod
-    def from_orm_user(cls, user: object) -> "UserOut":
+    def from_orm_user(cls, user: object) -> UserOut:
         return cls(
             id=str(user.id),  # type: ignore[attr-defined]
             email=user.email,  # type: ignore[attr-defined]

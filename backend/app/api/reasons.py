@@ -21,7 +21,7 @@ from sqlalchemy import select
 from app.core.deps import CurrentUser, DbSession
 from app.core.middleware.error_handler import ForbiddenError, NotFoundError
 from app.models.candidate import Candidate
-from app.models.score import Score, ScoreReason
+from app.models.score import Score
 from app.schemas.reason import ReasonListResponse, ReasonOut
 from app.services.reasoning import ReasoningService
 

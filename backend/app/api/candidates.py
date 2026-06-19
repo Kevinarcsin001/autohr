@@ -15,7 +15,6 @@
 from __future__ import annotations
 
 from uuid import UUID
-from typing import Optional
 
 from fastapi import APIRouter, Query, status
 from sqlalchemy import select
@@ -37,9 +36,9 @@ from app.schemas.dedup import (
     MergeResponse,
 )
 from app.services.candidate_detail import (
-    CandidateDetailService,
     DEFAULT_ACTIVITY_PAGE_SIZE,
     MAX_ACTIVITY_PAGE_SIZE,
+    CandidateDetailService,
 )
 from app.services.dedup import DedupService
 
@@ -61,7 +60,7 @@ def _require_team(user) -> UUID:
 async def list_dedup_matches(
     user: CurrentUser,
     db: DbSession,
-    status_filter: Optional[str] = Query(
+    status_filter: str | None = Query(
         default="pending", pattern="^(pending|merged|rejected|all)$"
     ),
     page: int = Query(default=1, ge=1),

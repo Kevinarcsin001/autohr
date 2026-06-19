@@ -23,7 +23,7 @@ from sqlalchemy import select, text
 
 from app.core.db import AsyncSessionLocal
 from app.models.async_job import AsyncJob
-from app.services.async_job_service import AsyncJobService, MAX_ATTEMPTS
+from app.services.async_job_service import MAX_ATTEMPTS, AsyncJobService
 from app.workers import tasks as worker_tasks
 
 

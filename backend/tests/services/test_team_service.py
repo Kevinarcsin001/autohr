@@ -20,7 +20,6 @@ from app.core.middleware.error_handler import (
 )
 from app.services import auth_service, team_service
 
-
 # ============================================================================
 # 工具
 # ============================================================================
@@ -207,9 +206,9 @@ async def test_remove_member_unbinds_team_id() -> None:
 
         # 验证 member 已解绑
         async with AsyncSessionLocal() as session:
-            from app.models.user import User
-
             from sqlalchemy import select
+
+            from app.models.user import User
 
             result = await session.execute(select(User).where(User.id == member_id))
             user = result.scalar_one()

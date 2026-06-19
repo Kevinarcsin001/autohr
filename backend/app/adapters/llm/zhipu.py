@@ -91,7 +91,7 @@ class ZhipuAdapter:
                 raw = await asyncio.to_thread(
                     client.chat.completions.create, **kwargs
                 )
-            except asyncio.TimeoutError as e:
+            except TimeoutError as e:
                 raise LLMTimeoutError(f"zhipu timeout after {timeout}s") from e
             except Exception as e:
                 # zhipuai SDK 抛各种异常（APIStatusError / APIRequestError 等）
@@ -109,7 +109,7 @@ class ZhipuAdapter:
         if response_schema is not None:
             try:
                 parsed = parse_to_schema(content, response_schema)
-            except LLMSchemaError as e:
+            except LLMSchemaError:
                 _logger.warning(
                     "zhipu_schema_parse_failed",
                     model=used_model,

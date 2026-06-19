@@ -36,8 +36,8 @@ from app.models.candidate import (
 from app.models.score import Score
 from app.models.screening import ScreeningResult
 from app.schemas.candidate_list import (
-    CandidateListItem,
     CandidateListFilters,
+    CandidateListItem,
 )
 
 logger = get_logger(__name__)

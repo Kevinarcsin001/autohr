@@ -25,7 +25,6 @@ from app.models.team import Team
 from app.models.user import User
 from app.services.scorer import ScorerService
 
-
 _VALID_SCORES_JSON = json.dumps(
     {
         "total": 85,

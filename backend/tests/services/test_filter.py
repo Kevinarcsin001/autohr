@@ -30,7 +30,6 @@ from app.schemas.candidate_structure import (
 )
 from app.services.filter import EDUCATION_RANK, FilterService
 
-
 # ============================================================================
 # 纯函数：evaluate
 # ============================================================================

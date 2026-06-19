@@ -15,7 +15,6 @@ from app.models.score import Score, ScoreReason
 from app.models.team import Team
 from app.models.user import User
 
-
 # ============================================================================
 # 工具
 # ============================================================================

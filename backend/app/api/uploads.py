@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter
 
 from app.core.deps import CurrentUser, DbSession
 from app.core.logging import get_logger

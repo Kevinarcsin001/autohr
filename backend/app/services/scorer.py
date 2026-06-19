@@ -28,9 +28,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.llm import (
     LLMError,
-    LLMSchemaError,
     LLMResponse,
     LLMRouter,
+    LLMSchemaError,
     Message,
 )
 from app.core.logging import get_logger

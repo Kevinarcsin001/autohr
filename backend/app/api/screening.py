@@ -15,11 +15,9 @@
 """
 from __future__ import annotations
 
-import asyncio
 import json
 import uuid
 from uuid import UUID
-from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Header, Query, status
 from fastapi.responses import StreamingResponse
@@ -131,7 +129,7 @@ async def list_results(
     user: CurrentUser,
     db: DbSession,
     job_id: UUID = Query(...),
-    disqualified: Optional[bool] = Query(default=None),
+    disqualified: bool | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
 ) -> ScreeningResultListResponse:
@@ -258,7 +256,7 @@ async def trigger_pipeline(
 async def stream_pipeline_events(
     run_id: UUID,
     user: CurrentUser,
-    last_event_id: Optional[str] = Header(
+    last_event_id: str | None = Header(
         default=None, alias="Last-Event-ID"
     ),
 ) -> StreamingResponse:

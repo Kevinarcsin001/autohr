@@ -32,7 +32,6 @@ from app.adapters.storage import (
 )
 from app.core.config import settings
 
-
 # ============================================================================
 # Fixtures
 # ============================================================================
@@ -84,7 +83,7 @@ async def test_put_and_get_roundtrip(adapter: S3StorageAdapter) -> None:
 
 async def test_put_with_unicode_content(adapter: S3StorageAdapter) -> None:
     key = _rand_key()
-    payload = "简历内容".encode("utf-8")
+    payload = "简历内容".encode()
     await adapter.put(key, payload, mime="text/plain; charset=utf-8")
     assert (await adapter.get(key)) == payload
 

@@ -1,8 +1,9 @@
 """Team 模型：多租户隔离的最小单位。"""
 from __future__ import annotations
 
-from app.models.base import Base, CreatedAtMixin, UUIDPKMixin
 from sqlalchemy.orm import Mapped
+
+from app.models.base import Base, CreatedAtMixin, UUIDPKMixin
 
 
 class Team(UUIDPKMixin, CreatedAtMixin, Base):

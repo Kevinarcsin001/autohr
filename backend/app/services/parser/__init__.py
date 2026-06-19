@@ -10,9 +10,9 @@ from __future__ import annotations
 
 from app.services.parser.service import (
     LOW_TEXT_MIN_LENGTH,
+    ParsedResult,
     ParserError,
     ParserService,
-    ParsedResult,
 )
 
 __all__ = [

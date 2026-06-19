@@ -16,7 +16,6 @@ from sqlalchemy.dialects.postgresql import ENUM as PG_ENUM
 
 from app.core.config import settings
 
-
 # ============================================================================
 # Fernet 加密字符串类型
 # ============================================================================

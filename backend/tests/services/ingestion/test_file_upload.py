@@ -25,7 +25,6 @@ from app.schemas.upload import (
 )
 from app.services.ingestion.file_upload import FileUploadService
 
-
 # ============================================================================
 # Fixtures
 # ============================================================================

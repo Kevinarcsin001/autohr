@@ -21,7 +21,6 @@ import io
 import re
 import uuid
 import zipfile
-from collections.abc import Awaitable, Callable
 from typing import Any
 
 import magic
@@ -206,9 +205,9 @@ def _is_zip_bytes(content: bytes) -> bool:
 
 def _is_excel_bytes(content: bytes) -> bool:
     # XLSX (zip-based) 或 XLS (CFB)
-    return content[:4] == b"PK\x03\x04" and content[
+    return (content[:4] == b"PK\x03\x04" and content[
         4:8
-    ] != b"" or content[:8] == b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
+    ] != b"") or content[:8] == b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
 
 
 def _sniff_mime(content: bytes) -> str:
@@ -775,7 +774,7 @@ class PlatformImportAdapter:
             await self.storage.put(
                 file_key, content, mime=real_mime, encrypt=True
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception:  # noqa: BLE001
             logger.exception(
                 "platform_attachment_storage_failed",
                 filename=original_name,

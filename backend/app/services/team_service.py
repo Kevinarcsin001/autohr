@@ -16,7 +16,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.middleware.error_handler import (
-    ConflictError,
     ForbiddenError,
     NotFoundError,
     ValidationError,
@@ -24,7 +23,6 @@ from app.core.middleware.error_handler import (
 from app.models.team import Team
 from app.models.user import User
 from app.services import auth_service
-
 
 # ============================================================================
 # 查询

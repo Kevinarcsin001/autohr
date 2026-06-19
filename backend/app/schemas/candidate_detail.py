@@ -25,7 +25,6 @@ from app.schemas.candidate_structure import CandidateStructure
 from app.schemas.score import ScoreOut
 from app.schemas.screening import ScreeningResultOut
 
-
 # ============================================================================
 # detail 端点
 # ============================================================================
@@ -46,7 +45,7 @@ class CandidateResumeOut(BaseModel):
 class CandidateDetailResponse(BaseModel):
     """候选人详情聚合响应。"""
 
-    candidate: "CandidateSummary"
+    candidate: CandidateSummary
     screening_result: ScreeningResultOut | None = None
     score: ScoreOut | None = None
     parsed_structure: CandidateStructure | None = None

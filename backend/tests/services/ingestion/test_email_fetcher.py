@@ -30,7 +30,6 @@ from app.services.ingestion.email_fetcher import (
     fetch_all_active_configs,
 )
 
-
 # ============================================================================
 # Fake IMAP（imap_tools 接口最小实现）
 # ============================================================================
@@ -60,7 +59,7 @@ class FakeMailboxLoginContext:
         self._msgs = msgs
         self._raise = raise_on_login
 
-    def __enter__(self) -> "FakeMailboxLoginContext":
+    def __enter__(self) -> FakeMailboxLoginContext:
         if self._raise is not None:
             raise self._raise
         return self
@@ -82,7 +81,7 @@ class FakeMailbox:
         self.last_host: str | None = None
         self.last_port: int | None = None
 
-    def __call__(self, host: str, port: int) -> "FakeMailbox":
+    def __call__(self, host: str, port: int) -> FakeMailbox:
         self.last_host = host
         self.last_port = port
         return self

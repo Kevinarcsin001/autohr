@@ -17,7 +17,6 @@ from app.core.security import (
     verify_password,
 )
 
-
 # ============================================================================
 # bcrypt 密码哈希
 # ============================================================================
@@ -132,7 +131,6 @@ class TestJWT:
         """用另一对密钥签发的 token 用本服务公钥校验 → 拒绝。"""
         from cryptography.hazmat.primitives import serialization
         from cryptography.hazmat.primitives.asymmetric import rsa
-
         from jose import jwt as jose_jwt
 
         from app.core.config import settings

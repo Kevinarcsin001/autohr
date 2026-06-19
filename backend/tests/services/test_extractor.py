@@ -22,16 +22,15 @@ import pytest
 from pydantic import ValidationError
 
 from app.adapters.llm import (
-    LLMSchemaError,
     LLMError,
     LLMResponse,
-    MockAdapter,
+    LLMSchemaError,
     Message,
+    MockAdapter,
 )
 from app.adapters.llm.router import LLMRouter
 from app.schemas.candidate_structure import CandidateStructure
 from app.services.extractor import ExtractorService
-
 
 # ============================================================================
 # Fixtures

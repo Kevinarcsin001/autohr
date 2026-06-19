@@ -192,7 +192,7 @@ class ExportService:
 
         if not await self._storage.exists(file_key):
             raise NotFoundError(
-                f"导出文件不存在或已过期", resource="export_file"
+                "导出文件不存在或已过期", resource="export_file"
             )
         return await self._storage.signed_url(
             file_key,

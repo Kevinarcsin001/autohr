@@ -27,10 +27,8 @@
 """
 from __future__ import annotations
 
-from typing import Any
 from uuid import UUID
 
-import structlog
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import Response
