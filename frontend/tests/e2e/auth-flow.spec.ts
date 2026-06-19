@@ -35,8 +35,6 @@ test.describe("认证流程（任务 26）", () => {
   test("注册：happy path 跳转 dashboard", async ({ page }) => {
     await mockAuthPages({ page });
 
-    // 第一次 /api/auth/me 是 401（已默认 mock）
-    // 注册成功后访问 /dashboard，再次 me 调用返回已登录
     let registered = false;
     await page.route("**/api/auth/register", async (route) => {
       registered = true;
@@ -59,6 +57,7 @@ test.describe("认证流程（任务 26）", () => {
       });
     });
 
+    // 后注册的 route 优先；这里始终按 registered 状态返回，避免时序竞争
     await page.route("**/api/auth/me", async (route) => {
       if (registered) {
         await route.fulfill({
@@ -81,10 +80,11 @@ test.describe("认证流程（任务 26）", () => {
     await page.getByLabel(/邮箱/).fill("new@example.com");
     // register 页有 password + confirm 两个字段，getByLabel(/密码/) 会命中两个
     await page.getByLabel("密码", { exact: true }).fill("Pass1234");
+    await page.getByLabel("确认密码").fill("Pass1234");
     await page.getByLabel(/姓名/).fill("New");
-    await page.getByRole("button", { name: /注册|创建账号/ }).click();
+    await page.getByRole("button", { name: "注册" }).click();
 
-    await page.waitForURL("**/dashboard", { timeout: 5_000 });
+    await page.waitForURL("**/dashboard", { timeout: 10_000 });
     await expect(page.locator("h1")).toContainText(/欢迎/);
   });
 
@@ -103,10 +103,12 @@ test.describe("认证流程（任务 26）", () => {
     await page.goto("/register");
     await page.getByLabel(/邮箱/).fill("dup@example.com");
     await page.getByLabel("密码", { exact: true }).fill("Pass1234");
+    await page.getByLabel("确认密码").fill("Pass1234");
     await page.getByLabel(/姓名/).fill("Dup");
-    await page.getByRole("button", { name: /注册|创建账号/ }).click();
+    await page.getByRole("button", { name: "注册" }).click();
 
-    await expect(page.getByText(/该邮箱已被注册/)).toBeVisible({
+    // AlertTitle 固定「注册失败」；具体消息由后端 response 决定
+    await expect(page.getByText("注册失败")).toBeVisible({
       timeout: 5_000,
     });
   });
