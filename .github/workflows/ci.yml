@@ -21,42 +21,6 @@ jobs:
     name: Backend lint + tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    services:
-      postgres:
-        image: postgres:15-alpine
-        env:
-          POSTGRES_USER: autohr
-          POSTGRES_PASSWORD: autohr_dev
-          POSTGRES_DB: autohr
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U autohr"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-      minio:
-        image: minio/minio:latest
-        ports:
-          - 9000:9000
-        env:
-          MINIO_ROOT_USER: autohr
-          MINIO_ROOT_PASSWORD: autohr_dev_secret
-          MINIO_KMS_SECRET_KEY: autohr-dev-kms-key:P35h6DBJhqXxPWi2u+WXwLF2ehdi+1XpDuXhAyb1gJM=
-        options: >-
-          --health-cmd "curl -sf http://localhost:9000/minio/health/live"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
 
     env:
       DATABASE_URL: postgresql+asyncpg://autohr:autohr_dev@localhost:5432/autohr
@@ -96,10 +60,52 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
+      # GitHub Actions services 块不支持 command 字段；minio/minio:latest 默认
+      # ENTRYPOINT 不再带 server /data，会卡在 help。改在 step 里手动 docker run
+      # 让三个依赖都按正确参数启动，与本地 docker-compose 行为一致。
+      - name: Start postgres / redis / minio
+        run: |
+          docker network create ci-net || true
+
+          docker run -d --name ci-postgres --network ci-net \
+            --network-alias postgres \
+            -p 5432:5432 \
+            -e POSTGRES_USER=autohr \
+            -e POSTGRES_PASSWORD=autohr_dev \
+            -e POSTGRES_DB=autohr \
+            postgres:15-alpine
+
+          docker run -d --name ci-redis --network ci-net \
+            --network-alias redis \
+            -p 6379:6379 \
+            redis:7-alpine
+
+          docker run -d --name ci-minio --network ci-net \
+            --network-alias minio \
+            -p 9000:9000 \
+            -e MINIO_ROOT_USER=autohr \
+            -e MINIO_ROOT_PASSWORD=autohr_dev_secret \
+            -e MINIO_KMS_SECRET_KEY=autohr-dev-kms-key:P35h6DBJhqXxPWi2u+WXwLF2ehdi+1XpDuXhAyb1gJM= \
+            minio/minio:latest server /data
+
+      - name: Wait for services healthy
+        run: |
+          for i in {1..40}; do
+            ok=1
+            docker exec ci-postgres pg_isready -U autohr >/dev/null 2>&1 || ok=0
+            docker exec ci-redis redis-cli ping 2>&1 | grep -q PONG || ok=0
+            curl -sf http://localhost:9000/minio/health/live >/dev/null 2>&1 || ok=0
+            [ $ok -eq 1 ] && break
+            sleep 2
+          done
+          if [ $ok -ne 1 ]; then
+            echo "services not ready"; docker logs ci-postgres; docker logs ci-redis; docker logs ci-minio; exit 1
+          fi
+
       - name: Init MinIO bucket
         run: |
           docker run --rm --network=host minio/mc:latest sh -c "
-            sleep 3;
+            sleep 2;
             mc alias set ci http://localhost:9000 autohr autohr_dev_secret;
             mc mb ci/resumes --ignore-existing || true;
           "
@@ -127,6 +133,19 @@ jobs:
         with:
           name: backend-coverage
           path: backend/coverage.xml
+
+      - name: Dump service logs on failure
+        if: failure()
+        run: |
+          echo "=== postgres ==="; docker logs ci-postgres 2>&1 | tail -30
+          echo "=== redis ==="; docker logs ci-redis 2>&1 | tail -30
+          echo "=== minio ==="; docker logs ci-minio 2>&1 | tail -30
+
+      - name: Shutdown
+        if: always()
+        run: |
+          docker rm -f ci-postgres ci-redis ci-minio || true
+          docker network rm ci-net || true
 
   # ==========================================================================
   # 前端：lint + tsc + vitest
