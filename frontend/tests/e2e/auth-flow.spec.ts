@@ -180,8 +180,8 @@ test.describe("认证流程（任务 26）", () => {
     await page.getByLabel(/密码/).fill("wrong");
     await page.getByRole("button", { name: /登录|登 录/ }).click();
 
-    // AlertTitle 固定 "登录失败"；具体消息取决于后端 response 形态
-    await expect(page.getByText("登录失败")).toBeVisible({
+    // AlertTitle 固定 "登录失败"（精确匹配，避免 fallback msg 含同子串）
+    await expect(page.getByText("登录失败", { exact: true })).toBeVisible({
       timeout: 5_000,
     });
   });
