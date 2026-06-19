@@ -204,7 +204,9 @@ test.describe("候选人详情页（任务 24）", () => {
 
     // header
     await expect(page.locator("h1")).toContainText("张三");
-    await expect(page.getByText("zs@example.com")).toBeVisible();
+    await expect(
+      page.getByText("zs@example.com", { exact: true }),
+    ).toBeVisible();
     await expect(page.getByText(/通过/).first()).toBeVisible();
     await expect(
       page.getByRole("button", { name: /HR 改判/ }),
@@ -235,7 +237,7 @@ test.describe("候选人详情页（任务 24）", () => {
             id: "r-1",
             score_id: FAKE_SCORE_ID,
             type: "recommend",
-            bullet_points: ["五年 Python 经验"],
+            bullet_points: ["五年 Python 后端开发经验"],
             validated: true,
           },
         ],

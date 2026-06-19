@@ -83,7 +83,7 @@ async function mockApi({
     });
   });
 
-  await page.route("**/api/screening/pipeline**", async (route) => {
+  await page.route("**/api/screening/pipeline", async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -205,13 +205,17 @@ test.describe("候选人列表页（任务 23）", () => {
     await page.goto(`/jobs/${FAKE_JOB_ID}/candidates`);
     const skillInput = page.getByLabel("技能");
     await skillInput.fill("Python");
+    // 等 onChange 写入 URL 后再提交（避免 Enter 提交时拿不到最新 skill）
+    await page.waitForFunction(
+      () => window.location.search.includes("skill="),
+      { timeout: 5_000 },
+    );
     await skillInput.press("Enter");
 
     await page.waitForURL(
       (url) => url.searchParams.get("skill") === "Python",
       { timeout: 5_000 },
     );
-    expect(page.url()).toContain("skill=Python");
   });
 
   test("分组切换写入 URL", async ({ page }) => {
@@ -231,11 +235,9 @@ test.describe("候选人列表页（任务 23）", () => {
 
     await page.goto(`/jobs/${FAKE_JOB_ID}/candidates`);
 
-    // 点击"总分"列头切换到 asc（默认 desc）
-    const totalHeader = page.getByRole("columnheader", {
-      name: /总分/,
-    });
-    await totalHeader.click();
+    // 点击「总分」列头中的排序按钮（sort handler 在 <button> 上）
+    const totalCol = page.getByRole("columnheader", { name: /总分/ });
+    await totalCol.getByRole("button").click();
 
     // 第一次点击应改成 asc 或 desc 之一；只要 URL 反映了状态即可
     await page.waitForURL(

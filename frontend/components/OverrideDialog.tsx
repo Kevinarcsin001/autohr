@@ -85,7 +85,7 @@ export function OverrideDialog({
   return (
     <div
       role="dialog"
-      aria-label="HR 改判"
+      aria-label="HR 改判候选人"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
       onClick={onClose}
     >
