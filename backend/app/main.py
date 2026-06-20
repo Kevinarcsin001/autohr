@@ -24,7 +24,9 @@ from app.api.interview import router as interview_router
 from app.api.job_candidates import router as job_candidates_router
 from app.api.jobs import router as jobs_router
 from app.api.platform_imports import router as platform_imports_router
+from app.api.dashboard import router as dashboard_router
 from app.api.reasons import router as reasons_router
+from app.api.resumes import router as resumes_router
 from app.api.scores import router as scores_router
 from app.api.screening import router as screening_router
 from app.api.teams import router as teams_router
@@ -89,7 +91,9 @@ def create_app() -> FastAPI:
     app.include_router(candidates_router, prefix="/api")
     app.include_router(screening_router, prefix="/api")
     app.include_router(scores_router, prefix="/api")
+    app.include_router(dashboard_router, prefix="/api")
     app.include_router(reasons_router, prefix="/api")
+    app.include_router(resumes_router, prefix="/api")
     app.include_router(interview_router, prefix="/api")
     app.include_router(uploads_router, prefix="/api")
     app.include_router(platform_imports_router, prefix="/api")

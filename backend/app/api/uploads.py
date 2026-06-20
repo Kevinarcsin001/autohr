@@ -77,12 +77,15 @@ async def confirm_uploads(
     user: CurrentUser,
     db: DbSession,
 ) -> UploadConfirmResponse:
-    """阶段 3：嗅探 MIME + 写 candidate_resumes + 入 async_jobs。"""
+    """阶段 3：嗅探 MIME + 写 candidate_resumes + 入 async_jobs。
+
+    可选 job_id：上传时关联到指定职位，自动创建 screening_result。
+    """
     team_id = _require_team(user)
     service = FileUploadService(db)
 
     items: list[UploadConfirmResponseItem] = await service.confirm_uploads(
-        team_id=team_id, items=payload.items
+        team_id=team_id, items=payload.items, job_id=payload.job_id
     )
     confirmed = sum(1 for i in items if i.status == "ok")
     rejected = len(items) - confirmed

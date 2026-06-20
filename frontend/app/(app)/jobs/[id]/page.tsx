@@ -107,6 +107,9 @@ export default function JobDetailPage() {
             </p>
           </div>
           <div className="flex gap-2">
+            <Button asChild variant="default">
+              <Link href={`/jobs/${jobId}/candidates`}>查看候选人</Link>
+            </Button>
             <Button
               variant="outline"
               onClick={() => setEditing((e) => !e)}

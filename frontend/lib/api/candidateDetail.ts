@@ -122,11 +122,13 @@ export interface CandidateActivityListResponse {
 
 export async function getCandidateDetailApi(
   candidateId: string,
-  jobId: string,
+  jobId?: string,
 ): Promise<CandidateDetailResponse> {
+  const params: Record<string, string> = {};
+  if (jobId) params.job_id = jobId;
   const { data } = await apiClient.get<CandidateDetailResponse>(
     `/api/candidates/${candidateId}/detail`,
-    { params: { job_id: jobId } },
+    { params },
   );
   return data;
 }

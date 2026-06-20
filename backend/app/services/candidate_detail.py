@@ -107,7 +107,7 @@ class CandidateDetailService:
         *,
         team_id: uuid.UUID,
         candidate_id: uuid.UUID,
-        job_id: uuid.UUID,
+        job_id: uuid.UUID | None = None,
     ) -> CandidateDetailResponse | None:
         """聚合查询候选人详情。
 
@@ -121,12 +121,21 @@ class CandidateDetailService:
             return None
 
         # 并发可优化；当前为顺序查询（页面 LCP ≤ 2.5s，5 次查询总计 < 100ms 可接受）
-        screening = await self._fetch_screening(
-            candidate_id=candidate_id, job_id=job_id
-        )
-        score = await self._fetch_score(
-            candidate_id=candidate_id, job_id=job_id
-        )
+        if job_id is not None:
+            screening = await self._fetch_screening(
+                candidate_id=candidate_id, job_id=job_id
+            )
+            score = await self._fetch_score(
+                candidate_id=candidate_id, job_id=job_id
+            )
+        else:
+            # 无 job_id 时取最新 screening / score（任何 job）
+            screening = await self._fetch_latest_screening(
+                candidate_id=candidate_id
+            )
+            score = await self._fetch_latest_score(
+                candidate_id=candidate_id
+            )
         latest_resume = await self._fetch_latest_resume(candidate_id=candidate_id)
         parsed_structure = None
         if latest_resume is not None:
@@ -328,6 +337,30 @@ class CandidateDetailService:
     # ========================================================================
     # 内部：fetch 辅助
     # ========================================================================
+
+    async def _fetch_latest_screening(
+        self, *, candidate_id: uuid.UUID
+    ) -> ScreeningResult | None:
+        """取该候选人最新的 screening（任何 job）。"""
+        result = await self._db.execute(
+            select(ScreeningResult)
+            .where(ScreeningResult.candidate_id == candidate_id)
+            .order_by(ScreeningResult.created_at.desc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
+    async def _fetch_latest_score(
+        self, *, candidate_id: uuid.UUID
+    ) -> Score | None:
+        """取该候选人最新的 score（任何 job）。"""
+        result = await self._db.execute(
+            select(Score)
+            .where(Score.candidate_id == candidate_id)
+            .order_by(Score.created_at.desc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
 
     async def _fetch_screening(
         self, *, candidate_id: uuid.UUID, job_id: uuid.UUID

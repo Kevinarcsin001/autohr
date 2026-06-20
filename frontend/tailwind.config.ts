@@ -51,11 +51,31 @@ const config: Config = {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        // HR 语义色
+        score: {
+          high: "hsl(152 76% 42%)",
+          medium: "hsl(36 96% 48%)",
+          low: "hsl(0 72% 51%)",
+          none: "hsl(215 20% 65%)",
+        },
+        hr: {
+          navy: "hsl(226 71% 40%)",
+          gold: "hsl(43 74% 49%)",
+          teal: "hsl(170 70% 40%)",
+          coral: "hsl(6 78% 57%)",
+        },
       },
       borderRadius: {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
+        xl: "calc(var(--radius) + 4px)",
+      },
+      boxShadow: {
+        xs: "0 1px 2px 0 rgb(0 0 0 / 0.05)",
+        sm: "0 1px 3px 0 rgb(0 0 0 / 0.06), 0 1px 2px -1px rgb(0 0 0 / 0.06)",
+        md: "0 4px 6px -1px rgb(0 0 0 / 0.07), 0 2px 4px -2px rgb(0 0 0 / 0.05)",
+        lg: "0 10px 15px -3px rgb(0 0 0 / 0.08), 0 4px 6px -4px rgb(0 0 0 / 0.04)",
       },
       fontFamily: {
         sans: ["var(--font-sans)", "system-ui", "sans-serif"],

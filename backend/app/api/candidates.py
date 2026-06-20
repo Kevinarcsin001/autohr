@@ -210,7 +210,9 @@ async def get_candidate_detail(
     candidate_id: UUID,
     user: CurrentUser,
     db: DbSession,
-    job_id: UUID = Query(..., description="所属 job（per-job 筛选 / 评分定位）"),
+    job_id: UUID | None = Query(
+        default=None, description="所属 job（可选；不传则取最新 screening/score）"
+    ),
 ) -> CandidateDetailResponse:
     """聚合查询候选人详情（candidate + screening + score + structure + resume）。"""
     team_id = _require_team(user)

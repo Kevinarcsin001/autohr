@@ -73,7 +73,6 @@ async def run_parse(
         raise ResumeNotFound(f"CandidateResume {target_id} not found")
 
     storage = storage or get_storage()
-    parser = parser or ParserService()
 
     # 2. 下载文件
     try:
@@ -87,6 +86,34 @@ async def run_parse(
         raise StorageObjectMissing(
             f"storage.get failed for {file_key}: {exc}"
         ) from exc
+
+    # 2.5 尝试 MinerU（仅 PDF）
+    if mime == "application/pdf":
+        try:
+            from app.adapters.mineru_parser import MinerUParserAdapter
+            mineru = MinerUParserAdapter()
+            available = await mineru.health_check()
+            if available:
+                logger.info("mineru_parse_start", resume_id=str(target_id))
+                result = await mineru.parse(content, filename=file_key.rsplit("/", 1)[-1])
+                if result.status == "success":
+                    resume.parsed_text = result.text
+                    resume.parse_status = "success"
+                    resume.parse_error = None
+                    logger.info("mineru_parse_done", resume_id=str(target_id), text_len=len(result.text))
+                    return {
+                        "resume_id": str(target_id),
+                        "status": "success",
+                        "text_len": len(result.text),
+                        "ocr_backend": "mineru",
+                    }
+                else:
+                    logger.warning("mineru_parse_fallback", resume_id=str(target_id), error=result.error)
+        except Exception as exc:
+            logger.warning("mineru_parse_unavailable", error=str(exc))
+
+    # 3. 使用传统解析器
+    parser = parser or ParserService()
 
     # 3. 解析
     result: ParsedResult = await parser.parse(content, mime=mime)

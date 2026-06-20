@@ -21,16 +21,30 @@ from app.adapters.llm.zhipu import ZhipuAdapter
 def build_default_router() -> LLMRouter:
     """根据 settings 构建默认 Router（zhipu 主 / qwen 备）。
 
-    API key 缺失的 adapter 不会被注册（避免运行时才发现配置问题）。
+    API key 缺失时自动回退到 Mock 适配器，确保开发环境可用。
     """
     adapters: dict[str, BaseLLMAdapter] = {}
     if settings.ZHIPU_API_KEY:
         adapters["zhipu"] = ZhipuAdapter()
     if settings.DASHSCOPE_API_KEY:
         adapters["qwen"] = QwenAdapter()
-    # 测试/开发态默认带上 mock（不进入默认路由）
+    # Mock 始终注册，作为无 API key 时的兜底
     adapters["mock"] = MockAdapter()
-    return LLMRouter(adapters=adapters)
+
+    # 如果真实 adapter 不可用，用 mock 替代主/备
+    effective_primary = settings.LLM_PRIMARY
+    effective_fallback = settings.LLM_FALLBACK or None
+    if effective_primary not in adapters:
+        effective_primary = "mock"
+    if effective_fallback and effective_fallback not in adapters:
+        effective_fallback = None
+
+    router = LLMRouter(
+        adapters=adapters,
+        default_primary=effective_primary,
+        default_fallback=effective_fallback,
+    )
+    return router
 
 
 from app.core.config import settings  # noqa: E402

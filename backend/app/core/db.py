@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.pool import NullPool
 
 from app.core.config import settings
 
@@ -25,9 +26,10 @@ engine = create_async_engine(
     settings.DATABASE_URL,
     echo=settings.ENVIRONMENT == "development",
     pool_pre_ping=True,
-    pool_size=10,
-    max_overflow=20,
     pool_recycle=3600,
+    # Celery worker 使用 asyncio.run() 每次创建新 event loop；
+    # NullPool 避免跨 event loop 的连接池问题
+    poolclass=NullPool,
 )
 
 AsyncSessionLocal = async_sessionmaker(

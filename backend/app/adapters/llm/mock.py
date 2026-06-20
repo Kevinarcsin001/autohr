@@ -27,11 +27,18 @@ from app.adapters.llm.base import (
 T = TypeVar("T", bound=BaseModel)
 
 
+def _build_mock_dict(schema: type[BaseModel]) -> dict[str, object]:
+    """Build a mock dict for a nested Pydantic model (returns dict, not JSON)."""
+    import json as _json
+    return _json.loads(_build_mock_json(schema))
+
+
 def _build_mock_json(schema: type[BaseModel]) -> str:
     """根据 schema 字段类型构造合法 mock JSON。"""
     import json
+    import types
     import uuid
-    from typing import get_args, get_origin, get_type_hints
+    from typing import Union, get_args, get_origin, get_type_hints
 
     sample: dict[str, Any] = {}
     hints = get_type_hints(schema)
@@ -40,10 +47,21 @@ def _build_mock_json(schema: type[BaseModel]) -> str:
             continue
         origin = get_origin(annotation)
         args = get_args(annotation)
-        # Optional / None 处理
-        if origin is type(None):
-            sample[name] = None  # type: ignore[unreachable]
-        elif annotation is str:
+
+        # unwrap Optional: Union[X, None] 或 X | None → X
+        if origin is Union or origin is types.UnionType:
+            non_none = [a for a in args if a is not type(None)]
+            if len(non_none) == 1:
+                annotation = non_none[0]
+                origin = get_origin(annotation)
+                args = get_args(annotation)
+
+        # Literal type (e.g. Literal['bachelor', 'master']) → first arg
+        if args and origin is not None and origin is not list and origin is not set and origin is not dict:
+            sample[name] = args[0]
+            continue
+
+        if annotation is str:
             sample[name] = f"mock-{name}"
         elif annotation is int:
             sample[name] = 80
@@ -56,9 +74,12 @@ def _build_mock_json(schema: type[BaseModel]) -> str:
         elif origin in (list, set):
             inner = args[0] if args else str
             if inner is str:
-                sample[name] = ["mock-item"]
+                sample[name] = ["mock-item-1", "mock-item-2", "mock-item-3", "mock-item-4", "mock-item-5"]
             elif inner is int:
-                sample[name] = [1, 2, 3]
+                sample[name] = [1, 2, 3, 4, 5]
+            elif isinstance(inner, type) and issubclass(inner, BaseModel):
+                # Pydantic model list — generate 5 mock items
+                sample[name] = [_build_mock_dict(inner) for _ in range(5)]
             else:
                 sample[name] = []
         elif origin is dict:
@@ -67,6 +88,14 @@ def _build_mock_json(schema: type[BaseModel]) -> str:
             sample[name] = str(uuid.uuid4())
         else:
             sample[name] = f"mock-{name}"
+    # Post-process: ensure interview questions have diverse dimensions
+    if "questions" in sample and isinstance(sample["questions"], list) and len(sample["questions"]) > 0:
+        questions = sample["questions"]
+        if isinstance(questions[0], dict) and "dimension" in questions[0]:
+            dims = ["skill", "project", "weakness", "culture", "skill"]
+            for i, q in enumerate(questions):
+                q["dimension"] = dims[i % len(dims)]
+
     return json.dumps(sample, ensure_ascii=False)
 
 

@@ -46,6 +46,9 @@ class Settings(BaseSettings):
 
     # === MinIO / S3 ===
     MINIO_ENDPOINT: str = Field(default="localhost:9000")
+    # 用于生成签名 URL 的外部地址（浏览器可访问）；不设置则回退到 MINIO_ENDPOINT
+    MINIO_PUBLIC_ENDPOINT: str = Field(default="")
+    MINERU_ENDPOINT: str = Field(default="http://mineru:8001")
     MINIO_ACCESS_KEY: str = Field(default="autohr")
     MINIO_SECRET_KEY: str = Field(default="autohr_dev_secret")
     MINIO_BUCKET: str = Field(default="resumes")

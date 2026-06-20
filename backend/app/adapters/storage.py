@@ -238,6 +238,27 @@ class S3StorageAdapter:
             "DELETE": "delete_object",
         }
         op = method_map.get(method.upper(), "get_object")
+
+        # 如果设置了公开端点，用它生成浏览器可访问的签名 URL
+        public_endpoint = settings.MINIO_PUBLIC_ENDPOINT
+        if public_endpoint:
+            scheme = "https" if self.secure else "http"
+            public_url = f"{scheme}://{public_endpoint}"
+            public_client = boto3.client(
+                "s3",
+                endpoint_url=public_url,
+                aws_access_key_id=self.access_key,
+                aws_secret_access_key=self.secret_key,
+                config=BotoConfig(
+                    signature_version="s3v4",
+                ),
+            )
+            return public_client.generate_presigned_url(
+                op,
+                Params={"Bucket": self.bucket, "Key": key},
+                ExpiresIn=expires,
+            )
+
         return self._client.generate_presigned_url(
             op,
             Params={"Bucket": self.bucket, "Key": key},

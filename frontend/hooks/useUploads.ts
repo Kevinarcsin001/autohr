@@ -45,6 +45,8 @@ interface UploadOptions {
   maxFileBytes?: number;
   /** 允许的扩展名集合（小写，无点） */
   allowedExtensions?: Set<string>;
+  /** 关联的职位 ID */
+  jobId?: string | null;
   /** 单文件上传完成后的回调（用于刷新 candidates 列表等） */
   onComplete?: () => void;
 }
@@ -219,7 +221,7 @@ export function useUploads(options: UploadOptions = {}) {
           upload_id: intentItem.upload_id,
           file_key: intentItem.file_key,
         };
-        const result = await confirmUploads([confirmInput]);
+        const result = await confirmUploads([confirmInput], options.jobId);
         const r = result.items[0];
         if (r.status === "ok") {
           patchEntry(entry.localId, {

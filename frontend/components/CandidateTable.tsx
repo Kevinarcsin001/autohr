@@ -351,16 +351,16 @@ export function defaultColumnConfigs(): ColumnConfig[] {
 
 function ScoreBadge({ value }: { value: number | null | undefined }) {
   if (value === null || value === undefined) {
-    return <span className="text-muted-foreground">—</span>;
+    return <span className="rounded-md bg-muted/50 px-1.5 py-0.5 text-xs font-mono text-muted-foreground">—</span>;
   }
   const tone =
     value >= 80
-      ? "text-emerald-700"
+      ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300"
       : value >= 60
-        ? "text-amber-700"
-        : "text-red-700";
+        ? "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"
+        : "bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300";
   return (
-    <span className={cn("font-mono font-medium tabular-nums", tone)}>
+    <span className={cn("inline-block rounded-md px-1.5 py-0.5 text-xs font-mono font-semibold tabular-nums", tone)}>
       {value}
     </span>
   );
@@ -805,6 +805,21 @@ export function CandidateTable({
                         </td>
                       );
                     })}
+                    {/* 操作列 */}
+                    {onOpenCandidate && (
+                      <td role="gridcell" className="px-2 align-top">
+                        <button
+                          type="button"
+                          className="rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onOpenCandidate(row.original);
+                          }}
+                        >
+                          查看
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 );
               })

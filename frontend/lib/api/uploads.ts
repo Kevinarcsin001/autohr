@@ -75,11 +75,12 @@ export async function createUploadIntent(
 }
 
 export async function confirmUploads(
-  items: UploadConfirmItemInput[]
+  items: UploadConfirmItemInput[],
+  jobId?: string | null,
 ): Promise<UploadConfirmResponse> {
   const resp = await apiClient.post<UploadConfirmResponse>(
     "/api/uploads/confirm",
-    { items }
+    { items, ...(jobId ? { job_id: jobId } : {}) }
   );
   return resp.data;
 }

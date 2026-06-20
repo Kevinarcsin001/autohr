@@ -2,8 +2,10 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { Briefcase } from "lucide-react";
 import { useJobs } from "@/hooks/useJobs";
 import { useAuthStore } from "@/stores/authStore";
+import { EmptyState } from "@/components/EmptyState";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -116,16 +118,16 @@ export default function JobsPage() {
       )}
 
       {data && data.items.length === 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>暂无职位</CardTitle>
-            <CardDescription>
-              {statusFilter
-                ? `当前过滤条件下没有职位，可切换到其他状态。`
-                : "点击右上角「新建职位」开始创建。"}
-            </CardDescription>
-          </CardHeader>
-        </Card>
+        <EmptyState
+          icon={Briefcase}
+          title="暂无职位"
+          description={
+            statusFilter
+              ? "当前过滤条件下没有职位，可切换到其他状态。"
+              : "创建职位并填写 JD 与硬性筛选条件，即可开始筛选候选人。"
+          }
+          action={{ label: "新建职位", href: "/jobs/new" }}
+        />
       )}
 
       {data && data.items.length > 0 && (

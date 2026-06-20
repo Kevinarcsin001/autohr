@@ -114,7 +114,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: celery -A app.workers.celery_app worker --loglevel=info --concurrency=2
+    command: celery -A app.workers.celery_app worker --loglevel=info --concurrency=1 --pool=solo
 
   beat:
     build:
@@ -152,6 +152,17 @@ services:
     depends_on:
       - backend
     command: pnpm dev
+
+  # MinerU PDF 解析服务（高质量 PDF 文本提取）
+  mineru:
+    build:
+      context: ./mineru-service
+    container_name: autohr-mineru
+    restart: unless-stopped
+    ports:
+      - "${MINERU_PORT:-8002}:8001"
+    environment:
+      MINERU_MODEL_DIR: /app/models
 
 volumes:
   postgres_data:

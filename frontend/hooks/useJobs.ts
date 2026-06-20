@@ -34,15 +34,15 @@ export function useJobs(params: {
   status?: string;
   page?: number;
   page_size?: number;
-}) {
+} = {}) {
   const query = {
-    status: params.status as
+    status: (params?.status ?? undefined) as
       | "draft"
       | "active"
       | "closed"
       | undefined,
-    page: params.page ?? 1,
-    page_size: params.page_size ?? 20,
+    page: params?.page ?? 1,
+    page_size: params?.page_size ?? 20,
   };
   return useQuery({
     queryKey: JOBS_KEY(query),

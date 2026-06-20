@@ -231,14 +231,36 @@ async def parse_resume_handler(
                 payload=payload,
             )
         except (ResumeNotFound, StorageObjectMissing) as exc:
-            # 永久失败：commit 现有 partial 改动后抛 PermanentParseFailure
-            # 让上层 mark_failed（不进 retry）
             await session.commit()
             raise PermanentParseFailure(str(exc)) from exc
         await session.commit()
 
-    # 解析任务完成（无论 status 是 success/low_text/failed，都视为任务执行成功）；
-    # 解析失败已通过 parse_status='failed' + parse_error 落库
+    # 解析成功 → 自动触发结构化抽取
+    if summary and summary.get("status") == "success":
+        try:
+            from app.models.async_job import AsyncJob
+            from sqlalchemy import select
+
+            async with AsyncSessionLocal() as session:
+                idem_key = f"extract:{target_id}"
+                existing = await session.scalar(
+                    select(AsyncJob).where(AsyncJob.idempotency_key == idem_key)
+                )
+                if existing is None:
+                    job = AsyncJob(
+                        task_type="extract",
+                        target_id=target_id,
+                        status="queued",
+                        idempotency_key=idem_key,
+                        payload={"resume_id": str(target_id)},
+                    )
+                    session.add(job)
+                    await session.flush()
+                    extract_structured.delay(str(job.id))
+                    await session.commit()
+        except Exception:
+            logger.warning("parse_chain_extract_failed", resume_id=str(target_id), exc_info=True)
+
     return summary
 
 
@@ -286,6 +308,119 @@ async def extract_structured_handler(
             await session.commit()
             raise PermanentExtractFailure(str(exc)) from exc
         await session.commit()
+
+    # 提取成功后更新候选人姓名
+    if summary and summary.get("status") in ("success", "extracted", "partial_extracted"):
+        try:
+            from app.models.candidate import Candidate, CandidateResume, ParsedStructure
+            from sqlalchemy import select
+
+            async with AsyncSessionLocal() as session:
+                resume = await session.scalar(
+                    select(CandidateResume).where(CandidateResume.id == target_id)
+                )
+                if resume:
+                    structure = await session.scalar(
+                        select(ParsedStructure).where(
+                            ParsedStructure.resume_id == target_id
+                        ).order_by(ParsedStructure.extracted_at.desc()).limit(1)
+                    )
+                    if structure and structure.data:
+                        data = structure.data.get("structure", {})
+                        candidate = await session.scalar(
+                            select(Candidate).where(Candidate.id == resume.candidate_id)
+                        )
+                        if candidate and data:
+                            extracted_name = data.get("name")
+                            # 如果 LLM 提取的名字是 mock 占位符或常识性非人名，从 parsed_text 解析
+                            def _is_non_name(text: str) -> bool:
+                                """检测是否为非人名的常识性文本（简历章节标题等）。"""
+                                non_name_keywords = {
+                                    "教育背景", "个人简介", "工作经历", "项目经历", "专业技能",
+                                    "自我评价", "实习经历", "获奖情况", "培训经历", "求职意向",
+                                    "基本信息", "联系方式", "简历", "姓名",
+                                }
+                                t = text.strip().lower()
+                                if t in non_name_keywords:
+                                    return True
+                                return False
+
+                            if (not extracted_name or "mock" in str(extracted_name).lower() or _is_non_name(str(extracted_name))) and resume.parsed_text:
+                                # 从 parsed_text 中寻找 2-4 个汉字的候选人名
+                                import re
+                                parsed = resume.parsed_text
+                                # 尝试匹配 "姓名[：:]?\s*(.+)"
+                                m = re.search(r'姓名[：:]\s*([^\n]{1,20})', parsed)
+                                if m:
+                                    extracted_name = m.group(1).strip()[:64]
+                                if not extracted_name or "mock" in str(extracted_name).lower() or _is_non_name(str(extracted_name)):
+                                    # 匹配邮箱前缀常见中文名模式（2-4 汉字）
+                                    chinese_names = re.findall(r'^([一-鿿]{2,4})$', parsed[:200].strip().split('\n')[0] if parsed.strip() else '', re.M)
+                                    if chinese_names:
+                                        extracted_name = chinese_names[0]
+                                    else:
+                                        # 取第一个非空非标题行
+                                        for line in parsed.strip().split('\n'):
+                                            line = line.strip()
+                                            if line and not _is_non_name(line) and len(line) < 50:
+                                                extracted_name = line[:64]
+                                                break
+                                        else:
+                                            extracted_name = "待识别候选人"
+                            if extracted_name and "mock" not in str(extracted_name).lower() and not _is_non_name(str(extracted_name)):
+                                candidate.name = extracted_name
+                            # 从 parsed_text 解析 email/phone（mock 适配器兜底）
+                            if resume.parsed_text and not candidate.email:
+                                import re
+                                emails = re.findall(r'[\w\.-]+@[\w\.-]+\.\w+', resume.parsed_text)
+                                if emails: candidate.email = emails[0]
+                            if resume.parsed_text and not candidate.phone:
+                                import re
+                                phones = re.findall(r'1[3-9]\d{9}', resume.parsed_text.replace(' ', '').replace('-', ''))
+                                if phones: candidate.phone = phones[0]
+                            await session.commit()
+        except Exception:
+            logger.warning("extract_update_candidate_failed", resume_id=str(target_id), exc_info=True)
+
+    # 抽取成功 → 自动触发评分（含推理+面试问题生成）
+    if summary and summary.get("status") in ("success", "extracted", "partial_extracted"):
+        try:
+            from app.models.async_job import AsyncJob
+            from app.models.screening import ScreeningResult
+            from sqlalchemy import select
+
+            async with AsyncSessionLocal() as session:
+                resume = await session.scalar(
+                    select(CandidateResume).where(CandidateResume.id == target_id)
+                )
+                if resume:
+                    # 查找该候选人关联的职位
+                    sr = await session.scalars(
+                        select(ScreeningResult).where(
+                            ScreeningResult.candidate_id == resume.candidate_id
+                        ).order_by(ScreeningResult.created_at.desc()).limit(1)
+                    )
+                    screening = sr.first() if sr else None
+                    if screening:
+                        idem_key = f"score:{resume.candidate_id}:{screening.job_id}"
+                        existing = await session.scalar(
+                            select(AsyncJob).where(AsyncJob.idempotency_key == idem_key)
+                        )
+                        if existing is None:
+                            job = AsyncJob(
+                                task_type="score",
+                                target_id=resume.candidate_id,
+                                status="queued",
+                                idempotency_key=idem_key,
+                                payload={"job_id": str(screening.job_id)},
+                            )
+                            session.add(job)
+                            await session.flush()
+                            score_candidate.delay(str(job.id))
+                            await session.commit()
+                            logger.info("extract_chain_score", candidate_id=str(resume.candidate_id), job_id=str(screening.job_id))
+        except Exception:
+            logger.warning("extract_chain_score_failed", resume_id=str(target_id), exc_info=True)
 
     return summary
 
@@ -389,6 +524,23 @@ async def score_candidate_handler(
             await session.commit()
             raise PermanentScoreFailure(str(exc)) from exc
         await session.commit()
+
+    # 评分成功 → 自动触发面试问题生成
+    if summary and summary.get("total") is not None:
+        try:
+            job_id = (payload or {}).get("job_id")
+            if job_id and target_id:
+                async with AsyncSessionLocal() as session:
+                    from app.services.interview import InterviewService
+                    svc = InterviewService(db=session)
+                    await svc.generate(
+                        candidate_id=target_id,
+                        job_id=uuid.UUID(str(job_id)),
+                    )
+                    await session.commit()
+                    logger.info("score_chain_interview", candidate_id=str(target_id))
+        except Exception:
+            logger.warning("score_chain_interview_failed", candidate_id=str(target_id), exc_info=True)
 
     return summary
 

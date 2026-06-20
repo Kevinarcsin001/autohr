@@ -191,14 +191,15 @@ class FileUploadService:
         *,
         team_id: uuid.UUID,
         items: list[UploadConfirmItem],
+        job_id: uuid.UUID | None = None,
     ) -> list[UploadConfirmResponseItem]:
-        """嗅探 MIME + 落库 + 入队。
+        """嗅探 MIME + 落库 + 入队。可选 job_id 关联职位。
 
         任一 item 失败 → 该 item 标 rejected，其他不受影响。
         """
         results: list[UploadConfirmResponseItem] = []
         for item in items:
-            res = await self._confirm_one(team_id=team_id, item=item)
+            res = await self._confirm_one(team_id=team_id, item=item, job_id=job_id)
             results.append(res)
         return results
 
@@ -206,6 +207,7 @@ class FileUploadService:
         self,
         *,
         team_id: uuid.UUID,
+        job_id: uuid.UUID | None = None,
         item: UploadConfirmItem,
     ) -> UploadConfirmResponseItem:
         # 跨 team 校验：file_key 第一段必须是当前 team_id
@@ -356,23 +358,45 @@ class FileUploadService:
             self.db.add(resume)
             await self.db.flush()  # 拿 resume.id
 
-            # 入 async_jobs 队列
-            # TODO(task-12): 替换为 async_jobs service 的 enqueue 入口
+            # 入 async_jobs 队列并立即派遣 Celery 任务
             idem_key = f"parse:{resume.id}"
             existing_job = await self.db.scalar(
                 select(AsyncJob).where(AsyncJob.idempotency_key == idem_key)
             )
             if existing_job is None:
-                self.db.add(
-                    AsyncJob(
-                        task_type="parse",
-                        target_id=resume.id,
-                        status="queued",
-                        idempotency_key=idem_key,
-                        payload={"file_key": item.file_key, "mime": real_mime},
+                job = AsyncJob(
+                    task_type="parse",
+                    target_id=resume.id,
+                    status="queued",
+                    idempotency_key=idem_key,
+                    payload={"file_key": item.file_key, "mime": real_mime},
+                )
+                self.db.add(job)
+                await self.db.flush()
+                # 派遣 Celery 任务
+                from app.workers.tasks import parse_resume
+                parse_resume.delay(str(job.id))
+
+            # 关联职位：创建 screening_result（待筛选状态）
+            if job_id:
+                from app.models.screening import ScreeningResult
+                existing_sr = await self.db.scalar(
+                    select(ScreeningResult).where(
+                        ScreeningResult.job_id == job_id,
+                        ScreeningResult.candidate_id == candidate.id,
                     )
                 )
-                await self.db.flush()
+                if existing_sr is None:
+                    self.db.add(
+                        ScreeningResult(
+                            job_id=job_id,
+                            candidate_id=candidate.id,
+                            disqualified=False,
+                            reasons=None,
+                            manually_overridden=False,
+                        )
+                    )
+                    await self.db.flush()
 
             return UploadConfirmResponseItem(
                 upload_id=item.upload_id,

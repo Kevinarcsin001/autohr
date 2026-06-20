@@ -16,7 +16,7 @@ import { CANDIDATE_ACTIVITY_KEY } from "./useCandidateActivity";
  */
 export function useOverrideCandidate(
   candidateId: string,
-  jobId: string,
+  jobId?: string,
   options?: {
     onSuccess?: () => void;
     onError?: (err: unknown) => void;

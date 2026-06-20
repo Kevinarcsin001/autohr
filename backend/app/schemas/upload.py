@@ -90,6 +90,7 @@ class UploadConfirmRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     items: list[UploadConfirmItem] = Field(..., min_length=1)
+    job_id: UUID | None = Field(default=None, description="可选：关联到指定职位，创建 screening_result")
 
 
 class UploadConfirmResponseItem(BaseModel):
