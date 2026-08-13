@@ -6,9 +6,9 @@ from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text, func
-from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.models._compat import GUID
 from app.models.base import Base, UUIDPKMixin
 from app.models.types import LLMScope
 
@@ -36,7 +36,7 @@ class LLMCall(UUIDPKMixin, Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
     )
     team_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True),
+        GUID,
         ForeignKey("teams.id", ondelete="SET NULL"),
         nullable=True,
         index=True,

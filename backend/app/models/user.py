@@ -4,9 +4,9 @@ from __future__ import annotations
 import uuid
 
 from sqlalchemy import ForeignKey, Index
-from sqlalchemy.dialects.postgresql import CITEXT, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.models._compat import CITEXT_COMPAT, GUID
 from app.models.base import Base, CreatedAtMixin, UUIDPKMixin
 from app.models.types import UserRole
 
@@ -26,12 +26,12 @@ class User(UUIDPKMixin, CreatedAtMixin, Base):
         Index("uq_users_email_lower", "email", unique=True),
     )
 
-    email: Mapped[str] = mapped_column(CITEXT, nullable=False, index=True)
+    email: Mapped[str] = mapped_column(CITEXT_COMPAT, nullable=False, index=True)
     password_hash: Mapped[str]
     name: Mapped[str]
     role: Mapped[str] = mapped_column(UserRole, default="member", nullable=False)
     team_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True),
+        GUID,
         ForeignKey("teams.id", ondelete="SET NULL"),
         nullable=True,
     )

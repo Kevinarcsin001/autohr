@@ -27,8 +27,9 @@ class Settings(BaseSettings):
     SECRET_KEY: str = Field(default="change-me", min_length=16)
 
     # === Database ===
+    # 开发环境默认 SQLite（免装 PG，裸跑自动建表）；生产/容器化栈用 PG URL 覆盖。
     DATABASE_URL: str = Field(
-        default="postgresql+asyncpg://autohr:autohr_dev@localhost:5432/autohr"
+        default="sqlite+aiosqlite:///./data/autohr.db"
     )
 
     # === Redis ===

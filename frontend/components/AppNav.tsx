@@ -6,6 +6,7 @@ import { useState } from "react";
 import {
   Briefcase,
   ChevronDown,
+  ClipboardCheck,
   FileText,
   Home,
   LogOut,
@@ -13,6 +14,7 @@ import {
   PackageOpen,
   Settings,
   Upload,
+  Users,
   X,
 } from "lucide-react";
 
@@ -23,15 +25,18 @@ import { useAuthStore } from "@/stores/authStore";
 const NAV_ITEMS = [
   { href: "/dashboard", label: "工作台", icon: Home },
   { href: "/jobs", label: "职位", icon: Briefcase },
+  { href: "/candidates", label: "候选人", icon: Users },
   { href: "/uploads", label: "上传", icon: Upload },
   { href: "/imports", label: "导入", icon: PackageOpen },
   { href: "/resumes", label: "简历库", icon: FileText },
+  { href: "/interviews", label: "面试管理", icon: ClipboardCheck },
 ];
 
 const ADMIN_ITEMS = [
   { href: "/admin/members", label: "成员管理" },
   { href: "/admin/llm", label: "LLM 配置" },
   { href: "/admin/email", label: "邮箱配置" },
+  { href: "/admin/question-bank", label: "题库管理" },
   { href: "/admin/stats", label: "统计" },
   { href: "/admin/dedup", label: "去重审核" },
   { href: "/admin/audit-logs", label: "审计日志" },

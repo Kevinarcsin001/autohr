@@ -1,0 +1,286 @@
+{
+  "category": {
+    "slug": "agent",
+    "name": "LLM Agent",
+    "target_points": 10,
+    "sort_order": 5
+  },
+  "items": [
+    {
+      "question": "ReAct 与 Plan-and-Execute 两种 Agent 范式的核心区别？各适合什么任务？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "ReAct",
+        "Plan-and-Execute",
+        "架构"
+      ],
+      "dimension": "skill",
+      "reference_answer": "ReAct（Reasoning + Acting）：Thought→Action→Observation 循环，每步先推理再决定下一步动作，根据观察结果动态调整。灵活、可纠错，但步数多、token 消耗大，可能陷循环。\nPlan-and-Execute：先一次性规划出完整步骤列表，再依次执行。流程清晰、token 效率高、易于并行，但规划一旦出错全盘受影响，应对突发不灵活。\n适合场景：\n- ReAct：探索性、信息不全、需根据中间结果调整的任务（如研究、调试、客服）；\n- Plan-and-Execute：流程固定、步骤明确、可并行的任务（如批处理、ETL、多源数据汇总）。\n实战常混合：全局用 Plan-and-Execute 规划骨架，局部用 ReAct 灵活执行每步。"
+    },
+    {
+      "question": "Function Calling 与 ReAct 工具调用的区别？现代 Agent 为什么倾向用 Function Calling？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "function-calling",
+        "tool-use",
+        "ReAct"
+      ],
+      "dimension": "skill",
+      "reference_answer": "Function Calling：模型原生支持的「结构化工具调用」——输出标准 JSON（工具名+参数），无需解析自由文本，延迟低、参数可靠。\nReAct 工具调用：用自然语言推理（Thought）+ 文本化 Action，需正则/解析提取工具调用，易解析失败、token 多。\n现代倾向 Function Calling 的原因：\n1) 可靠：原生 JSON 输出，参数 schema 校验，解析失败率极低；\n2) 低延迟：无冗长 Thought 链，单轮即可调工具；\n3) 多工具并行：现代模型支持一次返回多个 tool call，并行执行；\n4) 生态：OpenAI/Anthropic/开源模型普遍支持，与 MCP 等标准协议对接。\nReAct 仍适用于需要显式思维链推理的复杂决策场景。"
+    },
+    {
+      "question": "设计 Agent 的记忆系统时，「短期记忆」与「长期记忆」分别如何实现？",
+      "points": 5,
+      "difficulty": 3,
+      "tags": [
+        "memory",
+        "记忆",
+        "架构"
+      ],
+      "dimension": "skill",
+      "reference_answer": "短期记忆：当前任务的上下文窗口。实现 = 对话历史 + scratchpad（中间推理/观察）。受 token 上限约束，需截断/摘要（如保留最近 N 轮 + 任务摘要）。本质是 prompt 拼接。\n长期记忆：跨会话持久化的事实、偏好、学到的经验。实现 = 向量库（语义检索历史交互）+ 结构化存储（KG/数据库存事实）。检索时把相关记忆注入 prompt。\n进阶：分层记忆（工作记忆/情景记忆/语义记忆）、反射机制（Agent 周期性总结经验写入长期记忆，如 Generative Agents 的 reflection）。\n工程：用 Redis 做热短期记忆，向量库（PGVector/Milvus）做长期记忆。"
+    },
+    {
+      "question": "Multi-Agent 系统常见的失败模式有哪些？如何规避？",
+      "points": 5,
+      "difficulty": 4,
+      "tags": [
+        "multi-agent",
+        "失败模式",
+        "架构"
+      ],
+      "dimension": "skill",
+      "reference_answer": "常见失败模式（2025 研究总结 14 类，典型）：\n1) 规格错误：Agent 间接口/数据格式不匹配；\n2) 循环争论：两个 Agent 互相否定无限循环，烧 token；\n3) 信息丢失：长链路传递中关键信息被遗漏；\n4) 责任模糊：无 Agent 对最终结果负责；\n5) 幻觉级联：上游 Agent 编造，下游当事实传播；\n6) 协调开销：通信成本超过任务本身。\n规避：\n- 明确角色边界与接口契约（schema）；\n- 设最大轮数/预算上限防死循环；\n- 加 supervisor/orchestrator 统一决策与验收；\n- 关键步骤加校验/投票；\n- 评估是否真的需要多 Agent——单 Agent + 工具常已足够（YAGNI）。"
+    },
+    {
+      "question": "什么是 LLM Agent？它的核心组件有哪些？",
+      "points": 5,
+      "difficulty": 2,
+      "tags": [
+        "Agent",
+        "组件",
+        "基础"
+      ],
+      "dimension": "skill",
+      "reference_answer": "Agent：以 LLM 为大脑，能感知（理解输入）、推理（规划/决策）、行动（调用工具/与环境交互）、观察（接收反馈），自主完成多步目标的系统。区别于单轮 LLM 调用，Agent 是循环的、有状态的、能采取行动的。\n核心组件：\n1) 大脑（LLM）：推理、决策、生成；\n2) 工具（Tools）：函数/API/数据库/代码执行/浏览器等，Agent 通过工具影响外部世界；\n3) 记忆（Memory）：短期（当前任务上下文/scratchpad）+ 长期（向量库存历史经验/事实）；\n4) 规划（Planning）：把目标分解为步骤（ReAct/Plan-Execute/ToT）；\n5) 观察（Observation）：工具返回结果，反馈给 LLM 进入下一步；\n6) 循环（Agent Loop）：思考→行动→观察→...直到完成或停止。\n关键能力：自主决策、工具使用、错误恢复、状态管理、停止判断。\nAgent 让 LLM 从「回答问题」进化到「完成任务」，是 LLM 应用的高级形态（自主助手、编码 agent、研究 agent、自动化工作流）。"
+    },
+    {
+      "question": "Function Calling 的完整流程是什么？",
+      "points": 10,
+      "difficulty": 3,
+      "tags": [
+        "function-calling",
+        "工具调用",
+        "流程"
+      ],
+      "dimension": "skill",
+      "reference_answer": "流程（一个工具调用循环）：\n1) 定义工具：把可用工具描述为 schema（名称/description/参数 JSON Schema），随请求发给 LLM；\n2) LLM 决策：LLM 据用户意图 + 工具描述，决定是否调用工具、调哪个、参数填什么，返回结构化的 function_call（工具名 + 参数 JSON）；\n3) 执行：应用层据 function_call 执行对应函数（本地代码/API），得结果；\n4) 反馈：把工具结果作为 observation（tool message）回传 LLM；\n5) LLM 继续：LLM 据结果决定——继续调其他工具、再调同工具（如分页）、或生成最终回答；\n6) 循环 2-5 直到 LLM 给出最终回答（不再调工具）。\n关键点：\n- schema 质量决定 LLM 选对工具/填对参数（description 清晰、参数语义化、enum 约束）；\n- 参数由 LLM 从自然语言提取，需校验（缺失/类型错则让 LLM 重填或问用户）；\n- 工具执行需安全（沙箱、权限、超时、确认危险操作）；\n- 错误反馈：工具失败把错误回灌 LLM，让其重试/换工具/告知用户；\n- 并行：现代模型支持一次返回多个 tool call 并行执行。\nFunction Calling 是现代 Agent 的基础机制（比 ReAct 文本解析更可靠），OpenAI/Anthropic/开源模型普遍支持。MCP 是标准化的工具协议。"
+    },
+    {
+      "question": "什么是 MCP（Model Context Protocol）？它解决了什么问题？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "MCP",
+        "协议",
+        "工具"
+      ],
+      "dimension": "skill",
+      "reference_answer": "问题：每个 LLM 应用接外部工具/数据源都要各自集成（N 个应用 × M 个工具 = N×M 集成），重复且碎片化；工具与具体模型/应用耦合，难复用。\nMCP（Anthropic 提出的开放协议）：标准化 LLM 应用与外部工具/数据源的连接协议（类比「USB-C for AI」）。MCP server 暴露工具/资源/提示，MCP client（LLM 应用）统一接入，任何支持 MCP 的应用都能用任何 MCP server 的工具。\n核心能力：\n- Tools：可执行函数；\n- Resources：可读数据/文件；\n- Prompts：可复用提示模板。\n价值：\n1) 解耦：工具（server）与 LLM 应用（client）独立开发，即插即用；\n2) 标准化：统一协议，N×M → N+M；\n3) 生态：工具一次开发多应用复用，应用一键接入大量工具；\n4) 安全：统一的认证/权限模型。\n架构：MCP server（封装某工具/数据源，如 GitHub/数据库/文件系统）↔ MCP client（Claude/Cursor/其他应用），通过 stdio/SSE 通信。\n现状：快速被生态采纳（Claude Desktop、Cursor、Zed 等支持），大量 MCP server 涌现。\n意义：MCP 让 Agent 接工具从「每应用定制」走向「标准化生态」，类似 Function Calling 之上的「工具市场协议层」，是 Agent 基础设施的重要进展。理解 MCP 有助于把握 Agent 工具生态趋势。"
+    },
+    {
+      "question": "Agent 如何做规划（Planning）？常见策略？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "规划",
+        "planning",
+        "Agent"
+      ],
+      "dimension": "skill",
+      "reference_answer": "规划：Agent 把复杂目标分解为可执行步骤序列，决定每步做什么、用什么工具。\n策略：\n1) 无显式规划（ReAct 式）：每步即时思考（Thought）决定下一步动作（Action），根据观察动态调整。灵活、可纠错，但可能低效/绕路。\n2) 先规划后执行（Plan-and-Execute）：先一次性生成完整步骤计划，再依次执行。清晰、token 高效、易并行，但计划错则全盘错，应对突发不灵活。\n3) 混合：先粗规划骨架，执行中局部 ReAct 灵活调整，必要时重新规划（replan）。主流实践。\n4) 树搜索（ToT/Tree of Thoughts）：探索多条可能路径，评估后择优，可回溯。复杂决策强但成本高。\n5) 反思驱动（Reflection）：执行后反思结果，更新计划（如失败后换策略重试）。\n6) 分层（Hierarchical）：高层 manager 规划，低层 worker 执行子任务，多层分解。\n7) 任务分解：把大任务拆成子任务，可并行/分配给不同 agent。\n规划要点：\n- 明确目标与成功标准；\n- 识别所需工具/信息/依赖；\n- 考虑顺序（依赖关系）、并行（独立子任务）；\n- 设停止条件（完成/无法完成/超预算）；\n- 容错（步骤失败的重试/替代）。\n权衡：规划越细越可控但越僵化，越灵活越能应对变化但可能发散。按任务复杂度/确定性选。动态任务用 ReAct/混合，固定流程用 Plan-Execute。规划是 Agent 核心，决定效率与成功率。"
+    },
+    {
+      "question": "什么是 Reflection（自我反思）？它如何提升 Agent 效果？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "reflection",
+        "反思",
+        "Agent"
+      ],
+      "dimension": "skill",
+      "reference_answer": "Reflection：Agent 对自身行为/结果进行评估与反思，据此改进后续策略。类比人「做完事复盘，下次做得更好」。\n形式：\n1) 自评估：每步或任务后，让 LLM 评估「这步做对了吗/结果好吗/有无更好方法」；\n2) 经验总结：把反思结论（什么有效/什么陷阱）写入记忆，未来类似任务参考；\n3) 迭代改进：据反思重试/换策略/修正；\n4) 自我批评（Self-Critique）：生成后让 LLM 扮演评审找问题，再改进（如 Reflexion、Self-Refine）。\n原理：LLM 「评估」常比「一次性生成」更准（评估时已知目标与结果，更聚焦）；反思把单次尝试变成迭代改进，逼近正确。\n效果：显著提升复杂任务成功率（Reflexion 在编程/推理基准提升明显）。\n应用：\n- 编码 agent：跑测试→失败→反思错误→改代码→重试；\n- 推理 agent：答错→反思哪里错→重新推理；\n- 写作 agent：草稿→自评→修改；\n- 长期：把反思经验存记忆，跨任务复用。\n代价：增 LLM 调用（反思本身耗 token/时间）；反思可能「自我强化错误」（错了还觉得自己对）。\n注意：反思需基于客观反馈（测试结果/工具输出/外部校验），而非纯 LLM 主观判断（否则可能在错误方向上「越反思越自信」）。配合外部 verifier 更可靠。\nReflection 是提升 Agent 可靠性与学习能力的核心技术，尤其复杂多步任务。"
+    },
+    {
+      "question": "主流 Agent 框架（LangGraph / AutoGen / CrewAI）的设计思路与区别？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "框架",
+        "LangGraph",
+        "AutoGen"
+      ],
+      "dimension": "skill",
+      "reference_answer": "LangGraph（LangChain）：基于「状态图」的 Agent 编排。把 Agent 建模为有向图——节点是计算单元（LLM 调用/工具/逻辑），边是状态流转（含条件分支）。强调：\n- 显式状态管理（共享 state）；\n- 可控流程（循环节点、条件分支、人在环）；\n- 适合复杂、需精确控制的 Agent（含循环/分支/人工介入）；\n- 偏「确定性流程 + LLM 节点」混合。\nAutoGen（微软）：多 Agent 对话框架。把多个 Agent（角色不同）放入对话，通过消息交互协作。强调：\n- 多 Agent 角色分工（coder/reviewer/executor）；\n- 对话式协作（Agent 间讨论）；\n- 适合需要多视角/讨论的复杂任务；\n- 偏「多 Agent 自由协作」。\nCrewAI：角色化多 Agent 框架。定义 Crew（团队）+ Agent（角色/目标/工具）+ Task（任务/流程），Agent 按流程协作。强调：\n- 角色与职责清晰（像真实团队）；\n- 流程驱动（sequential/hierarchical）；\n- 易用、面向「团队协作」隐喻；\n- 偏「结构化团队流程」。\n区别核心：\n- LangGraph：状态图、精确控制、单/多 Agent 通用；\n- AutoGen：多 Agent 对话、自由协作；\n- CrewAI：角色团队、流程驱动、易用。\n选择：\n- 需精确流程控制/复杂状态/人在环 → LangGraph；\n- 多 Agent 讨论/多视角 → AutoGen；\n- 团队角色协作/快速搭建 → CrewAI；\n- 简单单 Agent → 直接 LLM + 工具循环即可，无需重框架。\n还有 OpenAI Swarm（轻量多 agent）、Semantic Kernel 等。框架快速演进，选按需求与团队能力，避免过度依赖（理解底层原理更耐用）。"
+    },
+    {
+      "question": "单 Agent + 工具 vs Multi-Agent，如何选择？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "multi-agent",
+        "选型",
+        "架构"
+      ],
+      "dimension": "skill",
+      "reference_answer": "单 Agent + 工具：一个 LLM agent 配多个工具，自主规划调用完成全任务。\n优点：简单、上下文一致、无 Agent 间通信开销、易调试；\n缺点：复杂任务上下文臃肿（角色/工具/历史堆积）、一个 prompt 难兼顾多角色、易发散、单点（该 agent 出错全错）。\nMulti-Agent：多个角色化 agent 分工协作（如 researcher/writer/reviewer），各自专注，通过消息协作。\n优点：\n- 关注点分离（每 agent 角色清晰、prompt 聚焦、上下文干净）；\n- 并行（独立子任务多 agent 并发）；\n- 互查互评（reviewer 审 coder，提质量）；\n- 模块化（每 agent 独立优化/替换）。\n缺点：复杂（Agent 间接口/通信/协调）、通信开销、易循环争论、责任模糊、调试难、token 成本高（多 agent 多轮）。\n选择原则（YAGNI）：\n- 默认单 Agent + 工具，够用就别上多 Agent；\n- 以下才考虑多 Agent：\n  1) 任务确实可分解为差异明显的子角色（写代码 vs 评审 vs 执行）；\n  2) 需并行独立子任务；\n  3) 需多视角讨论/互审提升质量；\n  4) 单 agent 上下文/能力撑不住；\n- 即便多 agent，也常是「单主 agent + 少量专职子 agent」而非大量平等 agent。\n经验：多 Agent 的协调复杂度常超过收益，很多「看似需要多 agent」的任务单 agent + 好工具 + 反思就能解。先单 agent 验证，瓶颈明确再拆多 agent。Multi-Agent 是高级架构，非默认选择。"
+    },
+    {
+      "question": "Multi-Agent 常见的协作架构有哪些？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "multi-agent",
+        "架构",
+        "协作"
+      ],
+      "dimension": "skill",
+      "reference_answer": "架构：\n1) Supervisor / Orchestrator（中心化）：一个「主管」agent 接收任务，分解并分配给专职子 agent，收集结果，决策下一步。最常见、最可控。类似团队 leader 调度成员。\n2) Hierarchical（层级）：多层 supervisor，高层分解给中层，中层再分解给底层，结果逐层汇总。适合超复杂任务，但层级深通信/延迟大。\n3) Sequential / Pipeline（流水线）：agent 按固定顺序串联（researcher→writer→reviewer→editor），上一个输出喂下一个。流程清晰，适合线性生产。\n4) Network / Free-form（自由协作）：agent 间自由对话/请求，无中心调度。灵活但难控、易混乱。\n5) Debate（辩论）：多 agent 各持立场辩论，第三方/投票得出结论。适合需多视角/对抗验证的决策。\n6) Group Chat（群聊）：多 agent 在共享「群」中协作，由 manager agent 决定谁发言（AutoGen GroupChat）。\n7) Competitive / Voting：多 agent 各解，投票/择优。\n权衡：\n- 可控性：Supervisor/Hierarchical > Sequential > Network；\n- 灵活性：Network > Supervisor > Sequential；\n- 复杂度：Network/Debate > Hierarchical > Supervisor > Sequential。\n选择：\n- 需精确控制 → Supervisor；\n- 线性生产 → Sequential Pipeline；\n- 复杂可分解 → Hierarchical；\n- 需多视角/对抗 → Debate/Voting；\n- 探索性 → Network（谨慎）。\n实践：Supervisor + 专职子 agent 是最常用、最平衡的架构。避免过度复杂的自由协作（易失控）。明确角色边界、接口契约、停止条件、错误处理，是 Multi-Agent 可靠的关键。"
+    },
+    {
+      "question": "Agent 如何管理上下文（context management）？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "上下文",
+        "状态管理",
+        "Agent"
+      ],
+      "dimension": "skill",
+      "reference_answer": "挑战：Agent 多步循环，上下文不断累积（system/工具描述/历史 thought-action-observation/中间结果），很快撑爆上下文窗口，且关键信息被淹没（lost in the middle）、token 成本飙升。\n管理策略：\n1) Scratchpad 管理：把思考/行动/观察记录在 scratchpad，定期摘要/压缩旧部分，只保留关键决策与最近步骤；\n2) 摘要：周期性把长历史摘要成短文（如每 N 步摘要），保留要点丢细节；\n3) 选择性保留：保留关键步骤（决策点/工具结果/错误），丢弃冗余（重复观察/失败尝试）；\n4) 外部记忆：把详细信息存外部（向量库/文件/DB），上下文只放索引/摘要，需要时检索注入；\n5) 任务状态机：用结构化状态（current_step/plan/results）记录进度，而非把全历史塞 prompt；\n6) 工具结果压缩：工具返回的大结果（网页/文件）压缩/截断/存外部，prompt 只放摘要；\n7) 子任务隔离：复杂任务拆子任务，每子任务独立上下文（multi-agent 或子 session），结果回传主任务；\n8) 上下文窗口预算：分配各部分预算（system/工具/历史/输出），按优先级填充。\n目标：上下文保持「 Relevant + Compact」——含必要信息，去冗余，让 LLM 聚焦当前任务。\nLangGraph 的 state 设计（显式状态对象 + reducer）是结构化上下文管理的好实践。\n注意：上下文管理差会导致 Agent 「忘记」目标/重复已做步骤/发散。监控 token 用量与任务完成率，迭代优化上下文策略。长任务（数百步）的上下文管理是生产 Agent 的核心难点。"
+    },
+    {
+      "question": "Agent 如何判断任务完成并停止？",
+      "points": 5,
+      "difficulty": 3,
+      "tags": [
+        "停止条件",
+        "终止",
+        "Agent"
+      ],
+      "dimension": "skill",
+      "reference_answer": "为什么重要：Agent 不停止会无限循环（烧 token、空转、甚至反复执行破坏性操作）。明确停止条件是可靠 Agent 的前提。\n停止条件：\n1) 目标达成：LLM 判断任务已完成（产出期望结果/达成成功标准），返回最终回答不再调工具；\n2) 显式停止信号：LLM 返回特殊 finish/final 动作；\n3) 步数上限：最大循环步数（防无限循环），到上限强制停（带状态总结）；\n4) 预算上限：token/时间/调用次数上限，超预算停；\n5) 无法完成判断：LLM 判断「无法完成」（缺信息/工具不足/矛盾），主动终止并说明；\n6) 重复检测：检测到重复行为（相同动作反复），终止防死循环；\n7) 错误上限：连续失败 N 次终止；\n8) 用户/外部中断：用户取消/超时/外部信号。\n设计要点：\n- 明确成功标准（怎么算完成），让 LLM 有判断依据；\n- 设硬上限（步数/预算）兜底，防失控；\n- 终止时输出状态（完成了什么/为何停/未完成什么），便于接续或人工介入；\n- 区分「完成」「无法完成」「超限」不同终止，分别处理。\n常见坑：\n- 无步数上限→无限循环烧钱；\n- LLM 误判完成（没真完成就停）或不敢完成（一直调工具）；\n- 死循环（工具失败→重试→失败）。\n实践：明确的成功标准 + 合理步数/预算上限 + 终止状态输出 + 重复/失败检测。停止判断是 Agent 可靠性的护栏，务必设计。"
+    },
+    {
+      "question": "Agent 的工具（Tools）应该如何设计？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "工具设计",
+        "tools",
+        "Agent"
+      ],
+      "dimension": "skill",
+      "reference_answer": "工具是 Agent 影响外部世界的「手脚」，设计好坏直接决定 Agent 能力与可靠性。\n设计原则：\n1) 描述清晰：description 写清「做什么、何时用、何时不用」（LLM 据此选工具），举例好用法；\n2) 参数语义化：参数名/描述/类型清晰，enum 约束取值，必填标 required，给格式示例；\n3) 粒度合适：太细（几十个）选错率高，太粗不灵活；按场景分组或动态限定可用集；\n4) 输出结构化：工具返回结构化结果（成功/失败/数据），含足够信息让 LLM 决策，但别太长（压缩/分页）；\n5) 幂等与安全：危险操作（删除/转账/发送）需确认或日志；查询幂等；写操作防误；\n6) 错误友好：失败返回清晰错误（原因+建议），让 LLM 知道下一步（重试/换工具/问用户）；\n7) 输入校验：参数校验（缺失/类型/范围），错则让 LLM 重填；\n8) 副作用明确：标注工具有无副作用、是否可逆；\n9) 组合性：工具可组合完成复杂任务（search→fetch→parse）。\n常见工具类型：\n- 检索（RAG/搜索/DB 查询）；\n- 计算（代码执行/计算器）；\n- 通信（发邮件/API 调用/通知）；\n- 操作（文件/DB/系统操作）；\n- 感知（浏览器/读取/OCR）。\n反模式：\n- description 含糊（LLM 不知道何时用）；\n- 参数过多/复杂（LLM 填错）；\n- 工具泛滥（选错）；\n- 输出冗长（占满上下文）；\n- 无错误处理（失败崩溃）。\n调试：记录每次工具选择与参数，据此优化 description 与 schema。工具设计是 Agent 工程的核心，好工具让普通 LLM 表现出色，差工具让强模型频频出错。"
+    },
+    {
+      "question": "编码 Agent（如自动写代码的 agent）的核心架构与挑战？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "编码Agent",
+        "代码",
+        "架构"
+      ],
+      "dimension": "skill",
+      "reference_answer": "代表：Devin、Cursor Agent、Claude Code、SWE-agent。目标：自主理解需求→写代码→测试→调试→提交，完成软件任务。\n核心架构：\n1) 需求理解：解析任务描述（issue/需求），澄清歧义；\n2) 代码库理解：探索仓库（搜索/读文件/理解结构），定位相关代码（embedding 检索 + grep + 符号分析）；\n3) 规划：制定修改方案（改哪些文件/函数）；\n4) 编辑：生成/修改代码（应用 diff/重写函数）；\n5) 验证：运行测试/lint/编译，据结果迭代；\n6) 调试：失败→读错误→定位→修复（reflection 循环）；\n7) 提交：commit/PR/报告。\n关键能力：\n- 大代码库导航（RAG over 代码 + 符号检索 + grep）；\n- 精确编辑（diff/patch 应用，而非整文件重写）；\n- 执行与反馈循环（跑测试/命令，据输出迭代）；\n- 错误恢复（编译错/测试失败/运行时错的诊断修复）。\n挑战：\n1) 代码库规模：上下文装不下，需高效检索定位；\n2) 长程依赖：改一处影响多处，需理解全局；\n3) 精确性：代码必须语法/逻辑对，容错低（错一个字符编译失败）；\n4) 测试反馈：依赖测试质量（无测试难验证）；\n5) 复杂任务：多文件协调、架构级修改；\n6) 调试：错误信息理解、根因定位（最难）；\n7) 评估：代码正确性难自动判（SWE-bench 用真实 issue PR 评估）；\n8) 安全：执行生成代码需沙箱。\n工具：代码搜索、文件读写、shell 执行、测试运行、git。Sandbox（Docker）隔离执行。\n编码 agent 是 Agent 最有商业价值方向之一，进步快（SWE-bench 通过率持续升），但复杂任务仍需人工监督。理解其架构有助构建/使用编码工具。"
+    },
+    {
+      "question": "Agent 如何处理错误与失败恢复？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "错误处理",
+        "恢复",
+        "可靠性"
+      ],
+      "dimension": "skill",
+      "reference_answer": "Agent 在真实环境必然遇错（工具失败/LLM 幻觉/参数错/外部异常），可靠恢复是关键。\n错误类型：\n1) 工具执行失败（API 错/超时/参数错/权限）；\n2) LLM 错误（选错工具/填错参数/幻觉/格式错/陷入循环）；\n3) 环境异常（网络/服务不可用）；\n4) 逻辑错误（步骤对但方向错）。\n恢复策略：\n1) 错误反馈循环：工具失败把错误信息（原因+建议）回灌 LLM，让其重试/换参数/换工具——这是核心机制；\n2) 重试（有限）：瞬时错误重试（指数退避），限次数防死循环；\n3) 替代方案：主工具失败换备选（主搜索挂用备用搜索）；\n4) 反思修正：失败后 LLM 反思「为何失败/怎么改」，调整策略重试（Reflection）；\n5) 降级：无法完成时部分完成/返回已有结果/告知局限；\n6) 回滚：破坏性操作失败回滚到安全状态；\n7) 升级/人工：关键失败转人工（如 Agent 卡住/高风险）；\n8) 检查点：定期存状态，失败可从检查点恢复而非重来。\n设计要点：\n- 工具返回结构化错误（错误码+原因+可重试性）；\n- 设重试/步数上限防死循环；\n- 区分可恢复（瞬时）与不可恢复（逻辑错）错误；\n- 日志/追踪便于事后分析；\n- 危险操作需确认/可回滚。\n常见坑：\n- 失败不反馈给 LLM（直接崩）；\n- 无限重试（无上限）；\n- 同一错误反复（无反思/换策略）；\n- 错误处理本身出错。\n可靠恢复让 Agent 从「演示级」走向「生产级」。设计时假设「一切会失败」，让 Agent 能优雅应对。监控错误率与恢复成功率，持续优化。"
+    },
+    {
+      "question": "生产级 Agent 面临的主要挑战有哪些？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "生产Agent",
+        "挑战",
+        "可靠性"
+      ],
+      "dimension": "skill",
+      "reference_answer": "演示惊艳，生产难——主要挑战：\n1) 可靠性/成功率：演示挑顺手的，生产要应对长尾/意外，成功率从 90% 到 99%+ 难（错误会级联放大）；\n2) 成本：多步多工具多 LLM 调用，单任务成本高（vs 单轮），规模化昂贵，需控制（预算上限/路由小模型/缓存）；\n3) 延迟：多步串行，单任务延迟累积（秒-分钟），实时交互难；\n4) 安全：Agent 调工具能影响真实世界（删数据/转账/发邮件），错误/被劫持后果严重，需权限最小化+确认+沙箱；\n5) 评估难：开放式任务成功难自动判，需任务特定评估+人工；\n6) 可观测/调试：多步链路长、状态复杂、含工具与 LLM 随机性，出问题难定位（需完整追踪）；\n7) 非确定性：LLM 随机性致同任务结果不稳，难复现/测试；\n8) 上下文管理：长任务上下文爆炸；\n9) 错误恢复：真实环境必出错，需健壮恢复；\n10) 人在环：何时打断/请求人工，平衡自主与可控；\n11) 对抗/注入：Agent 读外部内容/调工具，被注入风险高；\n12) 责任/合规：自主行动的责任归属、合规（金融/医疗）。\n应对：\n- 缩小任务范围（专注窄领域先做稳）；\n- 强评估与回归；\n- 充分护栏（权限/确认/过滤）；\n- 完整可观测；\n- 渐进自主（先辅助人，逐步自主）；\n- 成本/延迟控制；\n- 人在环关键决策。\n生产 Agent 是系统工程，远超「调 API + 循环」。建议从窄场景、半自主起步，验证可靠再扩展。警惕「演示效果」≠「生产可用」。"
+    },
+    {
+      "question": "Agent 评估为什么难？如何评估一个 Agent？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "Agent评估",
+        "评估",
+        "难度"
+      ],
+      "dimension": "skill",
+      "reference_answer": "为什么难：\n1) 开放性：同任务多正确路径，难判等价；\n2) 多步骤：错误级联，单步评估不够，需看端到端；\n3) 环境依赖：需真实/模拟环境（网页/API/代码执行），搭建成本高；\n4) 非确定：LLM 随机性致同任务多次结果不同，需多次采样；\n5) 成本：每次评估跑多步多调用，贵且慢；\n6) 成功标准模糊：「任务完成」难精确定义。\n评估维度：\n1) 任务成功率（最核心）：是否达成用户目标；\n2) 效率：步数/token/时间/成本，能否更省；\n3) 过程质量：规划合理、工具用对、错误恢复；\n4) 鲁棒性：异常/扰动下表现；\n5) 安全：不执行危险操作。\n方法：\n1) 端到端基准：真实任务环境 + 自动成功判定（SWE-bench 真实 issue/WebArena 网页操作/GAIA 通用助手/τ-bench 客服）；\n2) 模拟环境：沙箱/模拟 API/网页，可大规模跑；\n3) LLM-as-Judge + 人工：开放式任务用 LLM/人判成功与质量；\n4) 轨迹分析：看每步决策（规划/工具/参数）质量；\n5) 多次采样：成功率/方差的统计；\n6) 对抗/扰动测试：鲁棒性。\n挑战：\n- 环境保真度（模拟 vs 真实差距）；\n- 成功判定（自动判的可靠性）；\n- 泛化（基准能否代表真实任务分布）；\n- 成本（大规模评估贵）。\n实践：建任务集（真实场景采样）+ 自动环境 + 多维指标（成功率/效率/过程）+ LLM/人工校验 + 多次采样统计。Agent 评估是当前难点，需投入——没有好评估就无法可靠迭代。Agent benchmark（SWE-bench/WebArena/AgentBench）快速演进，但生产评估仍需自建领域任务集。"
+    },
+    {
+      "question": "什么是 Human-in-the-Loop（人在环）Agent？何时需要？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "人在环",
+        "HITL",
+        "Agent"
+      ],
+      "dimension": "skill",
+      "reference_answer": "HITL Agent：在关键环节引入人类判断/批准/监督，而非完全自主。形式：\n1) 批准（Approval）：危险/重要操作前请求人类确认（删数据/转账/发送/提交）；\n2) 引导（Guidance）：人在 agent 卡住/不确定时提供方向；\n3) 纠正（Correction）：人纠正 agent 的错误步骤/输出；\n4) 监督（Oversight）：人监控 agent 行为，必要时介入；\n5) 协作（Collaboration）：人与 agent 各擅其长，共同完成任务。\n何时需要：\n1) 高风险/不可逆操作（金融/删除/发布）——必须人确认；\n2) 模糊/价值判断（创意/伦理/复杂决策）——人给方向；\n3) Agent 能力边界（不擅长/低置信）——转人；\n4) 合规/责任要求（医疗/法律/金融）——人担责；\n5) 信任建立期（新 agent，逐步授权）。\n设计要点：\n- 明确哪些动作需 HITL（按风险/可逆性）；\n- 流畅的交互（人能快速理解并决策，agent 提供足够上下文与建议）；\n- 平衡自主与可控（太多确认烦、太少不安全）；\n- 记录人的决策（审计 + 训练数据）；\n- 渐进信任（初期多人审，验证可靠后减少）。\n价值：\n- 安全（防不可逆错误）；\n- 质量（人补 agent 短板）；\n- 信任（用户敢用）；\n- 合规（满足监管）；\n- 数据（人的反馈改进 agent）。\n挑战：人是瓶颈（延迟/成本/可扩展性），过度依赖失去 agent 自动化价值。\n趋势：生产 agent 多从「人在环」起步（agent 执行+人审批关键步），验证可靠后逐步提升自主度（人在环上/减少确认）。完全自主适合低风险/可逆场景。HITL 是负责任部署生产 agent 的关键设计。"
+    },
+    {
+      "question": "自主 Agent（如 AutoGPT 类）为何多数未能生产可用？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "自主Agent",
+        "AutoGPT",
+        "局限"
+      ],
+      "dimension": "skill",
+      "reference_answer": "AutoGPT 类：给个高层目标（「帮我创业」「研究 X 并写报告」），agent 自主规划执行长任务。演示惊艳，但生产难，原因：\n1) 可靠性低：长任务多步，错误累积，成功率随步数指数下降；开放目标下 agent 易发散/卡住/循环；\n2) 成本爆炸：长任务成百上千次 LLM 调用，token 成本极高，价值常不抵成本；\n3) 延迟：长任务跑数分钟-小时，交互体验差；\n4) 评估难：开放目标「成功」难判，无法可靠衡量/迭代；\n5) 安全风险：自主调工具（浏览器/文件/支付）能造成真实损害，错误或被注入后果严重；\n6) 上下文管理：长任务上下文爆炸，agent 忘记目标/重复；\n7) 规划能力不足：复杂任务规划易错（步骤错全盘错），当前 LLM 长程规划弱；\n8) 工具/环境依赖：现实环境复杂多变（网页改版/API 失败），agent 适应性差；\n9) 信任/责任：自主行动责任归属模糊，用户不敢放手。\n教训：\n- 开放自主 + 长任务 + 真实环境 = 当前技术难支撑可靠生产；\n- 成功的 agent 多是「窄领域 + 短任务 + 强约束 + 人在环」（编码 agent、客服、特定工作流），而非「给个目标自己干一切」；\n- 缩小范围、强评估、护栏、人在环是可行路径；\n- 演示价值（挑顺手的）≠ 生产价值（应对长尾）。\n趋势：研究推进（更好的规划/反思/长程推理/工具），但短期生产 agent 应务实——窄、短、可控、辅助人为主，逐步扩展自主。理解 AutoGPT 类的局限有助理性看待 Agent 能力边界，避免过度承诺。"
+    },
+    {
+      "question": "Agent 与 Workflow（工作流）的区别？何时用哪个？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "Agent",
+        "workflow",
+        "对比"
+      ],
+      "dimension": "skill",
+      "reference_answer": "Workflow：预定义的固定流程/步骤序列（可能含 LLM 节点），路径确定（含条件分支但分支已知）。LLM 在节点内执行任务，但不决定「下一步去哪」（流程是编排好的）。\nAgent：LLM 动态决定下一步做什么（路径由 LLM 实时决策），自主规划与工具选择，路径不预定。\n区别核心：谁决定流程——\n- Workflow：开发者预定流程，LLM 执行节点任务；\n- Agent：LLM 自主决策流程（每步 LLM 决定下一步）。\n类比：workflow = 流水线（步骤固定），agent = 员工（自主决定怎么完成任务）。\nWorkflow 优点：可预测、可控、易测试/调试、成本低（无规划开销）、可靠；缺点：不灵活（流程外的情况处理不了）、需人工预设所有路径。\nAgent 优点：灵活（应对未预设情况）、自主（少人工编排）；缺点：不可预测、难测试、成本高（规划/多步）、可能发散/出错。\n选择（Anthropic 的建议）：\n- 任务路径确定/可预设 → Workflow（优先，可控可靠低成本）；\n- 任务路径不确定/需动态决策 → Agent；\n- 能用 workflow 解决就别用 agent（YAGNI，agent 的灵活性代价大）。\n实践：\n- 多数业务流程是 workflow（审批/ETL/通知/订单流），LLM 作节点（分类/抽取/生成）；\n- 少数需自主决策的才 agent（研究/开放式助手/探索性任务）；\n- 混合：workflow 为主干，关键决策点嵌 agent 节点（兼顾可控与灵活）。\n误区：把所有 LLM 应用都叫「agent」（实际多是带 LLM 节点的 workflow）。区分清楚有助于选对架构——workflow 简单可靠，agent 灵活但复杂，按需选。优先 workflow，必要才 agent。"
+    },
+    {
+      "question": "Agent 的记忆系统如何设计？短期/长期/工作记忆？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "记忆",
+        "memory",
+        "Agent"
+      ],
+      "dimension": "skill",
+      "reference_answer": "借鉴认知科学的分层：\n1) 工作/短期记忆（Working Memory）：当前任务的上下文——对话历史、当前 plan、scratchpad（思考/行动/观察记录）。本质是 prompt 内的即时上下文。受 token 限制，需管理（摘要/压缩/截断）。\n2) 长期记忆（Long-Term Memory）：跨任务/会话持久化，分：\n   - 语义记忆（事实/知识）：用户偏好、学到的事实、领域知识。存向量库/结构化 DB，检索注入。\n   - 情景记忆（Episodic）：过去的具体经历（做过什么任务、成功/失败的经验）。存向量库，按当前任务检索相关历史经验（few-shot 式）。\n   - 程序记忆（Procedural）：学到的技能/工具用法/工作流。存为可执行脚本/模板。\n实现：\n- 短期：prompt 拼接（最近 N 轮 + 任务摘要 + 当前状态）；\n- 长期：外部存储（向量库 PGVector/Milvus、KV Redis、结构化 DB、文件），检索注入相关记忆。\n关键机制：\n- 写入：什么写入记忆（重要事实/成功经验/用户偏好），reflection 总结后写入；\n- 检索：按当前任务/query 检索相关记忆注入 prompt（非全塞）；\n- 遗忘/更新：过时记忆更新/删除，防膨胀；\n- 重要性/相关度：记忆按重要性/相关度排序优先注入。\n参考：Generative Agents（记忆流 + reflection + 检索）、MemGPT（分层记忆管理，OS 式）。\n价值：让 agent 跨会话学习（不每次从零）、个性化（记用户偏好）、避免重复错误。\n挑战：检索相关性（无关记忆噪声）、记忆一致性、隐私（记忆含 PII）、成本。\n记忆系统是高级 agent 的关键，从「无状态助手」到「有记忆能学习的 agent」。短期管好上下文，长期建可检索的经验库。"
+    }
+  ]
+}

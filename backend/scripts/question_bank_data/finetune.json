@@ -1,0 +1,322 @@
+{
+  "category": {
+    "slug": "finetune",
+    "name": "模型微调",
+    "target_points": 5,
+    "sort_order": 6
+  },
+  "items": [
+    {
+      "question": "LoRA 的数学原理是什么？为什么它能「低秩」逼近全参微调？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "LoRA",
+        "PEFT",
+        "低秩"
+      ],
+      "dimension": "skill",
+      "reference_answer": "原理：假设预训练权重的任务适配增量 ΔW 是低秩的，用两个小矩阵乘积近似：ΔW = B × A，其中 A∈ℝ^(r×d)、B∈ℝ^(d×r)、r ≪ d。前向变为 h = Wx + BAx。\n原权重 W 冻结不更新，只训练 A、B（初始化 A 随机、B 为 0，保证训练开始 ΔW=0 不破坏原模型）。\n可训练参数从 d×d 降到 2×d×r（如 d=4096, r=8 → 从 16.7M 降到 65K，约 0.4%）。\n为何有效：Aghajanyan(2020) 等研究表明预训练模型在下游任务上的「内在维度」很低，适配只需在低维子空间调整方向，全参更新是冗余的。\n缩放：实际用 (α/r) × BA，α 是缩放系数，经验上 α=2r。\n推理：可合并 W' = W + BA，零额外延迟。"
+    },
+    {
+      "question": "QLoRA 相比 LoRA 多了哪些关键技术？为什么能在单张 24GB 显卡微调大模型？",
+      "points": 5,
+      "difficulty": 4,
+      "tags": [
+        "QLoRA",
+        "量化",
+        "NF4"
+      ],
+      "dimension": "skill",
+      "reference_answer": "QLoRA 在 LoRA 基础上对冻结的原模型做 4-bit 量化，关键技术：\n1) NF4（Normal Float 4-bit）：针对权重正态分布优化的 4-bit 量化格式，信息损失最小；\n2) Double Quantization：对量化常数本身再量化，进一步省显存（约省 0.4 bit/参数）；\n3) Paged Optimizer：用 CUDA 统一内存的分页机制，在显存峰值时自动 offload 到 CPU，避免 OOM；\n4) 只有 LoRA 参数（A、B）保持 FP16/BF16 训练，梯度数值稳定。\n省显存效果：原模型从 FP16（2 bytes/参数）压到 NF4（0.5 byte/参数），压缩 4 倍。65B 模型 FP16 需 ~130GB，QLoRA 约 33GB，单张 24-40GB 显卡可微调。\n代价：训练速度略慢（量化/反量化开销），效果接近 LoRA。"
+    },
+    {
+      "question": "什么是灾难性遗忘？微调时如何缓解？",
+      "points": 5,
+      "difficulty": 3,
+      "tags": [
+        "灾难性遗忘",
+        "微调",
+        "数据混合"
+      ],
+      "dimension": "skill",
+      "reference_answer": "定义：模型在新任务/新领域微调后，目标任务提升，但通用问答、推理、安全拒答等原有能力退化。\n成因：微调数据分布与预训练差异大、学习率过高/轮数过多、全参直接改所有权重、模型较小。\n缓解：\n1) 用 LoRA/Adapter：原权重冻结，天然缓解；\n2) 数据混合（Data Mixing）：新领域数据掺入 5-20% 通用指令/预训练数据联合训练；\n3) 数据回放（Replay）：定期加入少量旧任务样本；\n4) 冻结底层：只微调高层，保留底层通用表征；\n5) 正则化：EWC（弹性权重巩固，约束重要参数变化）、L2；\n6) 低学习率 + 少轮数；\n7) 多阶段：先领域微调，再混合通用数据「恢复」。\n经验：配比常用 领域:通用 = 9:1 或 8:2。"
+    },
+    {
+      "question": "LoRA 的秩 r 如何选择？r 过大或过小分别有什么问题？",
+      "points": 5,
+      "difficulty": 3,
+      "tags": [
+        "LoRA",
+        "超参",
+        "秩"
+      ],
+      "dimension": "skill",
+      "reference_answer": "r 决定 LoRA 矩阵 A、B 的秩（中间维度），是表达能力与成本的权衡旋钮。\n经验值：\n- 一般任务 r=8 即可；\n- 复杂任务（强推理、跨语言、风格迁移）r=16/32/64；\n- 极少场景需 r=128+。\nr 过小：表达能力不足，欠拟合，学不到任务所需的复杂适配；\nr 过大：\n1) 过拟合风险（可训练参数增多，尤其小数据集）；\n2) 训练变慢、显存上升；\n3) 逼近全参，丧失 LoRA 防遗忘与轻量的优势。\n配套：α 常设为 2r（即 α/r=2，固定放缩倍数）；target_modules 通常选注意力投影（q_proj, v_proj）甚至全部线性层。建议从 r=8 起调，验证集观察再调整。"
+    },
+    {
+      "question": "全参微调（Full Fine-Tuning）与 PEFT（参数高效微调）的区别？如何选择？",
+      "points": 10,
+      "difficulty": 3,
+      "tags": [
+        "PEFT",
+        "全参微调",
+        "选型"
+      ],
+      "dimension": "skill",
+      "reference_answer": "全参微调：更新模型所有参数。效果上限高（充分适配任务），但：\n- 显存巨大（模型+梯度+优化器状态，约 4-16× 参数量的字节，如 7B 模型 FP16+Adam 需 100GB+）；\n- 训练慢、成本高；\n- 易过拟合（小数据）；\n- 灾难性遗忘明显；\n- 每任务存一份全权重（部署/切换贵）。\nPEFT（Parameter-Efficient Fine-Tuning）：只更新少量参数（LoRA/Adapter/Prefix 等，<1% 参数），冻结主体。\n- 显存省（可在单卡训大模型）、训练快、成本低；\n- 抗过拟合、防遗忘（主体冻结）；\n- 每任务只存小 adapter，易切换/部署；\n- 效果多数场景接近全参（差距小）。\n选择：\n- 默认 PEFT（尤其 LoRA）：资源有限、多任务、需防遗忘、数据量中小的场景——绝大多数场景；\n- 全参微调：资源充足、追求极致效果、大数据、需深度改变模型行为（如领域基座、强风格迁移）；\n- 经验：先 LoRA（快验证），效果不足且资源够再全参；现代实践 LoRA 在多数任务已够。\n注意：PEFT 的上限略低于全参（复杂适配能力受限），但 ROI 远高。大模型 + LoRA 是当前主流微调范式。"
+    },
+    {
+      "question": "Adapter Tuning 与 LoRA 的区别？为什么 LoRA 更流行？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "Adapter",
+        "LoRA",
+        "PEFT"
+      ],
+      "dimension": "skill",
+      "reference_answer": "Adapter：在 Transformer 层内插入小型「适配模块」（瓶颈结构：降维-非线性-升维），冻结原模型，只训 adapter。参数高效。\nLoRA：用低秩矩阵 B·A 近似权重增量 ΔW，原权重 W 冻结，前向 h=Wx+BAx。训练只更新 A、B。\n区别：\n1) 结构：Adapter 加额外模块（改变层结构，增加层数/计算）；LoRA 是权重的低秩增量（不增层数）；\n2) 推理开销：Adapter 推理时多算 adapter 模块（增加延迟）；LoRA 可合并 W'=W+BA（合并后零额外延迟，不合并则多一次低秩矩阵乘，开销极小）；\n3) 参数效率：相近（都 <1%）；\n4) 灵活性：LoRA 易合并/切换（多 LoRA 服务）。\n为什么 LoRA 更流行：\n1) 推理可合并零延迟（Adapter 不能，永久多算）；\n2) 数学优雅（低秩假设有理论支撑）；\n3) 简单（无结构改动，只加旁路矩阵）；\n4) 易扩展（target_modules 灵活、有 DoRA/AdaLoRA 变体）；\n5) 效果好（多数任务接近全参）。\n其他 PEFT：Prefix-tuning/P-tuning（在 prompt 前加可学 token）、Prompt-tuning（只调 prompt embedding）、BitFit（只调 bias）。\nLoRA 及变体是当前 PEFT 主流，Adapter 在多语言/多任务某些场景仍有用。理解 PEFT 谱系有助于按需选择。"
+    },
+    {
+      "question": "Prefix-tuning / P-tuning / Prompt-tuning 各是什么？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "prefix-tuning",
+        "p-tuning",
+        "PEFT"
+      ],
+      "dimension": "skill",
+      "reference_answer": "共同点：在输入前加「可学习的虚拟 token」（soft prompt），冻结模型主体，只训这些 token 的 embedding（参数极少）。\n区别：\n1) Prompt-tuning：只在输入 embedding 序列前加可学 token，最简单，参数最少（千分之一）。大模型（>10B）上效果好，小模型效果差；\n2) Prefix-tuning：在每层 Transformer 注意力的 K/V 前都加可学 prefix（非仅输入层），通过 MLP 重参数化稳定训练。比 prompt-tuning 强（深层影响），但实现复杂；\n3) P-tuning v1/v2：v1 类似 prefix 在输入层加可学 token（用 LSTM/MLP 稳定）；v2 类似 prefix-tuning 每层加（深层），效果提升。\n特点：\n- 参数极少、训练快、省显存；\n- 不改模型结构（推理加 prefix token）；\n- 但：推理需带 prefix（多算）、效果对小模型/复杂任务弱、可解释性差；\n- 大模型 + 简单任务效果好（prefix 表征能力够）。\nvs LoRA：LoRA 改权重增量（适配更强），Prefix/Prompt 改输入（适配弱但更轻）。LoRA 在多数任务效果更好且可合并，故更主流；Prefix/Prompt 在超大模型 + 极致参数效率场景有用。\n适用：超大模型轻量适配、多任务共享主干（每任务不同 prefix）。理解它们是 PEFT 谱系的重要部分，但工业实践 LoRA 更常用。"
+    },
+    {
+      "question": "LoRA 的 target_modules 怎么选？只调 attention 还是全部线性层？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "LoRA",
+        "target_modules",
+        "配置"
+      ],
+      "dimension": "skill",
+      "reference_answer": "target_modules：决定 LoRA 旁路加在哪些权重上。\n选项：\n1) 仅注意力投影（q_proj, v_proj）：原 LoRA 论文配置，参数少、效果不错，是默认起点；\n2) 注意力全投影（q,k,v,o_proj）：更全面，略增参数，效果常更好；\n3) 全部线性层（含 FFN 的 gate/up/down_proj）：参数多、表达力强、效果最好（强适配），但训练慢、显存增；\n4) embedding/lm_head：少加（embedding 大，加 LoRA 增参数多）。\n经验：\n- 简单任务/省资源：仅 q,v；\n- 中等任务：q,k,v,o 或 +FFN；\n- 复杂任务/追求效果：全部线性层（现代实践常用，效果好）；\n- 实测：在评估集对比不同 target 的效果，按 ROI 选。\n权衡：\n- 加的模块多 → 适配强、效果上限高，但参数多、训练慢、过拟合风险（小数据）；\n- 加的少 → 省、快、防过拟合，但复杂任务可能不够。\n其他相关参数：r（秩，表达力）、alpha（缩放）、dropout。三者协同调。\n原论文建议 r=8、alpha=16（alpha=2r）、q,v。现代（QLoRA 论文等）倾向全线性层 + 适中 r。\n原则：先默认（q,v 或全线性层 + r=8）验证，按效果与资源在评估集调。target_modules 是 LoRA 效果的关键配置之一。"
+    },
+    {
+      "question": "什么是 DoRA、AdaLoRA 等 LoRA 变体？改进了什么？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "DoRA",
+        "AdaLoRA",
+        "LoRA变体"
+      ],
+      "dimension": "skill",
+      "reference_answer": "LoRA 的改进方向：表达力、参数分配、训练稳定性。\nDoRA（Weight-Decomposed LoRA）：把权重分解为「方向」（direction）和「大小」（magnitude）两部分，LoRA 只更新方向，大小单独学。动机：全参微调同时改方向和大小，LoRA 主要改方向（大小变化少），DoRA 显式建模大小，更接近全参行为，效果常优于 LoRA（相近参数量）。\nAdaLoRA：自适应分配 LoRA 的秩 r——重要层/位置分配高 r（强适配），不重要的低 r。用重要性评分动态裁剪/分配，把参数预算给最有价值处，提升参数效率。\n其他变体：\n- LoRA+：A、B 用不同学习率（B 快 A 慢），改善训练动态，提速收敛；\n- GaLore：梯度低秩投影，省显存（类似 LoRA 思想用于全参优化器）；\n- ReLoRA：周期性合并+重置，模拟全参训练能力；\n- PiSSA：用 SVD 主成分初始化 LoRA（而非随机/零），效果更好；\n- QLoRA（见专题）：4bit 量化基座 + LoRA，省显存（不是 LoRA 结构变体而是结合量化）。\n意义：这些变体在相近参数量下提升效果或参数效率，是 LoRA 的渐进改进。实践中：标准 LoRA 仍是默认（成熟稳定），追求极致可用 DoRA/PiSSA。理解改进方向（方向-大小分解、自适应秩、初始化）有助于按需选择与理解 PEFT 进展。"
+    },
+    {
+      "question": "SFT（指令微调）的指令数据应该如何构造？",
+      "points": 10,
+      "difficulty": 3,
+      "tags": [
+        "SFT",
+        "指令数据",
+        "数据构造"
+      ],
+      "dimension": "skill",
+      "reference_answer": "指令数据格式：(instruction/input, output)，即「指令 + 期望输出」，对话形式为多轮 messages。\n构造来源：\n1) 人工编写：质量最高但贵慢，适合种子/关键数据；\n2) 强模型蒸馏：用 GPT-4/Claude 生成指令-回答对（Alpaca/Vicuna 路线），量大快，但有版权/风格继承问题；\n3) Self-Instruct：让模型自己生成指令与回答（种子启动），规模化但有噪声；\n4) 开源数据集：FLAN/Dolly/OpenAssistant/OASST1/Alpaca，覆盖广；\n5) 真实日志：用户 query + 优质回答（产品场景，最真实）；\n6) 领域文档转指令：从领域文档自动生成问答对。\n质量原则（质量 >> 数量）：\n- 答案准确、有用、安全、格式规范（模型学分布，垃圾进垃圾出）；\n- 多样性：任务类型（QA/创作/推理/代码/对话）、难度、长度、风格；\n- 去重、去毒、去偏见、去低质；\n- 平衡：各类别合理配比（避免某类压倒）。\n数据量：数千-数万高质量常优于海量低质；LIMA 论文证明 1000 条极高质量数据 SFT 效果惊人（质量边际效应强）。\n最佳实践：\n- 种子人工数据 + 蒸馏扩充 + 严格过滤；\n- 用强模型/规则过滤低质（评分/格式/安全）；\n- 评估集留出，监控 SFT 效果与退化；\n- 配比影响能力侧重（多代码→代码强）。\n指令数据质量是 SFT 上限，投入数据质量回报最高。"
+    },
+    {
+      "question": "Chat Template（对话模板）是什么？为什么微调要用对？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "chat-template",
+        "对话格式",
+        "微调"
+      ],
+      "dimension": "skill",
+      "reference_answer": "Chat Template：把多轮对话（user/assistant/system 消息）格式化成模型能理解的单一文本字符串的模板，含特殊 token 标记角色与边界。如 Llama 格式：<s>[INST] <<SYS>>system<</SYS>>user [/INST] assistant </s>。\n为什么重要：\n1) 训练-推理一致：微调用什么模板，推理必须用相同模板，否则模型困惑、效果崩；\n2) 角色与边界：特殊 token 让模型区分 system/user/assistant、对话轮次；\n3) 通用：不同模型模板不同（Llama/Mistral/Qwen/ChatML 各异），用错则模型不认；\n4) 工具/多模态：复杂模板支持 function call、图像占位等。\n常见错误：\n- 训练用 A 模板，部署用 B 模板（效果骤降）；\n- 用 transformers 的 apply_chat_template 时未与训练一致；\n- 手动拼接字符串易错（漏特殊 token、转义错）；\n- 推理框架（vLLM/TGI）与训练框架模板不一致。\n最佳实践：\n- 用模型对应的官方 tokenizer.apply_chat_template（保证正确）；\n- 训练/评估/部署全链路用同一模板；\n- 微调时可微调模板相关 token 的 embedding（若加新 token）；\n- 注意 EOS/Pad token 处理（影响生成停止）。\nChatML（OpenAI 推的通用格式）逐渐成事实标准，但各家仍有差异。理解 chat template 是做对话微调的基础，模板不一致是微调模型部署后「变笨」的常见根因。务必训练与推理模板严格一致。"
+    },
+    {
+      "question": "微调的学习率、epoch、batch size 如何设置？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "超参",
+        "学习率",
+        "微调"
+      ],
+      "dimension": "skill",
+      "reference_answer": "学习率（最关键）：\n- 全参微调：1e-5 ~ 5e-5（小，防破坏预训练）；\n- LoRA/PEFT：1e-4 ~ 3e-4（大，因只调小参数且需有效更新）；\n- 经验：LoRA lr 远大于全参（10-50 倍），因 LoRA 更新少、需更大步长；\n- 太大：loss 爆炸/不收敛/破坏模型；太小：训不动/欠拟合。\nEpoch：\n- SFT 通常 1-3 epoch（多了过拟合、遗忘）；\n- 数据多 → 少 epoch（1-2）；数据少 → 适当增（2-3），但小心过拟合；\n- 监控验证 loss/评估指标，拐点处停（early stopping）。\nBatch Size：\n- 受显存限，常用梯度累积（gradient accumulation）模拟大 batch；\n- 全局 batch（batch_size × 梯度累积 × GPU 数）：SFT 常 64-256（指令微调）；\n- 太小：训练不稳/慢；太大：泛化差/显存爆；\n- LoRA 对 batch 不极端敏感，但仍需合理（全局 64-128 常用）。\n其他：\n- Warmup：前 1-5% 步数线性升温（防初期不稳）；\n- 调度：cosine 衰减（常用）；\n- 权重衰减、dropout（LoRA dropout 0.05-0.1）防过拟合；\n- 梯度裁剪（max_norm 1.0）防爆炸。\n经验：\n- 从推荐值起步（LoRA: lr 2e-4, epoch 3, batch 128, cosine, warmup）；\n- 在验证集调，找最优；\n- 不同任务/数据/基座最优超参不同，需实验。\n超参对微调效果影响大，建议用评估集系统调（而非拍脑袋）。工具（LLaMA-Factory/axolotl）有合理默认。"
+    },
+    {
+      "question": "什么是梯度累积（Gradient Accumulation）？为什么用它？",
+      "points": 5,
+      "difficulty": 3,
+      "tags": [
+        "梯度累积",
+        "训练技巧",
+        "显存"
+      ],
+      "dimension": "skill",
+      "reference_answer": "原理：把大 batch 拆成多个小 micro-batch，每个 micro-batch 前向+反向算梯度但不更新（累积），若干步后用累积梯度做一次参数更新。等效于用大 batch 训练，但每次只需小 batch 显存。\n为什么用：\n1) 显存限制大 batch：大模型显存吃紧，单步塞不下大 batch（激活+梯度+优化器），梯度累积用小 micro-batch 模拟大 batch；\n2) 大 batch 训练常更稳/更好（梯度估计准），但硬件装不下，累积等效实现；\n3) 多卡数据并行等效大 batch。\n计算：全局 batch = micro_batch_size × accumulation_steps × num_gpus。例：micro=4, accum=16, 8卡 → 全局 512。\n注意：\n1) 等效但不完全等同真大 batch：BN 统计仍按 micro 算（BN 受影响，LN/DeepNorm 不受）；\n2) 梯度累积期间不更新参数，loss/精度需正确缩放（除以累积步数）；\n3) 与梯度裁剪、混合精度的 scaler 协同（更新时才裁剪/unscale）；\n4) 累积多步 → 单次更新慢，但每步等效大 batch。\n实践：显存不够时首选（调小 micro_batch + 增 accumulation 达目标全局 batch）。框架（transformers/HF Trainer）原生支持（gradient_accumulation_steps）。\n权衡：累积步数太多 → 训练慢（每更新要多个 micro）；太少 → 显存不够。找平衡。梯度累积是「显存不够模拟大 batch」的标准技巧，大模型训练必备。"
+    },
+    {
+      "question": "微调训练中的显存都被什么占了？如何优化？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "显存",
+        "训练",
+        "优化"
+      ],
+      "dimension": "skill",
+      "reference_answer": "显存占用（全参训练，FP16+Adam）：\n1) 模型权重：2 bytes/参数（FP16），7B=14GB；\n2) 梯度：2 bytes/参数，7B=14GB；\n3) 优化器状态（Adam）：FP32 的 m,v + FP32 主权重 = 12 bytes/参数，7B=84GB；\n4) 激活：随序列长度、batch、层数线性增长，大 seq/batch 时显著；\n合计：全参训练 7B 模型约需 100GB+（模型+梯度+优化器+激活）。\n优化手段：\n1) 混合精度（BF16/FP16）：权重/梯度/激活用 16bit，省一半；优化器状态用 FP32 保稳定；\n2) 8bit/4bit 优化器（bitsandbytes）：优化器状态 8bit，省；\n3) ZeRO（DeepSpeed）/FSDP：把优化器状态/梯度/参数分片到多卡，每卡只存一部分（ZeRO-1/2/3 逐步省更多），代价是通信；\n4) 梯度检查点（激活重计算）：不存全部激活，反向时重算，省激活显存换算力（省 30-70% 激活）；\n5) QLoRA：基座 4bit 量化（NF4）+ LoRA 只训小参，7B 单卡 ~10GB 可训；\n6) LoRA/PEFT：冻结主体，只训 <1% 参数，大幅减梯度/优化器显存；\n7) 减小 batch/seq（或梯度累积）减激活；\n8) CPU/NVMe offload（ZeRO-Offload）：把不用的卸到 CPU/磁盘。\n显存-算力权衡：多数优化是用算力/通信换显存（检查点、ZeRO、offload）。\n实践：资源有限优先 QLoRA（最省）；中等资源 LoRA + 梯度检查点 + 混合精度；充足资源全参 + FSDP/DeepSpeed。理解显存构成才能针对性优化——通常优化器状态是大头（ZeRO/8bit 优化器收益大），其次激活（检查点），最后模型权重（量化）。"
+    },
+    {
+      "question": "DeepSpeed ZeRO 的三个阶段分别优化了什么？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "DeepSpeed",
+        "ZeRO",
+        "分布式"
+      ],
+      "dimension": "skill",
+      "reference_answer": "ZeRO（Zero Redundancy Optimizer）：消除数据并行中的显存冗余（每卡都存完整模型/梯度/优化器状态），按需分片。\n三阶段（逐步分片更多）：\nZeRO-1：分片「优化器状态」（Adam 的 m,v + FP32 主权重，约 12 bytes/参数，占大头）。每卡只存 1/N 的优化器状态。显存大降（最大头），通信开销小（仅优化器状态 all-gather）。性价比最高。\nZeRO-2：再加「梯度」分片。每卡只存对应自己优化器分片那部分的梯度。进一步省（梯度 2 bytes/参数），通信略增。常用平衡点。\nZeRO-3：再加「模型参数」分片。每卡只存 1/N 参数，前向/反向需要时 all-gather 临时聚合。显存最省（可训超大模型），但通信开销最大（每层都要聚合参数，训练慢）。\n显存-通信权衡：\n- ZeRO-1：省最多显存大头（优化器），通信增少；\n- ZeRO-2：再省梯度，通信适中（推荐默认）；\n- ZeRO-3：极致省显存（参数也分），但通信重（适合模型大到其他方式装不下）。\n选型：\n- 模型单卡装得下（只是优化器/梯度费显存）→ ZeRO-1/2；\n- 模型单卡装不下 → ZeRO-3 或 FSDP（PyTorch 原生等价 ZeRO-3）。\nFSDP（Fully Sharded Data Parallel，PyTorch）：PyTorch 原生实现，类似 ZeRO-3，参数/梯度/优化器全分片，是 PyTorch 主推的大模型训练方案。\n注意：ZeRO-3/FSDP 通信开销大，需高速互联（NVLink/InfiniBand）；与 tensor parallel 组合可训超大模型。ZeRO 是大模型训练显存优化的里程碑，理解三阶段权衡才能选对。"
+    },
+    {
+      "question": "微调时 loss 不下降或出现 NaN，如何排查？",
+      "points": 5,
+      "difficulty": 3,
+      "tags": [
+        "训练调试",
+        "loss",
+        "NaN"
+      ],
+      "dimension": "skill",
+      "reference_answer": "loss 不降可能原因：\n1) 学习率不当：太小（训不动）或太大（震荡/发散）。试调 10× 或 1/10；\n2) 数据问题：标签错、数据格式错（chat template 错）、空 batch、数据全错；\n3) 梯度未更新：参数未正确加入优化器（LoRA 参数未训）、requires_grad 未开、梯度被意外清零/截断；\n4) 冻结错误：该训的被冻结（target_modules 配错）；\n5) 损失函数错：任务与损失不匹配；\n6) 评估时机：loss 在 log 区间外（梯度累积下，loss 显示的是 micro 平均，未更新步数看错）；\n7) 数据太难/模型太小（能力不足）。\nNaN 原因（见 dl 类专题，微调特有）：\n1) 学习率过大（最常见，LoRA lr 太高）；\n2) FP16 溢出（未用 BF16 或 gradient scaler）；\n3) 数据含 inf/异常值（长序列、特殊 token）；\n4) 梯度爆炸（无裁剪）；\n5) chat template/数据格式错致 attention mask 错乱。\n排查步骤：\n1) 先在 1-10 条数据上能否过拟合（排除数据/代码 bug，能过拟合说明模型/优化器对）；\n2) 检查 lr（先降 10×）、数据格式（打印 tokenized 样本）、chat template；\n3) 监控梯度范数（爆炸=NaN 前兆）、各层激活；\n4) 换 BF16、加梯度裁剪、降 batch/seq；\n5) 用 detect_anomaly 定位 NaN 算子；\n6) 检查 LoRA 配置（target/r/alpha）。\n经验：先小数据过拟合验证管线，再上全量；从保守超参起步。微调训练问题多是「数据格式/超参/配置」类，系统排查比盲试高效。"
+    },
+    {
+      "question": "什么是模型合并（Model Merging）？Model Soup / TIES / DARE 各是什么？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "模型合并",
+        "Model-Soup",
+        "TIES"
+      ],
+      "dimension": "skill",
+      "reference_answer": "模型合并：把多个微调模型合并成一个，综合多任务/多领域能力，无需再训练。\n场景：\n- 多任务：分别微调的模型合并成多任务模型；\n- 集成效果：合并多个模型得更好泛化（类似集成但单模型推理）；\n- 领域融合：多个领域 adapter/模型合并。\n方法：\n1) 简单平均（Weight Averaging）：直接平均权重。要求模型同架构、同初始化（从同基座微调，权重在同空间）。Model Soup：取多个微调（不同超参）的平均，常提升泛化（类似集成，但单模型）。简单有效。\n2) Task Arithmetic：任务向量 = 微调模型 - 基座。任务向量可加减（加任务、减任务/遗忘、类比）。灵活组合任务。\n3) TIES（Trim, Elect, Sign）：合并时解决冲突——修剪小权重（去冗余）、选主方向（解符号冲突）、平均幅值。减少多模型权重冲突的负面影响。\n4) DARE：随机丢弃微调增量（多数参数变化冗余），再合并，减冲突省空间。\n5) SLERP/线性插值：加权/球面插值合并。\n6) LoRA 合并：多个 LoRA 可加权合并（任务组合），灵活。\n要点：\n- 合并前提：同基座、同架构、权重空间兼容（同初始化微调）；\n- 冲突处理：多任务增量方向冲突时用 TIES/DARE 缓解；\n- 评估：合并后可能在单任务略降但综合提升，需评估集验证；\n- 推理零开销：合并后是单模型。\n价值：用廉价合并（无需训练）组合多任务能力、提升泛化、实验不同组合。模型合并是低成本扩展能力的热门技术，尤其多任务/多领域场景。理解各方法（平均/任务向量/TIES/DARE）的原理有助按需选择。"
+    },
+    {
+      "question": "LoRA 微调完成后，如何合并与部署？多 LoRA 如何切换？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "LoRA合并",
+        "部署",
+        "多LoRA"
+      ],
+      "dimension": "skill",
+      "reference_answer": "合并：LoRA 训练的是 ΔW=BA，可加到原权重 W'=W+(α/r)BA，得到完整模型（与全参模型同结构同推理速度）。\n合并方式：\n1) 合并保存：用 PEFT 的 merge_and_unload() 把 LoRA 合并进基座，保存为标准模型权重，之后当普通模型用（vLLM/TGI/HF Transformers 直接加载）；\n2) 运行时合并：推理时动态合并（加载基座 + LoRA，合并后推理），灵活但加载慢。\n何时合并：\n- 单一任务部署 → 合并（简单、推理无额外开销）；\n- 多任务/多 LoRA 切换 → 不合并（动态加载）。\n多 LoRA 切换（服务多任务/多用户）：\n1) 多 LoRA 共享基座：加载一个基座 + 多个 LoRA adapter，按请求动态切换（vLLM/LoRAX 支持）；\n2) 优势：基座占一份显存（大头），每 LoRA 只占小参（省显存），灵活切换任务/风格/用户；\n3) LoRAX/vLLM 多 LoRA：专门的多 LoRA 服务，动态加载/卸载 adapter，高并发服务多 LoRA。\n部署流程（典型）：\n1) 训练 LoRA；\n2) 评估验证；\n3) 合并（或保留 adapter）；\n4) 量化（可选，AWQ/GPTQ 进一步压缩）；\n5) 用推理框架（vLLM/TGI/ollama）服务。\n注意：\n- 合并后量化需重测（合并+量化顺序影响效果）；\n- 多 LoRA 服务需框架支持动态切换；\n- LoRA adapter 与基座版本严格匹配（架构/tokenizer）。\nLoRA 的「轻量可合并/可切换」是其部署优势——多任务共享基座、按需加载 adapter，是生产中服务多个微调模型的高效方案。"
+    },
+    {
+      "question": "如何为微调准备高质量的领域数据？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "领域数据",
+        "数据准备",
+        "微调"
+      ],
+      "dimension": "skill",
+      "reference_answer": "目标：让模型在领域（医疗/法律/金融/代码/企业内部）表现好。数据是上限。\n来源：\n1) 领域文档/手册/案例 → 转指令对（QA 生成）；\n2) 真实业务日志（客服/查询/记录）→ 清洗成对；\n3) 专家标注（高质量种子）；\n4) 强模型蒸馏（用 GPT-4 据领域文档生成领域问答）；\n5) 公开领域数据集；\n6) 合成数据（据领域规则/模板生成，需验证）。\n质量处理：\n1) 清洗：去 HTML/噪声/乱码/重复/低质；\n2) 标准化：术语统一、格式规范；\n3) 验证：领域专家审核准确性（医疗/法律错答风险高）；\n4) 安全：去敏感（PII）、合规（版权/隐私）；\n5) 多样性：覆盖领域子主题、难度、问法变体；\n6) 平衡：避免某子类压倒。\n数据配比：\n- 纯领域数据 → 强领域但遗忘通用（需掺通用数据，见灾难性遗忘）；\n- 经验：领域:通用 = 7:3 ~ 9:1，依目标调；\n- 多子领域平衡（防偏向）。\n量：领域任务数千-数万高质量常够（质量 >> 数量）。\n构造指令对技巧：\n- 从文档自动生成 QA（用 LLM 提取要点→生成问→答）；\n- 多角度问同一知识点（提升鲁棒）；\n- 含边界/对抗/拒答样本（安全）；\n- 对话型 vs 单轮按部署场景配比。\n评估：领域评估集（专家定 ground truth）验证微调前后领域任务提升 + 通用任务退化（对齐税）。\n领域数据准备是领域微调成败关键，投入专家与清洗回报最高。先小规模高质量验证，再扩量。"
+    },
+    {
+      "question": "什么是持续微调（Continual Fine-Tuning）？如何避免灾难性遗忘？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "持续微调",
+        "灾难性遗忘",
+        "持续学习"
+      ],
+      "dimension": "skill",
+      "reference_answer": "持续微调：在新数据/新任务上继续微调已微调过的模型（而非每次从基座开始）。场景：产品迭代、新增能力、领域扩展、数据累积。\n挑战：灾难性遗忘（见专题）——新任务提升，旧能力退化（之前 SFT 学的指令遵循/安全/通用能力丢失）。\n避免遗忘（持续学习技术）：\n1) 数据混合（最实用）：新数据掺入旧/通用数据（replay），比例约新:旧=7:3~8:2，让模型边学新边保旧；\n2) 用 PEFT（LoRA）：冻结主体，天然防遗忘（原权重不变）；多任务可多 LoRA；\n3) 学习率小 + 少 epoch：减对旧权重的破坏；\n4) 正则化：EWC（约束重要参数变化）、L2（向旧模型）；\n5) 回放（Replay）：训练中定期混入旧任务样本；\n6) 冻结部分层：保留底层通用表征；\n7) 多 LoRA/Adapter：每任务独立 adapter，按需加载（避免互相干扰）；\n8) 知识蒸馏：新模型同时学新任务 + 蒸馏旧模型保旧能力；\n9) 模型合并：分别训练再合并。\n评估：持续微调后必须评估「新任务提升 + 旧任务未显著退化」（通用基准 + 旧领域评估集 + 安全）。\n策略选择：\n- 简单 + 数据足 → 数据混合（replay），最常用；\n- 多任务 → 多 LoRA；\n- 资源足 + 防遗忘强 → 蒸馏 + EWC；\n- 关键：监控退化，设定退化阈值。\n持续微调是产品迭代常态（不能每次从基座重训，成本高），管理遗忘是核心。最佳实践：数据混合 + LoRA + 小学习率 + 持续评估退化。"
+    },
+    {
+      "question": "微调后的模型如何评估？应该看哪些维度？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "微调评估",
+        "评估",
+        "对齐税"
+      ],
+      "dimension": "skill",
+      "reference_answer": "评估维度（避免只看「学没学会任务」而忽视副作用）：\n1) 目标任务提升（核心）：领域/任务评估集准确率/胜率/业务指标。证明微调有效。\n2) 通用能力保持（对齐税）：标准基准（MMLU/推理/代码/常识）未显著退化。微调常致通用能力下降，需监控。\n3) 指令遵循：格式/约束遵循率（IFEval），可控性。\n4) 安全性：越狱/有害 prompt 拒答率（若微调影响安全），尤其安全相关数据。\n5) 风格/格式：输出风格是否如预期（对话风格、格式、长度）。\n6) 鲁棒性：不同表述/对抗/边界表现稳定。\n7) 幻觉：faithfulness（是否更易幻觉）。\n8) 偏见：是否引入新偏见（数据偏见）。\n9) 多语言：其他语言能力是否退化。\n10) 延迟/成本：模型大小/推理开销变化（合并/量化后）。\n方法：\n- 领域评估集（专家定 ground truth，最直接）；\n- 通用基准（回归测退化）；\n- LLM-as-Judge + 人工（开放式任务质量）；\n- 安全/偏见基准；\n- A/B 上线（真实业务指标）。\n常见误：\n- 只看任务提升，忽视通用退化（上线后发现「变笨了」）；\n- 只看自动指标，忽视人工体感；\n- 评估集污染（与训练重合）。\n实践：建立多维评估管线（任务+通用+安全+指令遵循），每次微调回归全跑，对比基座，设定退化阈值（如通用降 <3%），不达标调（数据配比/超参/PEFT）。微调评估是「确认提升且无副作用」的过程，多维 + 回归 + 阈值是关键。"
+    },
+    {
+      "question": "序列长度与 packing（打包）在微调中如何处理？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "序列长度",
+        "packing",
+        "训练效率"
+      ],
+      "dimension": "skill",
+      "reference_answer": "挑战：指令数据长度不一（短几十 token，长数千），固定 max_len 处理：短的 padding 浪费算力，长的截断丢信息。训练效率受影响。\nmax_len 选择：\n- 据数据长度分布选（覆盖 90-99% 样本的长度，过长截断）；\n- 权衡：长 → 激活显存大、注意力 O(n²) 慢；短 → 长样本截断丢信息；\n- 现代 LLM 支持长上下文（4k-32k+），但训练成本高。\nPacking（序列打包）：把多个短样本拼接到一个 max_len 序列（用特殊 token 分隔），减少 padding 浪费，提升训练效率（每序列有效 token 多）。\n- 优点：算力利用率高（少 padding）、训练快；\n- 关键：用 attention mask 隔离同序列内不同样本（position_ids 重置 + block-diagonal attention），防样本间信息泄露；\n- HF Transformers 的 packing（data_collator）支持。\n注意：\n1) packing 需正确 mask（不同样本不互看），否则训练信号污染；\n2) loss 只在真实 token 算（不在 padding/分隔符算）；\n3) 长样本不打包（单独占序列）；\n4) 与 LoRA/全参都适用。\n序列长度策略：\n- 统一 max_len + padding：简单，浪费多；\n- 动态 max_len（每 batch 按最长）：减 padding；\n- packing：最省，需正确 mask。\n经验：数据短且多 → packing 大幅提效；数据长 → packing 收益小（一个就满）。长上下文训练（如代码/长文档）显存/计算敏感，需 Flash Attention、梯度检查点等配合。\n理解 padding/packing 与序列长度对训练效率与显存的影响，是微调工程化的细节，影响训练速度与成本。"
+    },
+    {
+      "question": "如何用偏好数据做 DPO 微调？实践要点？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "DPO",
+        "偏好数据",
+        "对齐"
+      ],
+      "dimension": "skill",
+      "reference_answer": "DPO（Direct Preference Optimization）：直接从偏好对优化，无需 RM 与 RL（见 llm-eval 类原理）。流程：\n1) 准备偏好数据：(prompt, chosen_response, rejected_response)，chosen 比 rejected 好。来源：人工标注、强模型生成多候选再排序、真实用户反馈（点赞/纠正）、现有 RM 标注；\n2) 基座：从 SFT 模型起步（已会遵循指令）；\n3) 训练：DPO 损失最大化 log σ(β·(log π(chosen)/π_ref(chosen) − log π(rejected)/π_ref(rejected)))。β 控制 KL（默认 0.1）；\n4) 推理：直接用训练后模型（无 RM/无 RL）。\n实践要点：\n1) 数据质量决定上限：偏好标注需一致（多标注者一致性过滤）、覆盖多样场景（有用/无害/风格）、含边界 case；\n2) chosen 与 rejected 差异要「有意义」（差异太小模型学不到，太大太易）；高质量偏好数据是难点；\n3) β 调参：大→紧贴 ref（少变），小→大改（可能偏离）。常见 0.1-0.5；\n4) 参考 π_ref：用 SFT 模型（DPO 从它出发，KL 相对它）；\n5) 防过度优化：DPO 也会 reward hacking（让 rejected 极低而非 chosen 真好），监控；\n6) 与 SFT 关系：通常 SFT（学指令遵循）→ DPO（对齐偏好）。DPO 不替代 SFT（SFT 教能力/格式，DPO 调偏好）；\n7) 评估：偏好胜率（vs SFT）、能力保持（对齐税）、安全。\n变体：IPO/SimPO/KTO/ORPO（改进 DPO 的某些假设）。\nDPO 是当前对齐主流（简单稳定高效），Llama/Qwen 等用 DPO 类方法。实践关键：高质量偏好数据 + 合理 β + 监控对齐税。理解 DPO 让对齐从「RL 工程」变成「监督训练」，大幅降低门槛。"
+    },
+    {
+      "question": "常见的微调框架（LLaMA-Factory / axolotl / unsloth）各有何特点？",
+      "points": 5,
+      "difficulty": 4,
+      "tags": [
+        "微调框架",
+        "LLaMA-Factory",
+        "工具"
+      ],
+      "dimension": "skill",
+      "reference_answer": "LLaMA-Factory（国内主流）：低代码微调框架。\n- WebUI + YAML 配置，上手快，适合快速实验；\n- 支持全参/LoRA/QLoRA、多种模型、SFT/DPO/RLHF；\n- 集成度高（数据/训练/合并/推理一站式）、中文社区活跃；\n- 适合：快速上手、原型、中小规模。\naxolotl：配置驱动的微调工具。\n- YAML 声明式配置，基于 HF/PEFT/DeepSpeed；\n- 灵活、功能全、配置清晰，深受研究者/工程师喜爱；\n- 支持多种模型/方法/分布式；\n- 适合：需要灵活控制、生产/研究。\nunsloth：极致优化训练速度与显存。\n- 手写 Triton kernel 优化，训练快 2-5×、省显存 40-70%；\n- 单卡/少卡友好（让大模型在消费级 GPU 训）；\n- 支持 LoRA/全参、主流模型；\n- 适合：资源有限、追求速度/省显存。\n其他：HF Trainer/accelerate（底层灵活）、PEFT（PEFT 库）、DeepSpeed（分布式）、colossal-ai、OpenRLHF（RLHF 专用）。\n选择：\n- 快速上手/中文/低代码 → LLaMA-Factory；\n- 灵活配置/生产 → axolotl；\n- 省 GPU/求速度 → unsloth；\n- 需要底层控制 → HF Trainer + PEFT + DeepSpeed 自建。\n框架快速演进，选按需求（易用/灵活/性能）与团队。理解框架背后的技术（PEFT/DeepSpeed/量化）比记框架更耐用——框架是这些技术的封装。autohr 若需微调，可从 LLaMA-Factory 起步（快验证），生产转 axolotl/unsloth。"
+    },
+    {
+      "question": "微调的常见陷阱（pitfalls）有哪些？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "微调陷阱",
+        "最佳实践",
+        "经验"
+      ],
+      "dimension": "skill",
+      "reference_answer": "1) 数据质量陷阱：用低质/有毒/错误数据微调，模型学坏。质量 >> 数量，需严格清洗与专家验证。\n2) 灾难性遗忘：纯领域数据微调致通用/安全能力退化。需数据混合（掺通用）、PEFT、小学习率、监控退化。\n3) 过拟合：数据少/epoch 多，模型背训练集、泛化差。监控验证 loss、early stopping、增数据/正则。\n4) chat template 不一致：训练用 A 推理用 B，效果崩。全链路统一模板。\n5) 超参不当：学习率过大（破坏/NaN）或过小（训不动）。从推荐值起步，评估集调。\n6) 评估不全：只看任务提升，忽视通用退化/安全/偏见。多维评估 + 回归。\n7) 评估集污染：评估数据混入训练，虚高。严格分离。\n8) LoRA 配置差：target/r/alpha 不当致效果差或资源浪费。合理配置 + 评估调。\n9) 数据配比失衡：某类压倒致能力偏向。平衡配比。\n10) 长上下文/序列处理错：padding/packing/mask 错致训练信号错。\n11) 安全退化：微调移除了基座的安全对齐（尤其用任意数据）。重测安全基准、补充安全数据。\n12) 可复现差：随机性/环境/数据版本未控制。固定 seed、记录版本。\n13) 过度微调：本可 prompt/RAG 解决的却微调（YAGNI）。先 prompt/RAG，不够再微调。\n14) 基座选错：基座能力不足或不适合任务。选合适基座。\n15) 部署配置错：合并/量化顺序、推理框架配置错致效果/性能问题。验证部署后效果。\n16) 期望过高：微调能调行为/风格/格式，不能给「新知识」（会幻觉）。知识用 RAG。\n最佳实践：先明确目标（改什么）→ 准备高质量数据 → 合理超参与 PEFT → 多维评估 → 渐进部署。微调是强工具但非银弹，理解陷阱才能用好。"
+    },
+    {
+      "question": "什么是 QLoRA 的 NF4 量化？为什么它适合微调而不影响训练？",
+      "points": 5,
+      "difficulty": 4,
+      "tags": [
+        "QLoRA",
+        "NF4",
+        "量化"
+      ],
+      "dimension": "skill",
+      "reference_answer": "QLoRA = 4bit 量化基座 + LoRA 微调（见专题总览）。NF4（NormalFloat 4-bit）是其核心量化格式。\nNF4 原理：\n- 观察到预训练权重近似正态分布；\n- NF4 用「针对正态分布优化的 16 个 4-bit 量化电平」（信息论最优），比均匀量化的 INT4 信息损失更小；\n- 量化误差最小化，4bit 下接近 FP16 精度。\n为什么适合微调不影响训练：\n1) 基座冻结、4bit 存储：原权重 NF4 量化（0.5 byte/参数），显存大幅省（7B 仅 ~3.5GB）；\n2) 计算时反量化：前向/反向用到权重时，按需反量化成 BF16 计算（计算精度不变，只是存储压缩）；\n3) LoRA 参数保 BF16/FP16：可训练参数（A、B）高精度，梯度数值稳定；\n4) 反量化开销小：权重读取时即时反量化，开销远小于节省的显存/带来的可行性。\n配套技术：\n- Double Quantization：量化常数本身再量化，再省显存；\n- Paged Optimizer：用 CUDA unified memory，显存峰值时 offload 到 CPU 防 OOM；\n- 计算dtype BF16：计算用 BF16 稳定。\n效果：\n- 7B 模型 QLoRA 单卡 6-10GB 可训（vs 全参 100GB+）；\n- 效果接近 LoRA + FP16（差距很小），是资源受限微调的最佳选择；\n- 让消费级 GPU（24GB 4090）微调 7B-13B 成可能。\nNF4 的「为权重分布优化的量化格式 + 冻结不更新」使其在微调中几乎无损，是 QLoRA 能在单卡训大模型的关键。理解 NF4 有助于理解量化与微调的结合。"
+    }
+  ]
+}

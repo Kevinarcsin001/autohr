@@ -23,6 +23,7 @@
 注：``ProgressStore`` 是进程级；多 worker 部署时需要 Redis Pub/Sub 才能跨进程；
 当前单进程足够，YAGNI。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -35,9 +36,9 @@ from sqlalchemy import select
 from app.core.db import AsyncSessionLocal
 from app.core.logging import get_logger
 from app.models.candidate import Candidate
+from app.models.score import Score
 from app.models.screening import ScreeningResult
 from app.services.filter import FilterService
-from app.services.interview import InterviewError, InterviewService
 from app.workers.scorer_task import (
     CandidateNotFound,
     JobNotFound,
@@ -134,9 +135,7 @@ class ProgressStore:
             ),
         )
 
-    async def append_done(
-        self, run_id: uuid.UUID, *, summary: dict[str, Any]
-    ) -> None:
+    async def append_done(self, run_id: uuid.UUID, *, summary: dict[str, Any]) -> None:
         next_id = self._next_id(run_id)
         async with self._lock:
             if run_id in self._meta:
@@ -160,9 +159,7 @@ class ProgressStore:
             self._events.setdefault(run_id, []).append(event)
             cond.notify_all()
 
-    def get_events_after(
-        self, run_id: uuid.UUID, last_event_id: int
-    ) -> list[ProgressEvent]:
+    def get_events_after(self, run_id: uuid.UUID, last_event_id: int) -> list[ProgressEvent]:
         """同步取 last_event_id 之后的所有事件（不含 last_event_id）。"""
         events = self._events.get(run_id, [])
         return [e for e in events if e.event_id > last_event_id]
@@ -268,10 +265,12 @@ class ScreeningOrchestrator:
         run_id: uuid.UUID,
         job_id: uuid.UUID,
         candidate_ids: list[uuid.UUID],
+        triggered_by: uuid.UUID | None = None,
     ) -> RunSummary:
         """主入口：对每个候选人跑 filter → score → interview。
 
-        ``run_id`` 用于进度推送。返回 ``RunSummary``。
+        ``run_id`` 用于进度推送。``triggered_by`` 用于自动创建面试会话。
+        返回 ``RunSummary``。
         """
         summary = RunSummary(total=len(candidate_ids))
         if not candidate_ids:
@@ -283,15 +282,14 @@ class ScreeningOrchestrator:
 
         for cid in candidate_ids:
             name = name_map.get(cid)
-            stage_status = await self._process_candidate(
+            await self._process_candidate(
                 run_id=run_id,
                 job_id=job_id,
                 cid=cid,
                 name=name,
                 summary=summary,
+                triggered_by=triggered_by,
             )
-            # _process_candidate 内部已处理异常；无需在此再分支
-            _ = stage_status
 
         await progress_store.append_done(run_id, summary=summary.to_dict())
         return summary
@@ -304,15 +302,14 @@ class ScreeningOrchestrator:
         cid: uuid.UUID,
         name: str | None,
         summary: RunSummary,
+        triggered_by: uuid.UUID | None = None,
     ) -> None:
         """单个候选人完整流水线；任一阶段失败记入 summary + progress 后返回。"""
         try:
             async with AsyncSessionLocal() as session:
                 # Stage 1: filter
                 filter_service = FilterService(session)
-                await filter_service.run_for_candidates(
-                    job_id=job_id, candidate_ids=[cid]
-                )
+                await filter_service.run_for_candidates(job_id=job_id, candidate_ids=[cid])
                 await session.commit()
 
                 sr = await session.scalar(
@@ -322,9 +319,7 @@ class ScreeningOrchestrator:
                     )
                 )
                 if sr is None:
-                    raise RuntimeError(
-                        f"filter did not write screening_result for {cid}"
-                    )
+                    raise RuntimeError(f"filter did not write screening_result for {cid}")
 
                 if sr.disqualified:
                     summary.disqualified += 1
@@ -338,7 +333,31 @@ class ScreeningOrchestrator:
                     )
                     return
 
-                # Stage 2: score
+                # Stage 2: score（幂等：已有评分则跳过，避免重复 LLM 调用）
+                existing_score = await session.scalar(
+                    select(Score).where(
+                        Score.job_id == job_id,
+                        Score.candidate_id == cid,
+                    )
+                )
+                if existing_score is not None:
+                    summary.passed += 1
+                    await progress_store.append_progress(
+                        run_id,
+                        candidate_id=cid,
+                        candidate_name=name,
+                        stage="score",
+                        status="ok",
+                    )
+                    await progress_store.append_progress(
+                        run_id,
+                        candidate_id=cid,
+                        candidate_name=name,
+                        stage="interview",
+                        status="ok",
+                    )
+                    return
+
                 try:
                     await run_score(
                         db=session,
@@ -352,8 +371,12 @@ class ScreeningOrchestrator:
                     await session.commit()
                 except (CandidateNotFound, JobNotFound, StructureMissing) as exc:
                     await self._record_failure(
-                        run_id=run_id, cid=cid, name=name, summary=summary,
-                        stage="score", exc=exc,
+                        run_id=run_id,
+                        cid=cid,
+                        name=name,
+                        summary=summary,
+                        stage="score",
+                        exc=exc,
                     )
                     return
                 except Exception as exc:  # noqa: BLE001
@@ -363,11 +386,33 @@ class ScreeningOrchestrator:
                         error=str(exc)[:200],
                     )
                     await self._record_failure(
-                        run_id=run_id, cid=cid, name=name, summary=summary,
-                        stage="score", exc=exc,
+                        run_id=run_id,
+                        cid=cid,
+                        name=name,
+                        summary=summary,
+                        stage="score",
+                        exc=exc,
                     )
                     return
 
+                # Stage 3: 生成面试题（与 Celery auto-chain 保持一致）
+                try:
+                    from app.services.interview import InterviewService
+                    svc = InterviewService(db=session)
+                    await svc.generate(
+                        candidate_id=cid,
+                        job_id=job_id,
+                    )
+                    await session.commit()
+                    logger.info("orchestrator_interview_generated", candidate_id=str(cid))
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "orchestrator_interview_failed",
+                        candidate_id=str(cid),
+                        error=str(exc)[:200],
+                    )
+
+                summary.passed += 1
                 await progress_store.append_progress(
                     run_id,
                     candidate_id=cid,
@@ -376,26 +421,6 @@ class ScreeningOrchestrator:
                     status="ok",
                 )
 
-                # Stage 3: interview（失败不阻塞 score 已写入的结果）
-                try:
-                    interview_service = InterviewService(session, router=self._router)
-                    await interview_service.generate(
-                        candidate_id=cid, job_id=job_id
-                    )
-                    await session.commit()
-                except InterviewError as exc:
-                    logger.warning(
-                        "orchestrator_interview_failed",
-                        candidate_id=str(cid),
-                        error=str(exc)[:200],
-                    )
-                    await self._record_failure(
-                        run_id=run_id, cid=cid, name=name, summary=summary,
-                        stage="interview", exc=exc,
-                    )
-                    return
-
-                summary.passed += 1
                 await progress_store.append_progress(
                     run_id,
                     candidate_id=cid,
@@ -410,8 +435,12 @@ class ScreeningOrchestrator:
                 candidate_id=str(cid),
             )
             await self._record_failure(
-                run_id=run_id, cid=cid, name=name, summary=summary,
-                stage="filter", exc=exc,
+                run_id=run_id,
+                cid=cid,
+                name=name,
+                summary=summary,
+                stage="filter",
+                exc=exc,
             )
 
     @staticmethod
@@ -441,16 +470,12 @@ class ScreeningOrchestrator:
             reason=str(exc)[:200],
         )
 
-    async def _fetch_names(
-        self, candidate_ids: list[uuid.UUID]
-    ) -> dict[uuid.UUID, str | None]:
+    async def _fetch_names(self, candidate_ids: list[uuid.UUID]) -> dict[uuid.UUID, str | None]:
         if not candidate_ids:
             return {}
         async with AsyncSessionLocal() as session:
             result = await session.execute(
-                select(Candidate.id, Candidate.name).where(
-                    Candidate.id.in_(candidate_ids)
-                )
+                select(Candidate.id, Candidate.name).where(Candidate.id.in_(candidate_ids))
             )
             return {row[0]: row[1] for row in result.all()}
 

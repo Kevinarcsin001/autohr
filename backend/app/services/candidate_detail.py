@@ -204,6 +204,7 @@ class CandidateDetailService:
             latest_resume.file_storage_key,
             expires=RESUME_SIGNED_URL_EXPIRE_SECONDS,
             method="GET",
+            mime=latest_resume.file_mime,
         )
         expires_at = datetime.now(timezone.utc) + timedelta(
             seconds=RESUME_SIGNED_URL_EXPIRE_SECONDS

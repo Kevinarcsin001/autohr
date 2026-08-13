@@ -5,9 +5,9 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String
-from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.models._compat import GUID
 from app.models.base import Base, TimestampMixin, UUIDPKMixin
 from app.models.types import EncryptedString
 
@@ -28,7 +28,7 @@ class EmailConfig(UUIDPKMixin, TimestampMixin, Base):
     __tablename__ = "email_configs"
 
     team_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        GUID,
         ForeignKey("teams.id", ondelete="CASCADE"),
         nullable=False,
         unique=True,

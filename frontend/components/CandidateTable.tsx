@@ -729,30 +729,28 @@ export function CandidateTable({
                       )}
                       style={{ width: undefined }}
                     >
-                      {header.isPlaceholder ? null : canSort ? (
-                        <button
-                          type="button"
-                          className="inline-flex items-center gap-1 hover:text-foreground"
-                          onClick={header.column.getToggleSortingHandler()}
-                        >
-                          {flexRender(
-                            header.column.columnDef.header,
-                            header.getContext(),
-                          )}
-                          {sorted === "asc" ? (
-                            <ArrowUp className="h-3 w-3" />
-                          ) : sorted === "desc" ? (
-                            <ArrowDown className="h-3 w-3" />
-                          ) : (
-                            <ArrowDown className="h-3 w-3 opacity-30" />
-                          )}
-                        </button>
-                      ) : (
-                        flexRender(
-                          header.column.columnDef.header,
-                          header.getContext(),
-                        )
-                      )}
+                      {header.isPlaceholder ? null : (() => {
+                        const label = (header.column.columnDef.meta as ColumnMeta)?.label;
+                        const displayHeader = label ?? header.column.columnDef.header;
+                        return canSort ? (
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1 hover:text-foreground"
+                            onClick={header.column.getToggleSortingHandler()}
+                          >
+                            {flexRender(displayHeader, header.getContext())}
+                            {sorted === "asc" ? (
+                              <ArrowUp className="h-3 w-3" />
+                            ) : sorted === "desc" ? (
+                              <ArrowDown className="h-3 w-3" />
+                            ) : (
+                              <ArrowDown className="h-3 w-3 opacity-30" />
+                            )}
+                          </button>
+                        ) : (
+                          flexRender(displayHeader, header.getContext())
+                        );
+                      })()}
                     </th>
                   );
                 })}

@@ -17,7 +17,8 @@ dependencies = [
     "email-validator>=2.1.0",
     # Database
     "sqlalchemy[asyncio]>=2.0.27",
-    "asyncpg>=0.29.0",
+    "asyncpg>=0.29.0",  # 生产 PG 异步驱动
+    "aiosqlite>=0.20.0",  # 开发环境 SQLite 异步驱动（生产 PG 不需要，保留无害）
     "alembic>=1.13.1",
     "greenlet>=3.0.3",
     # Cache / Queue

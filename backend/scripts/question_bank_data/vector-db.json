@@ -1,0 +1,237 @@
+{
+  "category": {"slug": "vector-db", "name": "向量数据库", "target_points": 5, "sort_order": 8},
+  "items": [
+    {
+      "question": "向量检索与传统关键词检索（如 BM25）的本质区别？",
+      "points": 10,
+      "difficulty": 3,
+      "tags": ["向量检索", "BM25", "语义检索"],
+      "dimension": "skill",
+      "reference_answer": "BM25（关键词检索）：基于词频与文档频率的精确匹配——词在文档和查询中出现才贡献分数，靠倒排索引。擅长精确词、专有名词、ID、错误码。\n向量检索：把文本/图像编码成稠密向量，按向量相似度（余弦/内积）检索语义相近的内容，不需字面匹配。擅长语义、同义、跨语言、模糊意图。\n本质区别：BM25 匹配「符号」，向量匹配「语义」。例：查「如何让模型不乱说」→ BM25 难匹配「缓解幻觉」文档（无共同词），向量检索能通过语义相近召回。\n互补：向量在精确实体、罕见词、数字上弱（embedding 泛化掉细节），BM25 强；反之向量在语义模糊、同义改写上强。生产系统多用 Hybrid Search（两路融合）。\n实现：BM25 用 Elasticsearch/OpenSearch/Postgres full-text；向量用 Faiss/HNSW 库或向量数据库。现代 PG/OpenSearch/Redis 都同时支持两者。"
+    },
+    {
+      "question": "向量相似度度量有哪些？什么场景用余弦、内积、L2？",
+      "points": 10,
+      "difficulty": 3,
+      "tags": ["相似度", "余弦", "内积"],
+      "dimension": "skill",
+      "reference_answer": "余弦相似度：cos(a,b)=a·b/(|a||b|)，衡量方向夹角，忽略向量长度。范围 [-1,1]。语义检索最常用——文本 embedding 的「语义方向」是关键，模长常无意义。\n点积（内积）：a·b=Σaᵢbᵢ，未归一化时同时受方向和模长影响。若向量已归一化，点积=余弦。归一化后用点积检索最快（省去分母计算）。\nL2 距离（欧氏）：‖a−b‖，距离越小越相似。图像特征（如 CNN 输出）、物理量常用。\n选择：\n1) 文本/embedding → 余弦或（归一化后）内积；\n2) 归一化的 embedding → 内积（等价余弦且更快）；\n3) 图像/几何特征 → L2；\n4) 注意 embedding 模型的训练目标——若训练用余弦，推理也应归一化用余弦/内积，度量与训练一致效果才好。\n关键：多数文本 embedding（OpenAI/BGE/E5）输出后需 L2 归一化，然后用内积或余弦。度量选错会严重降召回。"
+    },
+    {
+      "question": "为什么向量检索要用近似最近邻（ANN）而非精确 k-NN？",
+      "points": 10,
+      "difficulty": 3,
+      "tags": ["ANN", "k-NN", "性能"],
+      "dimension": "skill",
+      "reference_answer": "精确 k-NN（brute force）：query 与库中每个向量算距离，取最近 k 个。准确率100%，但复杂度 O(N·d)，N=库大小、d=维度。百万级以上库时延迟与内存不可接受（百万×768维浮点，每次查询算百万次点积）。\nANN（近似最近邻）：构建索引（图/倒排/量化）大幅缩小搜索空间，牺牲少量精度换巨大速度提升。通常 recall@10 达 95%+ 时延迟可比 brute force 快数十到上千倍。\n为什么可接受近似：\n1) embedding 本身是近似表示，检索只是粗筛，后续常有 rerank 精排弥补；\n2) 业务上 Top-K 里命中 95% 的真 Top-K 通常够用；\n3) 实时交互（<100ms）必须用 ANN。\n权衡三角：recall（质量）、latency（延迟）、memory（内存/索引大小），通过索引参数调。\nANN 算法分类：基于图（HNSW、NSG）、基于倒排聚类（IVF）、基于量化压缩（PQ/SQ）、基于树（Annoy）、基于磁盘（DiskANN）。生产主流 HNSW（高 recall 低延迟）和 IVF+PQ（省内存、超大规模）。"
+    },
+    {
+      "question": "HNSW（分层可导航小世界图）的原理是什么？为什么它成为最流行的 ANN 算法？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": ["HNSW", "图索引", "ANN"],
+      "dimension": "skill",
+      "reference_answer": "原理：\n1) 构建多层图，每层是「小世界图」（节点间短路径可快速导航）；\n2) 上层稀疏（少节点）、下层密集（全部节点），层级越高节点越少——类似「高速公路 + 局部道路」；\n3) 插入：随机决定节点的最高层级，在该层及以下各层把节点连入图（用启发式选邻居，保持导航性与多样性）；\n4) 检索：从最顶层某个入口节点开始贪心搜索（每步走向更近的邻居），逐层下降；最底层（含全部节点）做精细的局部搜索，返回 Top-K。\n为什么流行：\n1) 高 recall 高速度：recall@10 常达 99% 且延迟极低（毫秒级，百万库）；\n2) 支持增量插入：无需全量重建，适合动态库；\n3) 对维度较鲁棒（768-1536 维效果好）；\n4) 实现成熟（Faiss hnsw、hnswlib、各向量库默认）。\n关键参数：M（每层最大连接数，影响内存与 recall，16-48 常用）、efConstruction（建图候选数，越大质量越好越慢）、efSearch（检索候选数，越大 recall 越高越慢，运行时可调）。\n缺点：内存占用大（存全精度向量+图结构），超大规模/内存受限时需配合量化或选 IVF+PQ。"
+    },
+    {
+      "question": "IVF（倒排文件）索引的原理？nlist 与 nprobe 如何影响效果？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": ["IVF", "倒排", "聚类"],
+      "dimension": "skill",
+      "reference_answer": "原理：\n1) 训练阶段：对全部向量用 k-means 聚成 nlist 个簇，每簇存一个中心点；\n2) 倒排：建「簇ID → 该簇内向量列表」的倒排表，每个向量归到最近簇；\n3) 检索：query 先与 nlist 个中心算距离，选最近的 nprobe 个簇，只在这些簇内做精确检索，返回 Top-K。\n本质：用聚类把搜索空间从 N 缩到 (nprobe/nlist)×N。\nnlist（簇数）：\n- 大：每簇小、检索快，但中心点多、训练慢、nprobe 难覆盖；\n- 小：每簇大、检索慢；\n- 经验：nlist ≈ √N ~ 256·√N 量级。\nnprobe（探测簇数）：\n- 大：recall 高、延迟高；\n- 小：recall 低、延迟低；\n- 典型调到 recall 达目标（如 95%）的最小值。\nIVF 常与 PQ 组合（IVF-PQ）：先聚类缩小范围，再在簇内用 PQ 压缩向量算近似距离，极致省内存，适合十亿级向量。\nIVF 适合：超大规模、内存敏感、可全量训练建索引的场景。动态插入需周期重训或用 IVF-HNSW（簇内用 HNSW）。\n与 HNSW 对比：HNSW recall/延迟更优但内存大，IVF+PQ 内存友好适合超大规模。"
+    },
+    {
+      "question": "乘积量化（PQ）的原理？它如何压缩向量并加速检索？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": ["PQ", "量化", "压缩"],
+      "dimension": "skill",
+      "reference_answer": "PQ（Product Quantization）：把高维向量切成 m 段（子向量），每段独立用 k-means 量化成一个码本索引（如每段 256 个中心，1 字节）。原向量被压缩成 m 字节的「短码」。\n例：768 维 float32（3072 字节）→ 切 96 段每段 8 维 → 每段量化到 256 中心 → 存 96 字节。压缩 32 倍。\n检索加速（非对称距离 ADC）：\n1) 预计算 query 到每段每个中心的距离表（m×256 个）；\n2) 对库里每个向量的短码，查表累加各段距离，得近似 L2 距离；\n3) 无需解压原向量，纯查表加法，极快。\n效果：内存大幅下降（十亿级向量可载内存），检索快，代价是精度损失（recall 略降）。常与 IVF 组合（IVF-PQ）或 HNSW。\n其他量化：\n- SQ（标量量化）：每维线性量化到 8-bit/4-bit，简单、损失小、压缩 4-8 倍；\n- Binary quantization：量化到 1-bit，用汉明距离，超压缩、极快，适合粗筛；\n- 重新排序（rerank）：用压缩向量快速粗排 Top-K'，再用全精度向量精排 Top-K，兼顾速度与精度。\nPQ 是大规模向量检索的核心压缩技术（Faiss 的招牌），让十亿级向量检索在单机/集群可行。"
+    },
+    {
+      "question": "HNSW 与 IVF 索引各有什么优劣？如何选择？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": ["HNSW", "IVF", "选型"],
+      "dimension": "skill",
+      "reference_answer": "HNSW：基于图，高 recall、低延迟，支持动态插入。\n- 优点：检索质量与速度最优（recall 99% 且 ms 级），增量插入友好，无需训练；\n- 缺点：内存大（存全精度向量+图连接，每向量几十-上百字节+4×M 字节图），构建慢、构建时内存峰值高。\nIVF（+PQ）：基于聚类/倒排，内存友好。\n- 优点：内存省（尤其配合 PQ），可扩展到十亿级，可配合 GPU；\n- 缺点：需训练（k-means），recall 通常略低于 HNSW，动态插入需周期重训或近似（IVF-HNSW 缓解），有 nprobe 调参。\n选择：\n1) 中小规模（<1000万）+ 追求最高质量 + 内存充裕 → HNSW；\n2) 超大规模（亿~十亿）+ 内存敏感 → IVF-PQ / IVF-HNSW；\n3) 需频繁增删 → HNSW 或 IVF-HNSW（纯 IVF 增量差）；\n4) GPU 加速 → IVF-PQ（Faiss GPU 优化好）；\n5) 磁盘索引（超内存）→ DiskANN。\n经验：百万-千万级默认 HNSW（简单高质量），亿级以上用 IVF+PQ。很多向量库（Milvus/Qdrant）同时支持，可按规模切换。先小规模 HNSW 验证效果，再按规模与成本调整索引类型与参数。"
+    },
+    {
+      "question": "什么是 Hybrid Search（混合检索）？RRF 如何融合两路结果？",
+      "points": 10,
+      "difficulty": 3,
+      "tags": ["hybrid-search", "RRF", "融合"],
+      "dimension": "skill",
+      "reference_answer": "Hybrid Search：同时跑语义向量检索 + 关键词检索（BM25），融合两路结果，取长补短。向量补 BM25 的语义模糊、同义改写；BM25 补向量的精确实体、罕见词、数字。\n融合方法：\n1) RRF（Reciprocal Rank Fusion，最常用）：对每个文档，按它在每路的排名 r 计算 1/(k+r)（k 常取 60），各路分数相加得总分排序。无需校准两路分数尺度、无需调权重，简单鲁棒，工业默认。\n2) 加权融合（convex combination）：s = α·norm(向量分) + (1−α)·norm(BM25分)，需把两路分数归一化（min-max 或 softmax）并调 α。可控但需校准，对分数尺度敏感。\n3) 学习融合（learned ranking）：把两路分数+特征喂排序模型（LambdaMART/GBDT）学权重，效果最优但需训练数据。\n工程：很多向量库/OpenSearch 内置 hybrid（支持 RRF/加权）。实现上两路可并行检索再融合。\n场景：RAG（文档精确术语+语义）、电商（商品名/型号精确+语义）、企业搜索。Hybrid 几乎是生产 RAG 的标配，显著优于单一检索。"
+    },
+    {
+      "question": "向量数据库（Milvus/Pinecone/Qdrant/Weaviate）与传统数据库的向量扩展（PGVector）如何选择？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": ["向量数据库", "PGVector", "选型"],
+      "dimension": "skill",
+      "reference_answer": "专用向量数据库（Milvus/Qdrant/Weaviate/Pinecone）：为向量检索从底层设计。\n- 优点：索引算法全（HNSW/IVF/DiskANN）、性能极致、支持量化/分片/分布式、丰富的过滤与混合检索、水平扩展到十亿级；\n- 缺点：独立组件、运维复杂、数据需同步（与业务库分离）、事务弱。\nPGVector（Postgres 扩展）/pgvector/Redis Search：在已有数据库加向量能力。\n- 优点：与业务数据同库、SQL 查询、事务/Join/过滤天然集成、运维简单（已有 PG）、适合中小规模；\n- 缺点：索引选择少（早期只 IVFFlat，后加 HNSW）、规模上限低（千万级吃力）、性能不如专用库。\n选择：\n1) 规模小-中（<千万）、要事务/复杂过滤/与业务数据join、团队已用 PG → PGVector（简单够用，单库管理）；\n2) 大规模（亿级）、高 QPS、需要极致性能与多种索引 → Milvus/Qdrant；\n3) 全托管不想运维 → Pinecone（贵但省心）；\n4) 中规模+易用+轻量 → Qdrant/Weaviate（单二进制，Rust/Go，性能好）。\n趋势：PGVector 进步快（HNSW 支持），很多中小项目直接用 PG 不引入额外组件；超大规模仍需专用库。autohr 这种中小项目用 PGVector 合适。"
+    },
+    {
+      "question": "元数据过滤（metadata filtering）中，pre-filtering 与 post-filtering 有什么区别？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": ["过滤", "metadata", "检索"],
+      "dimension": "skill",
+      "reference_answer": "向量检索常需配合结构化过滤（如「只检索 status=published 且 time>2024 的向量」）。\nPost-filtering：先做向量 ANN 取 Top-K，再用过滤条件筛掉不符合的。\n- 优点：实现简单，向量索引不被过滤影响；\n- 缺点：过滤后结果可能不足 K（甚至为空），尤其过滤选择性强时——返回的全被筛掉，recall 暴跌；需扩大候选或重试，效率差。\nPre-filtering：先用过滤条件缩小候选集，再在小集合内做向量检索。\n- 优点：保证结果都满足过滤、质量好；\n- 缺点：候选集小且动态变化，图索引（HNSW）在子图上导航效率下降，可能退化为暴力；实现复杂。\n更好方案：\n- 内联过滤（in-filter）：检索过程中边走图边过滤，平衡（Qdrant/Milvus 优化方向）；\n- 标量索引：对过滤字段建索引（如倒排/BKD），加速 pre-filter。\n选择：\n- 过滤选择性弱（大部分数据满足）→ post-filter 够用；\n- 过滤选择性强（少数满足）→ 必须 pre-filter 或内联；\n- 高基数类别过滤 → 标量索引 + pre。\n生产 RAG/搜索普遍有强过滤需求（权限、时间、来源），过滤性能是向量库选型与调优的关键。"
+    },
+    {
+      "question": "如何评估一个向量检索系统的质量？常用指标？",
+      "points": 10,
+      "difficulty": 3,
+      "tags": ["评估", "recall", "向量检索"],
+      "dimension": "skill",
+      "reference_answer": "检索质量：\n1) Recall@K：ANN 返回的 Top-K 中，包含「真实最近邻」（brute force 算出）的比例。衡量 ANN 相对精确检索的保真度，是 ANN 算法核心指标（目标 95%+）。\n2) Precision@K：Top-K 中相关的比例（需标注的相关性）。\n3) MRR（Mean Reciprocal Rank）：第一个相关结果的平均倒数排名。\n4) nDCG@K：考虑位置与相关性分级，适合多档相关。\n端到端（RAG）：\n- 检索到的上下文是否含答案（Context Recall/Relevance）；\n- 下游生成质量（faithfulness、answer relevancy）。\n性能：\n1) 延迟（p50/p99），QPS（吞吐）；\n2) 内存占用、索引大小、构建时间；\n3) 增删改性能（动态库）。\n评估方法：\n- 构建评估集（query + 标注的相关文档/黄金答案）；\n- 对比不同索引/参数（nprobe/efSearch/M）的 recall-latency 曲线，找帕累托最优点；\n- A/B 上线验证业务指标。\n注意：embedding 质量是上限——再好的索引也救不了差的 embedding。先确保 embedding 模型适合任务与领域（领域可微调），再优化索引。评估要贴近真实 query 分布，避免只在标准集调优过拟合。"
+    },
+    {
+      "question": "embedding 维度（如 768/1024/1536/3072）如何影响检索？越高越好吗？",
+      "points": 5,
+      "difficulty": 3,
+      "tags": ["embedding", "维度", "权衡"],
+      "dimension": "skill",
+      "reference_answer": "维度影响：\n1) 表达力：高维能编码更细的语义，理论上表达力强；\n2) 存储/内存：线性增长，3072 维 vs 768 维 = 4 倍内存/存储；\n3) 计算成本：点积与距离计算随维度线性增长，检索变慢、QPS 降；\n4) 索引效率：高维下「维度灾难」更明显，图/聚类索引 recall 与性能下降。\n不是越高越好：\n1) 边际递减：从 768→1536 提升明显，1536→3072 很多任务提升很小但成本翻倍；\n2) 很多 embedding 模型支持「降维不失真」（如 Matryoshka 表示，截断前 N 维仍有效），可用较低维兼顾质量与成本；\n3) 实测：在目标评估集对比不同维度（含降维后）的 recall 与延迟，选帕累托最优。\n选择经验：\n- 通用语义检索：768-1536 维主流；\n- 海量/低延迟：用降维（Matryoshka 截到 512/768）或量化；\n- 高精度领域：用全维度 + rerank。\n配套：维度与 embedding 模型、索引类型、量化策略协同。先选合适 embedding 模型，再按规模/延迟需求调整维度与压缩。盲目追求高维通常是浪费。"
+    },
+    {
+      "question": "什么是 Matryoshka Representation（套娃表示）？它解决了什么问题？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": ["Matryoshka", "embedding", "降维"],
+      "dimension": "skill",
+      "reference_answer": "问题：传统 embedding 训练成固定维度（如 768），截断前 N 维会严重破坏语义（后面维度含不同信息，随意丢导致向量无效）。应用想用低维省存储/加速时，必须单独训一个低维模型，或接受质量大幅下降。\nMatryoshka Representation Learning（MRL）：训练时让向量的「前缀」本身就是有用表示——即前 d 维（d=16/32/64/.../768）各自是一个语义完整的子向量，像俄罗斯套娃，大套小。训练损失在多个截断维度上同时优化。\n效果：\n1) 同一个模型产出的向量，可按需截断到任意维度使用，前缀仍保持语义；\n2) 粗筛用低维（快、省内存），精排用高维（准）——多分辨率检索；\n3) 部署灵活：一个模型服务不同精度/延迟需求，无需多模型。\n应用：OpenAI text-embedding-3、Nomic、BGE 等支持 Matryoshka，可指定 dimensions 参数降维（如 3072 降到 256）。\n实践：海量向量库用低维（如 256/512）存索引省内存、快检索；对 Top-K' 候选用原始高维 rerank 提精度。也用于自适应：按硬件/规模动态选维度。\n是 embedding 工程化的重要进展，让单模型兼顾质量、存储、速度，降低多版本维护成本。"
+    },
+    {
+      "question": "向量数据库如何做水平扩展（分片/分布式）？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": ["分片", "分布式", "扩展"],
+      "dimension": "skill",
+      "reference_answer": "挑战：单机内存/算力装不下或查不过来亿级向量，需分布式。但向量检索不像 KV 可简单 hash 分片——最近邻可能在任意分片。\n分片策略：\n1) 随机/hash 分片：向量均匀分散到 N 个分片。查询时并行查所有分片各取 Top-K，再合并（map-reduce）。简单通用、负载均衡，但每查都打所有分片，网络放大 N 倍，分片多时合并代价高。\n2) 聚类分片：按向量聚类把相似向量放同分片，查询只查最相关几个分片（类似 IVF 的 nprobe）。省网络，但数据倾斜、查询分布不均、增删需 re-balance。\n3) 基于分区键（collection/partition）：按业务维度（租户、类别）分区，查询带分区键只查对应分片。高效但要数据有自然分区。\n组件：\n- 协调节点：接收查询、分发、合并；\n- 数据节点：存分片索引、执行检索；\n- 元数据/索引构建服务：管理分片分配、构建/重建索引。\nMilvus 等设计：存算分离（存储用 S3/对象存储 + 计算节点缓存），独立扩缩容、容灾。Qdrant 用分片+副本。\n其他考量：副本提可用与读吞吐；写入需异步建索引（写后可查有延迟）；全局重排难（各分片独立）。分布式向量检索是工程难点，选成熟系统（Milvus/Qdrant 集群）比自己搭可靠。"
+    },
+    {
+      "question": "DiskANN 是什么？为什么能支持超大规模 + 低内存向量检索？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": ["DiskANN", "磁盘索引", "大规模"],
+      "dimension": "skill",
+      "reference_answer": "背景：HNSW 等内存索引要全精度向量驻内存，亿级向量内存成本极高（如十亿×768维×4字节=3TB+），多数场景装不起。\nDiskANN：把图索引放 SSD 磁盘，内存只缓存少量（入口节点、图结构、压缩向量），查询时按需从 SSD 读取邻居。\n关键设计：\n1) 图索引（Vamana 图，类似 HNSW 的导航图）存在 SSD；\n2) 内存存「压缩向量」（PQ/short code），用于快速估算距离、剪枝搜索方向；\n3) 全精度向量在 SSD，仅对候选精排时按需读取（局部、顺序化以利用 SSD 带宽）；\n4) 通过精心设计访问模式（减少随机 IO、批量预取）让 SSD 延迟可控。\n效果：用极少内存（如 1/10）支持十亿级向量检索，延迟仍在毫秒-十毫秒级，recall 高。成本远低于全内存方案。\n适用：超大规模、成本敏感、可接受略高延迟（企业搜索、推荐召回、大 RAG 库）。\n其他磁盘/分层方案：Faiss IVF+PQ 也可部分磁盘；Milvus/Qdrant/Weveate 等支持 DiskANN 或类似磁盘索引。趋势：存算分离 + SSD 索引让「万亿级向量」检索在经济可行范围内。\n权衡：内存方案最快但贵，DiskANN 省钱但延迟高一些，按规模与 SLA 选。"
+    },
+    {
+      "question": "Faiss、Milvus、Qdrant 三者的定位与区别？",
+      "points": 5,
+      "difficulty": 3,
+      "tags": ["Faiss", "Milvus", "Qdrant"],
+      "dimension": "skill",
+      "reference_answer": "Faiss（Facebook）：库（library），不是服务。提供高效向量索引/检索算法实现（IVF/HNSW/PQ/GPU 加速等），C++ 核心 + Python 绑定。嵌入到应用进程内，无网络开销、极致灵活，但需自己管理持久化、分布式、过滤、API。研究/原型/单机高性能场景首选，也是很多向量库的底层。\nMilvus：分布式向量数据库（服务）。基于 Faiss/DiskANN 等算法，提供完整服务：存算分离、水平扩展、十亿级、丰富索引、混合检索、过滤、多租户、云原生。适合大规模生产，运维较重（多组件）。\nQdrant：向量搜索引擎（服务，Rust）。单二进制、轻量、高性能、强过滤（payload 索引）、易部署。API 友好、支持量化与混合检索。中大规模、重过滤、追求易运维首选。\n定位区别：\n- Faiss = 算法库（自建）；\n- Milvus = 重型分布式数据库（超大规模）；\n- Qdrant = 轻量高性能服务（中小-中大规模）。\n还有 Weaviate（GraphQL/模块化对象）、Pinecone（全托管 SaaS）、Chroma（轻量、LLM 应用）。\n选择：研究/嵌入式 → Faiss；超大规模生产 → Milvus；中小生产+易运维 → Qdrant；不想运维 → Pinecone；LLM 原型 → Chroma。autohr 规模用 PGVector/Qdrant 即可。"
+    },
+    {
+      "question": "向量检索在 RAG 中的角色与最佳实践？",
+      "points": 10,
+      "difficulty": 3,
+      "tags": ["RAG", "向量检索", "最佳实践"],
+      "dimension": "skill",
+      "reference_answer": "角色：RAG 的「检索」阶段核心——把用户 query 编码成向量，从知识库召回最相关的文档 chunk，作为生成上下文。检索质量直接决定 RAG 上限（垃圾进垃圾出）。\n最佳实践：\n1) embedding 选型：用强通用模型（BGE/E5/OpenAI）或领域微调；query 与文档用同一模型（或非对称对）。\n2) query 处理：query embedding 可能不如长文档信息丰富，可做 query 扩展/改写（HyDE：让 LLM 先生成假设答案再检索）、加 instruction prefix（E5/BGE 的 instruction）。\n3) Hybrid Search：向量 + BM25 融合，补精确词。\n4) 过滤：用 metadata（来源、时间、权限）pre-filter。\n5) Rerank：向量粗排 Top-K'（如 50），Cross-Encoder 精排 Top-K（如 5），显著提精度。\n6) chunking 策略：与 embedding 模型最佳输入长度匹配，overlap 保连续。\n7) 上下文拼装：相关度排序、去重去噪、来源标注、控制总 token。\n8) 评估：检索质量（Recall：黄金文档是否进 Top-K）+ 端到端（faithfulness）。\n常见问题与对策：召回不准→换 embedding/Hybrid/rerank；召回多噪声→提高相关度阈值/压缩；多跳→迭代检索/query 分解。RAG 检索是系统工程，需端到端调优。"
+    },
+    {
+      "question": "Cross-Encoder（Rerank 模型）与 Bi-Encoder（embedding）的区别？为什么两阶段检索？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": ["rerank", "cross-encoder", "两阶段"],
+      "dimension": "skill",
+      "reference_answer": "Bi-Encoder：query 和 doc 各自独立编码成向量，预计算 doc 向量入索引，检索时算 query 向量与所有 doc 向量的相似度（可用 ANN 加速）。特点：可预计算、支持大规模库、毫秒检索，但精度有限（query 与 doc 无交互）。\nCross-Encoder：把 [query, doc] 拼接成一个序列送入 Transformer，输出一个相关性分数。query 与 doc 在模型内充分交互（cross-attention），精度远高于 Bi-Encoder。但每个 (query, doc) 对都要前向一次，无法预计算、不能用于大规模检索。\n两阶段检索：\n1) 用 Bi-Encoder + ANN 从百万库粗排取 Top-K'（如 50-100），高效；\n2) 用 Cross-Encoder 对这 K' 个精排，取 Top-K（如 5），高精度。\n兼顾效率与精度，是 RAG/搜索的工业标准。\n为什么有效：粗排用便宜的相似度快速缩小空间，精排用昂贵的交互模型只评少数候选，总成本可控。\nRerank 模型：BGE-reranker、Cohere Rerank、cross-encoder/ms-marco 等，专门训练的 Cross-Encoder。\n实践：rerank 显著提升检索精度与下游生成质量，尤其 query 短、文档长、需细粒度判断时。延迟代价（K' 次前向，几十 ms）对大多数场景可接受。现代 RAG 几乎都加 rerank。"
+    },
+    {
+      "question": "向量数据库中如何处理实时增删改（动态库）？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": ["动态库", "增删改", "索引更新"],
+      "dimension": "skill",
+      "reference_answer": "挑战：ANN 索引（图/聚类）为静态批量优化，频繁增删会破坏索引质量，且需保持检索连续可用。\n插入：\n1) HNSW：天然支持增量插入（新节点连入图），效果好，适合动态库；\n2) IVF：新向量归到最近簇，但若分布漂移需周期重训 k-means（否则簇不均、recall 降）；\n3) 多数系统用「增量段 + 后台合并」：新写入先进无索引的内存段（brute force 检索），段满了后台合并建索引，类似 LSM-tree。\n删除：\n1) 软删除：标记 tombstone，检索时过滤——简单但索引不收缩、占空间；\n2) 硬删除：从索引移除——HNSW 移除节点会破坏图连通性，需修补；\n3) 多数系统软删 + 周期 compaction 物理清除。\n更新（向量变了）：等价于删旧+插新。\n一致性：\n- 写后立即可查（near-real-time）有延迟（秒级），取决于段合并；\n- 强一致需同步建索引（慢）；\n- 分离写入与查询路径（LSM 风格）平衡。\n工程：选支持高效动态的索引（HNSW/IVF-HNSW）；监控索引质量（recall 随增删变化），定期重建；高写入用分片 + 后台合并。Milvus/Qdrant 等专为动态库设计，处理了这些细节。"
+    },
+    {
+      "question": "二值量化（Binary Quantization）在向量检索中有什么用？",
+      "points": 5,
+      "difficulty": 4,
+      "tags": ["二值量化", "压缩", "Hamming"],
+      "dimension": "skill",
+      "reference_answer": "二值量化：把 float 向量每个分量量化到 1 bit（符号位，>0 为 1，否则 0），整向量变成 bit array。原 768 维 float32（3072 字节）→ 768 bit = 96 字节，压缩 32 倍。\n检索：用 Hamming 距离（异或 popcount，CPU 有极快指令）算二值相似度，速度极快、内存极省。\n用途：\n1) 海量粗筛：用二值向量快速召回 Top-K' 候选，再用全精度向量 rerank Top-K，兼顾速度/内存与精度；\n2) 内存极受限场景；\n3) 二值嵌入模型：直接训练二值 embedding（如 BinaryBERT/LADE），端到端优化二值表示。\n精度：纯二值检索 recall 有损（信息量从 32bit/维降到 1bit/维），但配合 rerank 可接近全精度，且搜索快一个数量级。\n实践：OpenAI/Milvus/Qdrant 等支持二值量化。现代方案常「二值索引粗筛 + 原始向量精排」做两阶段。\n与 PQ/SQ 关系：都是压缩，二值最激进（32×）、SQ 适中（4-8×）、PQ 可调。按精度-成本权衡选。二值量化是「极致压缩 + 极速检索」的工具，适合超大规模、延迟敏感、配合 rerank 的场景。"
+    },
+    {
+      "question": "语义去重（用向量检测近似重复内容）如何实现？",
+      "points": 5,
+      "difficulty": 3,
+      "tags": ["语义去重", "重复检测", "应用"],
+      "dimension": "skill",
+      "reference_answer": "场景：内容平台/知识库里有大量语义重复（改写、抄袭、同义复述、翻译）的内容，传统精确哈希去重（如 SimHash/MinHash 抓字面重复）抓不到语义重复。\n实现：\n1) 把每篇内容编码成 embedding；\n2) 用向量检索找相似度超阈值的对（Faiss/向量库，或构建近邻图）；\n3) 对相似对做聚类/连通分量，每组保留代表（最新/最长/最高质量）；\n4) 可配合 LLM 精判 borderline case。\n阈值：余弦 >0.9-0.95 通常高度重复，按业务调；需人工抽样校准。\n工程优化：\n- 规模大时用 ANN 批量查近邻，而非两两比较（O(n²)）；\n- 先 SimHash 粗筛字面重复，再向量查语义重复，分层；\n- 流式去重：新内容入库前先查相似，超阈值则判重。\n应用：\n- 训练数据去重（LLM 预训练数据去重提升质量，重复数据致过拟合）；\n- RAG 知识库去重（避免检索回大量重复 chunk）；\n- 内容平台去重/版权检测；\n- 简历库去重（autohr 的去重键 sha1(name+phone+email) 抓字面，向量可抓语义重复简历）。\n注意区分「语义重复」与「合理引用/多视角」，需领域调参。"
+    },
+    {
+      "question": "什么是 ColBERT 的「延迟交互」（late interaction）检索？与 Bi/Cross-Encoder 的关系？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": ["ColBERT", "late-interaction", "检索"],
+      "dimension": "skill",
+      "reference_answer": "背景：Bi-Encoder 快但精度低（query/doc 无交互），Cross-Encoder 精度高但慢（每对都交互）。两者各有极端。\nColBERT 的延迟交互（Late Interaction）：折中。\n1) query 和 doc 各自编码成「token 级向量序列」（不是单个向量），doc 的 token 向量可预计算入索引；\n2) 检索时算 MaxSim：对 query 每个 token，找 doc 中最相似的 token 向量，求和得总分——这是「延迟」的 token 级交互（检索时才交互，而非编码时）；\n3) doc 表示预计算（多个 token 向量），检索时与 query 交互。\n优势：\n1) 精度近 Cross-Encoder（token 级细粒度匹配），远好于单向量 Bi-Encoder；\n2) 可预计算 doc 表示、支持 ANN 索引（虽比单向量复杂），比 Cross-Encoder 快得多可检索大规模库。\n代价：\n1) 每个 doc 存多向量（token 数×维度），存储/内存比单向量大多倍；\n2) 索引与检索更复杂。\n定位：介于 Bi（快/粗）与 Cross（慢/精）之间的高质量检索范式，适合追求精度又有规模的场景（学术搜索、法律、RAG）。\n演进：ColBERTv2 压缩优化、PLAID 加速、多向量检索成为向量库功能。理解三种交互级别（无交互/延迟交互/全交互）是掌握稠密检索谱系的关键。"
+    },
+    {
+      "question": "向量检索系统上线后如何监控与调优？",
+      "points": 5,
+      "difficulty": 3,
+      "tags": ["监控", "调优", "运维"],
+      "dimension": "skill",
+      "reference_answer": "监控指标：\n1) 性能：p50/p99 延迟、QPS、错误率、超时；\n2) 索引健康：recall（抽样对比 brute force）、索引大小、内存使用、段合并积压；\n3) 业务：检索空结果率、用户反馈（无相关/重复）、点击/转化；\n4) 容量：CPU/内存/磁盘/网络、分片负载均衡。\n调优方向：\n1) 索引参数：调 efSearch/nprobe 提 recall（增延迟），找业务可接受的帕累托点；\n2) embedding 质量：监控 bad case，考虑换模型/领域微调/加 instruction；\n3) Hybrid/Rerank：加 BM25 或 rerank 提精度；\n4) 过滤优化：强过滤场景改 pre-filter、加标量索引；\n5) 缓存：高频 query 缓存结果；\n6) 分片/副本：扩容解 QPS、内存瓶颈；\n7) 量化/降维：省内存/提速度，配合 rerank 保精度。\n流程：建立评估集与回归基线，变更前后量化对比；A/B 上线验证业务指标；定期重建索引防漂移。\n常见问题：召回质量下降（数据分布变、embedding 过时）、延迟上升（库增长、索引退化）、内存涨（增删未 compaction）。监控+评估集+渐进调优是运维核心。"
+    },
+    {
+      "question": "ScaNN 与传统 ANN（HNSW/IVF）的设计思路有何不同？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": ["ScaNN", "ANN", "各向异性"],
+      "dimension": "skill",
+      "reference_answer": "ScaNN（Google）：核心创新是「各向异性量化（anisotropic quantization）」+ 优化内积检索。\n传统量化（PQ/SQ）对各维均匀量化，误差各向同性。但内积检索中，量化误差对最终内积的影响并非各向同性——某些方向的误差对结果影响大、某些小。ScaNN 让量化「在不同方向有不同精度」：在与 query 分布相关的方向保留高精度，其余方向可粗，使内积估计误差最小化。\n其他设计：\n1) 用分区（类似 IVF）缩小范围；\n2) 量化 + 精确重排；\n3) 针对「最大内积搜索（MIPS）」优化（未归一化向量的内积，余弦是特例）。\n效果：在内积/MIPS 基准上常优于 HNSW/IVF-PQ，尤其高精度（recall>95%）区间速度优势明显。\n与 HNSW/IVF 对比：\n- HNSW：基于图，通用、动态好；\n- IVF-PQ：基于聚类+量化，省内存；\n- ScaNN：基于优化的量化+分区，内积检索精度/速度优，但实现复杂、动态支持弱、社区生态不如前两者广。\n选择：追求极致 MIPS 性能用 ScaNN；通用/动态用 HNSW；大规模省内存用 IVF-PQ。ScaNN 多在 Google 生态/研究用，生产常见 HNSW（如 Qdrant/Milvus）。理解 ScaNN 的「各向异性」思想有助于认识到量化设计可针对目标度量优化，而非通用压缩。"
+    },
+    {
+      "question": "为什么检索结果要做相关度阈值过滤？阈值怎么定？",
+      "points": 5,
+      "difficulty": 3,
+      "tags": ["相关度阈值", "过滤", "RAG"],
+      "dimension": "skill",
+      "reference_answer": "问题：ANN 默认返回 Top-K 最近邻，即使它们与 query 根本不相关（库里没有相关内容时仍返回「最不差的」K 个）。RAG 中把这些不相关 chunk 喂给 LLM 会诱导幻觉、稀释信号、浪费 token。\n阈值过滤：相似度/相关度低于阈值的丢弃，宁缺毋滥——无相关内容时返回空，触发拒答或降级策略。\n阈值怎么定：\n1) 余弦/内积绝对值受 embedding 模型与归一化影响，没有通用阈值，需按模型与数据标定；\n2) 用评估集（query + 相关/不相关标注）画分布，找相关与不相关的分离点；\n3) 实践：余弦 0.7-0.85 常是分界（BGE/E5 等），但需校准；\n4) 更可靠：用 rerank（Cross-Encoder）的相关性分数做阈值，比原始向量相似度准。\n注意：\n- 阈值过严→漏召回（有相关内容被滤掉）；\n- 阈值过松→噪声（不相关被保留）；\n- 用验证集调，监控「相关被滤」与「不相关被留」两类错误。\n更好实践：不依赖硬阈值，而是让 LLM 自己判断上下文是否相关、能否回答（faithfulness 校验），或返回相关度让前端展示「高/中/低置信」。阈值是简单兜底，端到端校验更稳健。"
+    },
+    {
+      "question": "多模态向量检索（如以文搜图）如何实现？",
+      "points": 5,
+      "difficulty": 3,
+      "tags": ["多模态检索", "跨模态", "CLIP"],
+      "dimension": "skill",
+      "reference_answer": "核心：把不同模态（图、文）映射到「同一向量空间」，使语义相近的图文向量相近，即可跨模态检索。\n实现（CLIP 范式）：\n1) 用对比学习训练双塔：图像编码器（ViT）+ 文本编码器（Transformer），用海量「图像-文本对」训练，拉近匹配对、推远不匹配对；\n2) 训练后，图像与文本在同一空间，cos(图向量, 文本向量) 反映语义相关；\n3) 以文搜图：文本→文本编码器→向量，在图像向量库检索最近邻；以图搜图/以图搜文同理。\n索引与检索：图像/文本向量各自入库（向量库），检索逻辑同单模态（ANN + 可选 rerank）。\n应用：\n- 以文搜图（图片素材库、电商）；\n- 以图搜图（相似商品、版权）；\n- 视频内容检索（关键帧）；\n- 多模态 RAG（图文混合知识库）。\n挑战：\n1) 跨模态对齐质量依赖训练数据（CLIP 在细粒度、专业领域弱）；\n2) 细粒度检索难（「红色跑车」vs「红色轿车」）；\n3) 长文本/复杂语义图像编码信息损失。\n改进：用更强的多模态大模型（GPT-4V/SigLIP）做 embedding 或 rerank；领域微调；结合 metadata。多模态检索是 AI 搜索/推荐的重要方向。"
+    },
+    {
+      "question": "向量检索系统的成本主要由哪些构成？如何降本？",
+      "points": 5,
+      "difficulty": 3,
+      "tags": ["成本", "降本", "工程"],
+      "dimension": "skill",
+      "reference_answer": "成本构成：\n1) 内存/存储：全精度向量占大头（亿级×768维×4字节=TB 级），SSD/内存是主要开销；\n2) 计算：检索与建索引的 CPU/GPU；\n3) 网络：分布式检索的分片通信、托管服务的数据传输；\n4) 托管费：SaaS（Pinecone 等）按维度/分片/QPS 计费，贵；\n5) embedding 生成：编码文档/查询的 API 费用（OpenAI 等按 token 计）。\n降本手段：\n1) 量化/降维：PQ/SQ/binary/Matryoshka 降维，省内存/存储数倍-数十倍，配合 rerank 保精度；\n2) 磁盘索引（DiskANN）：内存换 SSD，省内存成本；\n3) 选经济索引：大规模用 IVF-PQ 而非全内存 HNSW；\n4) 自托管 vs SaaS：规模大时自托管（Milvus/Qdrant）比 SaaS 便宜很多；规模小 SaaS 省运维；\n5) embedding 成本：批量编码、缓存、用开源模型（BGE）替代昂贵 API、只对新增数据增量编码；\n6) 过滤缩小检索范围：少检索=少计算；\n7) 冷热分层：热数据内存索引、冷数据磁盘。\n权衡：成本 vs 质量 vs 延迟。先量化各部分占比，针对大头优化。常见误区：盲目用昂贵 SaaS/全精度内存索引处理本可量化的数据。工程化降本是向量检索大规模落地的关键。"
+    },
+    {
+      "question": "什么是稠密检索（Dense Retrieval）与稀疏检索（Sparse Retrieval）？",
+      "points": 10,
+      "difficulty": 3,
+      "tags": ["稠密检索", "稀疏检索", "检索"],
+      "dimension": "skill",
+      "reference_answer": "稀疏检索：文档/查询表示为高维稀疏向量（大部分维度为0），如 BM25/TF-IDF——每维对应一个词，值为词频/权重。只有出现的词有非零值。基于词项精确匹配，可解释（哪个词匹配了）、擅长精确实体/关键词，倒排索引高效。代表：BM25、SPLADE（学习型稀疏，神经网络生成稀疏权重，兼具语义与稀疏优势）。\n稠密检索：文档/查询编码成低维稠密向量（如 768 维全非零），每维是学到的语义特征，无显式词项对应。基于语义相似度，擅长同义/语义/跨语言，单向量索引高效。代表：DPR、Contriever、BGE、E5。\n对比：\n1) 表示：稀疏（词项空间，可解释）vs 稠密（语义空间，黑盒）；\n2) 匹配：精确词项 vs 语义相似；\n3) 强项：稀疏擅长精确词/实体/罕见词，稠密擅长语义/同义/模糊；\n4) 弱项：稀疏不懂同义改写，稠密弱于精确词/数字；\n5) 索引：稀疏用倒排，稠密用 ANN（HNSW/IVF）。\n趋势：Hybrid（稠密+稀疏融合）成为生产主流，互补。学习型稀疏（SPLADE）试图统一两者优点。理解两者差异是设计检索系统（选模型/索引/融合）的基础。RAG 通常 Hybrid 最佳。"
+    },
+    {
+      "question": "向量检索中如何处理查询理解（query understanding）？",
+      "points": 5,
+      "difficulty": 3,
+      "tags": ["query理解", "query-rewrite", "检索"],
+      "dimension": "skill",
+      "reference_answer": "问题：用户 query 常简短、模糊、含指代、口语化，直接编码检索效果差。需查询理解优化。\n方法：\n1) Query 改写/扩展：用 LLM 把口语化/模糊 query 改写为更利于检索的表述（补充关键词、规范化）；\n2) Query 扩展：加同义词、相关词扩大召回；\n3) HyDE（Hypothetical Document Embeddings）：让 LLM 先根据 query 生成一个「假设答案文档」，用该文档（信息更丰富）做 embedding 检索，常比短 query 直接检索效果好（因 doc-doc 比query-doc 更对齐）；\n4) 多 query 检索：LLM 生成多个变体 query 各自检索，合并去重（RAG 的 multi-query）；\n5) 指代消解：多轮对话把代词还原为实体，生成完整 query；\n6) 意图识别：分类 query 意图，路由到不同检索策略/索引；\n7) 拼写纠错、同义归一。\n实践：用 LLM 做 query 增强（改写/HyDE/multi-query）成本低收益大，是 RAG 优化的高 ROI 手段。需平衡：增强过度可能偏移原意图、增加延迟。评估集验证改写是否真的提升召回。现代 RAG 框架（LangChain/LlamaIndex）内置这些模式。"
+    }
+  ]
+}

@@ -9,6 +9,7 @@
 为避免在 ORM 中绑定 PostgreSQL 扩展类型，这里使用普通 ``String`` + lowercase
 唯一索引（迁移中加 ``LOWER(email)`` UNIQUE INDEX）。
 """
+
 from __future__ import annotations
 
 from app.models.async_job import AsyncJob
@@ -21,11 +22,13 @@ from app.models.candidate import (
 )
 from app.models.dedup import DedupMatch
 from app.models.email_config import EmailConfig
-from app.models.interview import InterviewFeedback, InterviewQuestion
+from app.models.hiring import HiringRecommendation
+from app.models.interview import InterviewFeedback, InterviewQuestion, InterviewSession
 from app.models.invite import TeamInvite
 from app.models.job import Job, JobHardRequirement, JobVersion
 from app.models.llm_call import LLMCall
 from app.models.llm_config import LLMConfig
+from app.models.question_bank import QuestionBankItem, QuestionCategory
 from app.models.score import Score, ScoreReason
 from app.models.screening import ManualOverride, ScreeningResult
 from app.models.team import Team
@@ -52,8 +55,11 @@ __all__ = [
     "Score",
     "ScoreReason",
     # interviews
+    "InterviewSession",
     "InterviewQuestion",
     "InterviewFeedback",
+    # hiring
+    "HiringRecommendation",
     # dedup
     "DedupMatch",
     # llm / async / email / audit
@@ -62,4 +68,7 @@ __all__ = [
     "AsyncJob",
     "EmailConfig",
     "AuditLog",
+    # question bank
+    "QuestionCategory",
+    "QuestionBankItem",
 ]

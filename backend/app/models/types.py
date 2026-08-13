@@ -6,15 +6,16 @@ users.password_hash 不在此列——bcrypt 自带保护）写入前自动加�
 Fernet key 来自 ``settings.FERNET_KEY``；为空时（开发期）退化为透传，
 让脚手架在 ``make gen-fernet`` 之前也能跑，但生产强制要求非空。
 """
+
 from __future__ import annotations
 
 from typing import Any
 
 from cryptography.fernet import Fernet
 from sqlalchemy import String, TypeDecorator
-from sqlalchemy.dialects.postgresql import ENUM as PG_ENUM
 
 from app.core.config import settings
+from app.models._compat import enum_compat
 
 # ============================================================================
 # Fernet 加密字符串类型
@@ -73,32 +74,29 @@ class EncryptedString(TypeDecorator[str]):
 # 集中 ENUM 定义（避免散落在各 model 中重复）
 # ============================================================================
 
-UserRole = PG_ENUM("admin", "member", name="user_role")
-JobStatus = PG_ENUM("draft", "active", "closed", name="job_status")
-EducationLevel = PG_ENUM(
-    "high_school", "bachelor", "master", "phd", name="education_level"
+UserRole = enum_compat("user_role", "admin", "member")
+JobStatus = enum_compat("job_status", "draft", "active", "closed")
+EducationLevel = enum_compat("education_level", "high_school", "bachelor", "master", "phd")
+SourceType = enum_compat("source_type", "upload", "platform", "email")
+ParseStatus = enum_compat("parse_status", "pending", "success", "failed", "low_text")
+ScoreReasonType = enum_compat("score_reason_type", "recommend", "disqualify")
+InterviewDimension = enum_compat("interview_dimension", "skill", "project", "weakness", "culture")
+DedupMatchStatus = enum_compat("dedup_match_status", "pending", "merged", "rejected")
+LLMScope = enum_compat("llm_scope", "extractor", "scorer", "reasoning", "interview")
+AsyncJobType = enum_compat(
+    "async_job_type",
+    "parse",
+    "extract",
+    "screen",
+    "score",
+    "email_fetch",
+    "export",
 )
-SourceType = PG_ENUM("upload", "platform", "email", name="source_type")
-ParseStatus = PG_ENUM(
-    "pending", "success", "failed", "low_text", name="parse_status"
+AsyncJobStatus = enum_compat("async_job_status", "queued", "running", "success", "failed", "retry")
+InterviewSessionStatus = enum_compat(
+    "interview_session_status", "scheduled", "in_progress", "completed"
 )
-ScoreReasonType = PG_ENUM("recommend", "disqualify", name="score_reason_type")
-InterviewDimension = PG_ENUM(
-    "skill", "project", "weakness", "culture", name="interview_dimension"
-)
-DedupMatchStatus = PG_ENUM(
-    "pending", "merged", "rejected", name="dedup_match_status"
-)
-LLMScope = PG_ENUM(
-    "extractor", "scorer", "reasoning", "interview", name="llm_scope"
-)
-AsyncJobType = PG_ENUM(
-    "parse", "extract", "screen", "score", "email_fetch", "export",
-    name="async_job_type",
-)
-AsyncJobStatus = PG_ENUM(
-    "queued", "running", "success", "failed", "retry", name="async_job_status"
-)
+HiringRecommendationEnum = enum_compat("hiring_recommendation", "hire", "reserve", "reject")
 
 
 __all__ = [
@@ -114,4 +112,6 @@ __all__ = [
     "LLMScope",
     "AsyncJobType",
     "AsyncJobStatus",
+    "InterviewSessionStatus",
+    "HiringRecommendationEnum",
 ]

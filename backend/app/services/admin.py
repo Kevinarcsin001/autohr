@@ -17,7 +17,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import case, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
@@ -222,12 +222,12 @@ class AdminService:
         stmt = (
             select(
                 func.count(LLMCall.id).label("total_calls"),
-                func.count(LLMCall.id)
-                .filter(LLMCall.success.is_(True))
-                .label("success_count"),
-                func.count(LLMCall.id)
-                .filter(LLMCall.success.is_(False))
-                .label("failed_count"),
+                func.sum(case((LLMCall.success.is_(True), 1), else_=0)).label(
+                    "success_count"
+                ),
+                func.sum(case((LLMCall.success.is_(False), 1), else_=0)).label(
+                    "failed_count"
+                ),
                 func.coalesce(func.sum(LLMCall.tokens_in), 0).label(
                     "total_tokens_in"
                 ),
@@ -280,39 +280,33 @@ class AdminService:
         since: datetime,
         percentile: float,
     ) -> int | None:
-        """使用 PostgreSQL ``percentile_cont`` 计算延迟分位数。
+        """计算延迟分位数（Python 端线性插值，等价 PG ``percentile_cont``）。
 
-        NULL latency 行忽略；无数据 → None
+        NULL latency 行忽略；无数据 → None。
+        跨方言实现：PG 的 ``percentile_cont ... WITHIN GROUP`` 与 SQLite 均无法
+        用 ORM 表达式简单表达，改为拉取有序样本在应用层插值（样本量小，可接受）。
         """
-        from sqlalchemy import text
-
-        # 原生 SQL：percentile_cont 在 SQLAlchemy 表达式中较繁琐，直接用 text
-        stmt = text(
-            """
-            SELECT COALESCE(
-                percentile_cont(:p) WITHIN GROUP (ORDER BY latency_ms),
-                0
-            )::int AS p
-            FROM llm_calls
-            WHERE team_id = :team_id
-              AND called_at >= :since
-              AND latency_ms IS NOT NULL
-            """
+        stmt = (
+            select(LLMCall.latency_ms)
+            .where(
+                LLMCall.team_id == team_id,
+                LLMCall.called_at >= since,
+                LLMCall.latency_ms.is_not(None),
+            )
+            .order_by(LLMCall.latency_ms.asc())
         )
-        result = await self._db.execute(
-            stmt,
-            {
-                "p": percentile,
-                "team_id": team_id,
-                "since": since,
-            },
-        )
-        row = result.first()
-        if row is None:
+        rows = (await self._db.execute(stmt)).scalars().all()
+        if not rows:
             return None
-        val = row[0]
-        # 无数据时 percentile_cont 返回 NULL；COALESCE 0
-        return int(val) if val and val > 0 else None
+        n = len(rows)
+        if n == 1:
+            return int(rows[0])
+        k = (n - 1) * percentile
+        floor = int(k)
+        ceil = min(floor + 1, n - 1)
+        if floor == ceil:
+            return int(rows[floor])
+        return int(rows[floor] + (rows[ceil] - rows[floor]) * (k - floor))
 
     # ----- 内部：by dimension -----
 
@@ -333,12 +327,12 @@ class AdminService:
             select(
                 key.label("dim"),
                 func.count(LLMCall.id).label("total_calls"),
-                func.count(LLMCall.id)
-                .filter(LLMCall.success.is_(True))
-                .label("success_count"),
-                func.count(LLMCall.id)
-                .filter(LLMCall.success.is_(False))
-                .label("failed_count"),
+                func.sum(case((LLMCall.success.is_(True), 1), else_=0)).label(
+                    "success_count"
+                ),
+                func.sum(case((LLMCall.success.is_(False), 1), else_=0)).label(
+                    "failed_count"
+                ),
                 func.coalesce(func.sum(LLMCall.tokens_in), 0).label(
                     "total_tokens_in"
                 ),
@@ -378,36 +372,33 @@ class AdminService:
         team_id: uuid.UUID,
         since: datetime,
         range_key: str,
-        base_filter: Any,
+        base_filter: Any,  # noqa: ARG002  保留签名兼容，SQL 用显式 team_id+since 过滤
     ) -> StatsTimeSeries:
-        """时间序列：7d → day；按天聚合（避免高频聚合给 DB 压力）。"""
-        # date_trunc('day', called_at)
-        from sqlalchemy import text
-
-        stmt = text(
-            """
-            SELECT
-                date_trunc('day', called_at) AS bucket,
-                COUNT(*) AS total_calls,
-                COUNT(*) FILTER (WHERE success) AS success_count,
-                COUNT(*) FILTER (WHERE NOT success) AS failed_count,
-                COALESCE(SUM(cost_cny), 0) AS total_cost_cny
-            FROM llm_calls
-            WHERE team_id = :team_id
-              AND called_at >= :since
-            GROUP BY bucket
-            ORDER BY bucket ASC
-            """
+        """时间序列：7d → day；按天聚合（func.date 跨方言：PG 返回 date，SQLite 返回 YYYY-MM-DD）。"""
+        bucket = func.date(LLMCall.called_at).label("bucket")
+        stmt = (
+            select(
+                bucket,
+                func.count(LLMCall.id).label("total_calls"),
+                func.sum(case((LLMCall.success.is_(True), 1), else_=0)).label(
+                    "success_count"
+                ),
+                func.sum(case((LLMCall.success.is_(False), 1), else_=0)).label(
+                    "failed_count"
+                ),
+                func.coalesce(func.sum(LLMCall.cost_cny), 0).label("total_cost_cny"),
+            )
+            .select_from(LLMCall)
+            .where(LLMCall.team_id == team_id, LLMCall.called_at >= since)
+            .group_by(bucket)
+            .order_by(bucket.asc())
         )
-        result = await self._db.execute(
-            stmt,
-            {"team_id": team_id, "since": since},
-        )
+        rows = (await self._db.execute(stmt)).all()
         points: list[StatsTimePoint] = []
-        for r in result.all():
+        for r in rows:
             points.append(
                 StatsTimePoint(
-                    timestamp=r.bucket.isoformat() if r.bucket else "",
+                    timestamp=r.bucket.isoformat() if hasattr(r.bucket, "isoformat") else (str(r.bucket) if r.bucket else ""),
                     total_calls=int(r.total_calls or 0),
                     success_count=int(r.success_count or 0),
                     failed_count=int(r.failed_count or 0),

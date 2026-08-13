@@ -18,6 +18,7 @@
 Key 命名约定（由调用方 service 层负责）：``{team_id}/{resume_id}/{uuid}.{ext}``
 adapter 本身不感知 team 语义，跨 team 访问 404 由 service 层校验前缀。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -77,9 +78,7 @@ def _map_boto_error(exc: Exception) -> StorageError:
         return StorageTimeoutError(f"无法连接对象存储: {exc}")
     if isinstance(exc, ClientError):
         code = exc.response.get("Error", {}).get("Code", "")
-        http_status = exc.response.get("ResponseMetadata", {}).get(
-            "HTTPStatusCode", 0
-        )
+        http_status = exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode", 0)
         if code in _NOT_FOUND_CODES or http_status == 404:
             return StorageNotFoundError(str(exc))
         if code in _AUTH_CODES or http_status == 403:
@@ -106,9 +105,7 @@ class BaseStorageAdapter(Protocol):
 
     name: str
 
-    async def put(
-        self, key: str, data: bytes, *, mime: str, encrypt: bool = True
-    ) -> None: ...
+    async def put(self, key: str, data: bytes, *, mime: str, encrypt: bool = True) -> None: ...
 
     async def get(self, key: str) -> bytes: ...
 
@@ -122,6 +119,7 @@ class BaseStorageAdapter(Protocol):
         *,
         expires: int | None = None,
         method: str = "GET",
+        mime: str | None = None,
     ) -> str: ...
 
 
@@ -179,9 +177,7 @@ class S3StorageAdapter:
 
     # ----- 同步实现（在 to_thread 中调用） -----
 
-    def _put_sync(
-        self, key: str, data: bytes, mime: str, encrypt: bool
-    ) -> None:
+    def _put_sync(self, key: str, data: bytes, mime: str, encrypt: bool) -> None:
         params: dict[str, Any] = {
             "Bucket": self.bucket,
             "Key": key,
@@ -228,7 +224,11 @@ class S3StorageAdapter:
             raise
 
     def _signed_url_sync(
-        self, key: str, expires: int, method: str
+        self,
+        key: str,
+        expires: int,
+        method: str,
+        mime: str | None = None,
     ) -> str:
         # HTTP method → boto3 operation name
         method_map = {
@@ -238,6 +238,13 @@ class S3StorageAdapter:
             "DELETE": "delete_object",
         }
         op = method_map.get(method.upper(), "get_object")
+
+        params: dict[str, Any] = {"Bucket": self.bucket, "Key": key}
+        # GET 请求强制 inline 展示（避免 MinIO 的 download policy 触发浏览器下载弹窗）
+        if method.upper() == "GET":
+            params["ResponseContentDisposition"] = "inline"
+            if mime:
+                params["ResponseContentType"] = mime
 
         # 如果设置了公开端点，用它生成浏览器可访问的签名 URL
         public_endpoint = settings.MINIO_PUBLIC_ENDPOINT
@@ -255,13 +262,13 @@ class S3StorageAdapter:
             )
             return public_client.generate_presigned_url(
                 op,
-                Params={"Bucket": self.bucket, "Key": key},
+                Params=params,
                 ExpiresIn=expires,
             )
 
         return self._client.generate_presigned_url(
             op,
-            Params={"Bucket": self.bucket, "Key": key},
+            Params=params,
             ExpiresIn=expires,
         )
 
@@ -311,19 +318,14 @@ class S3StorageAdapter:
         *,
         expires: int | None = None,
         method: str = "GET",
+        mime: str | None = None,
     ) -> str:
         # 服务端校验：1 ≤ expires ≤ 3600
-        eff_expires = (
-            expires if expires is not None else settings.STORAGE_SIGNED_URL_EXPIRE_SECONDS
-        )
+        eff_expires = expires if expires is not None else settings.STORAGE_SIGNED_URL_EXPIRE_SECONDS
         if not 1 <= eff_expires <= 3600:
-            raise ValueError(
-                f"expires 必须在 1-3600 秒之间，收到 {eff_expires}"
-            )
+            raise ValueError(f"expires 必须在 1-3600 秒之间，收到 {eff_expires}")
         try:
-            url = await asyncio.to_thread(
-                self._signed_url_sync, key, eff_expires, method
-            )
+            url = await asyncio.to_thread(self._signed_url_sync, key, eff_expires, method, mime)
         except (ClientError, EndpointConnectionError, TimeoutError) as exc:
             raise _map_boto_error(exc) from exc
         return url

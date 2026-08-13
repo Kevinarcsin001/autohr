@@ -1,0 +1,20 @@
+{
+  "_comment": "题库分类声明：15 个分类，target_points 合计 = 100（组卷配额）。各分类题目在 {slug}.json 中维护，可分批扩充；assemble 用 DP 子集和按 target 凑分。",
+  "categories": [
+    {"slug": "python",           "name": "Python 基础",         "target_points": 10, "sort_order": 1},
+    {"slug": "ml-fundamentals",  "name": "机器学习基础",        "target_points": 5,  "sort_order": 2},
+    {"slug": "dl",               "name": "深度学习",            "target_points": 10, "sort_order": 3},
+    {"slug": "rag",              "name": "RAG 检索增强",        "target_points": 10, "sort_order": 4},
+    {"slug": "agent",            "name": "LLM Agent",           "target_points": 10, "sort_order": 5},
+    {"slug": "finetune",         "name": "模型微调",            "target_points": 5,  "sort_order": 6},
+    {"slug": "prompt",           "name": "Prompt 工程",         "target_points": 5,  "sort_order": 7},
+    {"slug": "vector-db",        "name": "向量数据库",          "target_points": 5,  "sort_order": 8},
+    {"slug": "llm-eval",         "name": "LLM 评估与对齐",      "target_points": 5,  "sort_order": 9},
+    {"slug": "mlops",            "name": "MLOps / LLM 部署",    "target_points": 5,  "sort_order": 10},
+    {"slug": "llm-safety",       "name": "LLM 安全与护栏",      "target_points": 5,  "sort_order": 11},
+    {"slug": "algorithm",        "name": "算法与数据结构",      "target_points": 5,  "sort_order": 12},
+    {"slug": "system-design",    "name": "系统设计",            "target_points": 10, "sort_order": 13},
+    {"slug": "backend",          "name": "后端工程",            "target_points": 5,  "sort_order": 14},
+    {"slug": "behavioral",       "name": "行为面试",            "target_points": 5,  "sort_order": 15}
+  ]
+}

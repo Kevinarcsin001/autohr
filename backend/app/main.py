@@ -7,6 +7,7 @@
 - CORS（来自 settings.CORS_ALLOWED_ORIGINS）
 - lifespan：启动时 configure_logging，关闭时 dispose engine
 """
+
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
@@ -18,13 +19,15 @@ from app.api.admin import router as admin_router
 from app.api.audit_logs import router as audit_logs_router
 from app.api.auth import router as auth_router
 from app.api.candidates import router as candidates_router
+from app.api.dashboard import router as dashboard_router
 from app.api.email_configs import router as email_configs_router
 from app.api.exports import router as exports_router
+from app.api.hiring import router as hiring_router
 from app.api.interview import router as interview_router
 from app.api.job_candidates import router as job_candidates_router
 from app.api.jobs import router as jobs_router
 from app.api.platform_imports import router as platform_imports_router
-from app.api.dashboard import router as dashboard_router
+from app.api.question_bank import router as question_bank_router
 from app.api.reasons import router as reasons_router
 from app.api.resumes import router as resumes_router
 from app.api.scores import router as scores_router
@@ -32,7 +35,7 @@ from app.api.screening import router as screening_router
 from app.api.teams import router as teams_router
 from app.api.uploads import router as uploads_router
 from app.core.config import settings
-from app.core.db import engine
+from app.core.db import engine, init_dev_schema
 from app.core.logging import configure_logging, get_logger
 from app.core.middleware.audit import AuditMiddleware
 from app.core.middleware.error_handler import install_error_handlers
@@ -44,6 +47,8 @@ async def lifespan(_app: FastAPI):
     """Application lifespan handler."""
     configure_logging()
     logger = get_logger(__name__)
+    # 开发环境 SQLite：启动自动建表（生产 PG 走 alembic，此函数空操作）
+    await init_dev_schema()
     logger.info(
         "backend_starting",
         environment=settings.ENVIRONMENT,
@@ -75,8 +80,8 @@ def create_app() -> FastAPI:
         CORSMiddleware,
         allow_origins=settings.cors_origins,
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
         expose_headers=["X-Request-ID"],
     )
 
@@ -95,6 +100,8 @@ def create_app() -> FastAPI:
     app.include_router(reasons_router, prefix="/api")
     app.include_router(resumes_router, prefix="/api")
     app.include_router(interview_router, prefix="/api")
+    app.include_router(question_bank_router, prefix="/api")
+    app.include_router(hiring_router, prefix="/api/interview")
     app.include_router(uploads_router, prefix="/api")
     app.include_router(platform_imports_router, prefix="/api")
     app.include_router(email_configs_router, prefix="/api")

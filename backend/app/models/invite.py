@@ -11,9 +11,9 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, String, UniqueConstraint
-from sqlalchemy.dialects.postgresql import CITEXT, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.models._compat import CITEXT_COMPAT, GUID
 from app.models.base import Base, CreatedAtMixin, UUIDPKMixin
 from app.models.types import UserRole
 
@@ -31,12 +31,12 @@ class TeamInvite(UUIDPKMixin, CreatedAtMixin, Base):
     )
 
     team_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        GUID,
         ForeignKey("teams.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-    email: Mapped[str] = mapped_column(CITEXT, nullable=False, index=True)
+    email: Mapped[str] = mapped_column(CITEXT_COMPAT, nullable=False, index=True)
     name: Mapped[str] = mapped_column(String, default="", nullable=False)
     role: Mapped[str] = mapped_column(UserRole, default="member", nullable=False)
     invite_token: Mapped[str] = mapped_column(
@@ -46,12 +46,12 @@ class TeamInvite(UUIDPKMixin, CreatedAtMixin, Base):
         String, default="pending", nullable=False, index=True
     )  # pending | accepted | revoked
     invited_by: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        GUID,
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=False,
     )
     accepted_by: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True),
+        GUID,
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
     )

@@ -171,7 +171,7 @@ class CandidateListService:
         elif filters.group == "disqualified":
             stmt = stmt.where(ScreeningResult.disqualified.is_(True))
         elif filters.group == "pending":
-            stmt = stmt.where(ScreeningResult.id.is_(None))
+            stmt = stmt.where(Score.id.is_(None))
 
         # source 过滤（DB 层，命中 latest source 子查询）
         if filters.source:
@@ -280,7 +280,7 @@ class CandidateListService:
         elif filters.group == "disqualified":
             stmt = stmt.where(ScreeningResult.disqualified.is_(True))
         elif filters.group == "pending":
-            stmt = stmt.where(ScreeningResult.id.is_(None))
+            stmt = stmt.where(Score.id.is_(None))
 
         if filters.min_score is not None:
             stmt = stmt.where(Score.total >= filters.min_score)
@@ -307,15 +307,16 @@ class CandidateListService:
             )
         )
         total_candidates = await self._db.scalar(
-            select(func.count(Candidate.id)).where(Candidate.team_id == team_id)
-        )
-        screened_total = await self._db.scalar(
-            select(func.count(ScreeningResult.id)).where(
-                ScreeningResult.job_id == job_id
+            select(func.count(Candidate.id)).where(
+                Candidate.team_id == team_id,
+                Candidate.merged_into.is_(None),
             )
         )
+        scored_total = await self._db.scalar(
+            select(func.count(Score.id)).where(Score.job_id == job_id)
+        )
         pending = max(
-            0, int(total_candidates or 0) - int(screened_total or 0)
+            0, int(total_candidates or 0) - int(scored_total or 0)
         )
         return {
             "passed": int(passed or 0),

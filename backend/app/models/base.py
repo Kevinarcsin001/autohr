@@ -4,8 +4,8 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
+import sqlalchemy as sa
 from sqlalchemy import DateTime, func
-from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
@@ -15,7 +15,7 @@ class UUIDPKMixin:
     """UUID 主键 mixin：所有表统一使用 UUID v4 作为 PK。"""
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        sa.Uuid,
         primary_key=True,
         default=uuid.uuid4,
     )
@@ -25,7 +25,7 @@ class TimestampMixin:
     """创建/更新时间戳 mixin。
 
     created_at 由 DB 默认值 ``now()`` 写入；
-    updated_at 由 DB trigger 维护（迁移脚本中创建），避免应用层遗漏。
+    updated_at 由应用层 ORM 的 ``onupdate=func.now()`` 触发，避免遗漏。
     """
 
     created_at: Mapped[datetime] = mapped_column(

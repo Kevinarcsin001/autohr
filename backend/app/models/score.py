@@ -10,9 +10,9 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
 )
-from sqlalchemy.dialects.postgresql import ARRAY, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.models._compat import GUID, STRING_ARRAY_COMPAT
 from app.models.base import Base, CreatedAtMixin, UUIDPKMixin
 from app.models.types import ScoreReasonType
 
@@ -30,13 +30,13 @@ class Score(UUIDPKMixin, CreatedAtMixin, Base):
     )
 
     job_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        GUID,
         ForeignKey("jobs.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     candidate_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        GUID,
         ForeignKey("candidates.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
@@ -49,7 +49,7 @@ class Score(UUIDPKMixin, CreatedAtMixin, Base):
     potential: Mapped[int | None] = mapped_column(Integer, nullable=True)
     model_used: Mapped[str | None] = mapped_column(String, nullable=True)
     llm_call_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True),
+        GUID,
         ForeignKey("llm_calls.id", ondelete="SET NULL"),
         nullable=True,
     )
@@ -61,13 +61,13 @@ class ScoreReason(UUIDPKMixin, CreatedAtMixin, Base):
     __tablename__ = "score_reasons"
 
     score_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        GUID,
         ForeignKey("scores.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     type: Mapped[str] = mapped_column(ScoreReasonType, nullable=False)
-    bullet_points: Mapped[list[str] | None] = mapped_column(ARRAY(String), nullable=True)
+    bullet_points: Mapped[list[str] | None] = mapped_column(STRING_ARRAY_COMPAT, nullable=True)
     validated: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
 

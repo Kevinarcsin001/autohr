@@ -13,6 +13,7 @@
 - 所有端点要求当前用户 team_id 非空
 - 跨 team 资源访问返回 404
 """
+
 from __future__ import annotations
 
 import json
@@ -21,6 +22,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Header, Query, status
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 from sqlalchemy import select
 
 from app.core.deps import CurrentUser, DbSession
@@ -62,9 +64,7 @@ async def _validate_job_in_team(db, job_id: UUID, team_id: UUID) -> Job:
     """校验 job 归属 team；跨 team 返回 404。"""
     job = await db.get(Job, job_id)
     if job is None or job.team_id != team_id:
-        raise NotFoundError(
-            f"job {job_id} 不存在或无权访问", resource="job"
-        )
+        raise NotFoundError(f"job {job_id} 不存在或无权访问", resource="job")
     return job
 
 
@@ -106,9 +106,7 @@ async def run_screening(
         candidate_ids = [cid for cid in candidate_ids if cid in valid]
 
     service = FilterService(db)
-    summary = await service.run_for_candidates(
-        job_id=payload.job_id, candidate_ids=candidate_ids
-    )
+    summary = await service.run_for_candidates(job_id=payload.job_id, candidate_ids=candidate_ids)
     await db.commit()
 
     return ScreeningRunResponse(
@@ -172,6 +170,7 @@ async def _run_pipeline_in_background(
     run_id: uuid.UUID,
     job_id: uuid.UUID,
     candidate_ids: list[uuid.UUID],
+    triggered_by: uuid.UUID | None = None,
 ) -> None:
     """BackgroundTask 入口：调 orchestrator，吞掉所有异常以避免 background 抛错。"""
     try:
@@ -180,6 +179,7 @@ async def _run_pipeline_in_background(
             run_id=run_id,
             job_id=job_id,
             candidate_ids=candidate_ids,
+            triggered_by=triggered_by,
         )
     except Exception:  # noqa: BLE001
         logger.exception("pipeline_background_failed", run_id=str(run_id))
@@ -241,6 +241,7 @@ async def trigger_pipeline(
         run_id,
         payload.job_id,
         valid_ids,
+        user.id,
     )
 
     return PipelineRunResponse(
@@ -256,9 +257,7 @@ async def trigger_pipeline(
 async def stream_pipeline_events(
     run_id: UUID,
     user: CurrentUser,
-    last_event_id: str | None = Header(
-        default=None, alias="Last-Event-ID"
-    ),
+    last_event_id: str | None = Header(default=None, alias="Last-Event-ID"),
 ) -> StreamingResponse:
     """SSE 推送 pipeline 进度（支持断线重连）。
 
@@ -460,6 +459,106 @@ async def list_overrides(
         }
         for o in overrides
     ]
+
+
+# ============================================================================
+# HR 评估：审核通过/淘汰
+# ============================================================================
+
+
+class _ReviewRequest(BaseModel):
+    reason: str | None = None
+
+
+@router.post(
+    "/results/{result_id}/approve",
+    status_code=status.HTTP_200_OK,
+)
+async def approve_candidate(
+    result_id: UUID,
+    payload: _ReviewRequest,
+    user: CurrentUser,
+    db: DbSession,
+) -> dict:
+    """HR 审核通过：生成面试题 + 创建面试会话。"""
+    team_id = _require_team(user)
+
+    sr = await db.get(ScreeningResult, result_id)
+    if sr is not None:
+        cand = await db.get(Candidate, sr.candidate_id)
+        if cand is None or cand.team_id != team_id:
+            sr = None
+    if sr is None:
+        raise NotFoundError(
+            f"screening_result {result_id} 不存在或无权访问", resource="screening_result"
+        )
+
+    if sr.disqualified:
+        raise ForbiddenError("该候选人已被淘汰，无法审核通过")
+
+    from app.services.interview import InterviewError, InterviewService
+
+    service = InterviewService(db)
+
+    # 生成面试题
+    try:
+        result = await service.generate(candidate_id=sr.candidate_id, job_id=sr.job_id)
+    except InterviewError as exc:
+        logger.warning(
+            "approve_generate_failed", candidate_id=str(sr.candidate_id), error=str(exc)[:200]
+        )
+        raise NotFoundError(f"面试题生成失败：{exc}", resource="interview") from exc
+
+    # 创建面试会话
+    session = await service.create_session(
+        candidate_id=sr.candidate_id,
+        job_id=sr.job_id,
+        interviewer_id=user.id,
+    )
+    await db.commit()
+
+    return {
+        "session_id": str(session.id),
+        "batch_id": str(result.batch_id),
+        "question_count": result.question_count,
+        "status": "approved",
+    }
+
+
+@router.post(
+    "/results/{result_id}/reject",
+    status_code=status.HTTP_200_OK,
+)
+async def reject_candidate(
+    result_id: UUID,
+    payload: _ReviewRequest,
+    user: CurrentUser,
+    db: DbSession,
+) -> dict:
+    """HR 审核淘汰：写入改判记录。"""
+    team_id = _require_team(user)
+
+    sr = await db.get(ScreeningResult, result_id)
+    if sr is not None:
+        cand = await db.get(Candidate, sr.candidate_id)
+        if cand is None or cand.team_id != team_id:
+            sr = None
+    if sr is None:
+        raise NotFoundError(
+            f"screening_result {result_id} 不存在或无权访问", resource="screening_result"
+        )
+
+    service = FilterService(db)
+    await service.override(
+        screening_result_id=result_id,
+        actor_id=user.id,
+        new_disqualified=True,
+        new_reasons=[payload.reason] if payload and payload.reason else None,
+        reason=payload.reason if payload and payload.reason else "HR 评估淘汰",
+    )
+    await db.commit()
+
+    return {"status": "rejected"}
 
 
 __all__ = ["router"]

@@ -6,7 +6,9 @@
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
+from pathlib import Path
 
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -31,6 +33,36 @@ engine = create_async_engine(
     # NullPool 避免跨 event loop 的连接池问题
     poolclass=NullPool,
 )
+
+# SQLite 开发环境：backend/worker/beat 多进程共享同一 db 文件，
+# 启用 WAL（并发读不阻塞写）+ busy_timeout（写锁竞争等待）；FK 默认关闭需显式开启。
+if settings.DATABASE_URL.startswith("sqlite"):
+
+    @event.listens_for(engine.sync_engine, "connect")
+    def _set_sqlite_pragma(dbapi_conn, _record):  # noqa: ANN001
+        cur = dbapi_conn.cursor()
+        cur.execute("PRAGMA journal_mode=WAL")
+        cur.execute("PRAGMA busy_timeout=5000")
+        cur.execute("PRAGMA foreign_keys=ON")
+        cur.execute("PRAGMA synchronous=NORMAL")
+        cur.close()
+
+
+async def init_dev_schema() -> None:
+    """开发环境 SQLite 自动建表（幂等）；生产 PG 走 alembic 迁移。
+
+    在 main.py lifespan 启动时调用；此时所有 models 已 import 注册到 metadata。
+    非 SQLite 环境直接返回（空操作）。
+    """
+    if not settings.DATABASE_URL.startswith("sqlite"):
+        return
+    # SQLite 文件库：确保父目录存在（SQLite 不自动创建目录）
+    _db_path = settings.DATABASE_URL.split(":///", 1)[-1]
+    if _db_path and _db_path not in ("", ":memory:"):
+        _parent = Path(_db_path).parent
+        _parent.mkdir(parents=True, exist_ok=True)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
 
 AsyncSessionLocal = async_sessionmaker(
     bind=engine,

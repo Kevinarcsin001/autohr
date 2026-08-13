@@ -21,6 +21,7 @@
 - ``InterviewService.save_feedback(...)``：upsert 反馈
 - ``InterviewService.list_by_candidate_job(...)``：按 batch 分组返回
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -46,12 +47,13 @@ from app.models.candidate import (
     CandidateResume,
     ParsedStructure,
 )
-from app.models.interview import InterviewFeedback, InterviewQuestion
+from app.models.interview import InterviewFeedback, InterviewQuestion, InterviewSession
 from app.models.job import Job
 from app.models.score import Score
 from app.models.user import User
 from app.schemas.candidate_structure import CandidateStructure
 from app.schemas.interview import (
+    BatchFeedbackRequest,
     FeedbackRequest,
     InterviewQuestions,
 )
@@ -236,14 +238,10 @@ class InterviewService:
     ) -> InterviewResult:
         candidate = await self._db.get(Candidate, candidate_id)
         if candidate is None:
-            raise NotFoundError(
-                f"candidate {candidate_id} not found", resource="candidate"
-            )
+            raise NotFoundError(f"candidate {candidate_id} not found", resource="candidate")
         job = await self._db.get(Job, job_id)
         if job is None:
-            raise NotFoundError(
-                f"job {job_id} not found", resource="job"
-            )
+            raise NotFoundError(f"job {job_id} not found", resource="job")
 
         score = await self._db.scalar(
             select(Score).where(
@@ -257,9 +255,7 @@ class InterviewService:
         snippet = self._truncate(parsed_text or "", _MAX_RESUME_CHARS)
         weakness_hint = self._build_weakness_hint(structure)
 
-        temperature = (
-            _REGENERATE_TEMPERATURE if is_regeneration else _FIRST_TEMPERATURE
-        )
+        temperature = _REGENERATE_TEMPERATURE if is_regeneration else _FIRST_TEMPERATURE
 
         self._log_safe_summary(
             candidate_id=candidate_id,
@@ -294,9 +290,7 @@ class InterviewService:
 
         questions_payload = self._safe_parsed(response)
         if questions_payload is None:
-            raise InterviewError(
-                f"LLM response.parsed is None; content={response.content[:200]!r}"
-            )
+            raise InterviewError(f"LLM response.parsed is None; content={response.content[:200]!r}")
 
         batch_id = uuid.uuid4()
         await self._persist_batch(
@@ -437,14 +431,10 @@ class InterviewService:
         # 校验 reviewer 存在
         reviewer = await self._db.get(User, reviewer_id)
         if reviewer is None:
-            raise NotFoundError(
-                f"reviewer {reviewer_id} not found", resource="user"
-            )
+            raise NotFoundError(f"reviewer {reviewer_id} not found", resource="user")
 
         if payload.feedback is None and payload.rating is None:
-            raise AppValidationError(
-                "feedback 或 rating 至少需要提供一个"
-            )
+            raise AppValidationError("feedback 或 rating 至少需要提供一个")
 
         existing = await self._db.scalar(
             select(InterviewFeedback).where(
@@ -469,9 +459,7 @@ class InterviewService:
         await self._db.flush()
         return new, question
 
-    async def list_feedback(
-        self, *, question_id: uuid.UUID
-    ) -> list[InterviewFeedback]:
+    async def list_feedback(self, *, question_id: uuid.UUID) -> list[InterviewFeedback]:
         """列出某题的所有反馈（按时间倒序）。"""
         result = await self._db.execute(
             select(InterviewFeedback)
@@ -497,13 +485,9 @@ class InterviewService:
             jd_text=jd_text,
             total=score.total if score else "-",
             skill=score.skill if score and score.skill is not None else "-",
-            experience=(
-                score.experience if score and score.experience is not None else "-"
-            ),
+            experience=(score.experience if score and score.experience is not None else "-"),
             education=structure.education if structure else "(未知)",
-            years_of_experience=(
-                structure.years_of_experience if structure else "(未知)"
-            ),
+            years_of_experience=(structure.years_of_experience if structure else "(未知)"),
             skills=", ".join(structure.skills) if structure else "(无)",
             weakness_hint=weakness_hint,
             resume_snippet=snippet,
@@ -529,16 +513,23 @@ class InterviewService:
 
         # 各字段 confidence 检查
         field_checks = [
-            ("技能", structure.skills_confidence,
-             f"skills={structure.skills}"),
-            ("工作年限", structure.years_of_experience_confidence,
-             f"years_of_experience={structure.years_of_experience}"),
-            ("学历", structure.education_confidence,
-             f"education={structure.education}"),
-            ("当前公司", structure.current_company_confidence,
-             f"current_company={structure.current_company}"),
-            ("工作经历", structure.work_history_confidence,
-             f"work_history={len(structure.work_history)} 条"),
+            ("技能", structure.skills_confidence, f"skills={structure.skills}"),
+            (
+                "工作年限",
+                structure.years_of_experience_confidence,
+                f"years_of_experience={structure.years_of_experience}",
+            ),
+            ("学历", structure.education_confidence, f"education={structure.education}"),
+            (
+                "当前公司",
+                structure.current_company_confidence,
+                f"current_company={structure.current_company}",
+            ),
+            (
+                "工作经历",
+                structure.work_history_confidence,
+                f"work_history={len(structure.work_history)} 条",
+            ),
         ]
         for label, conf, value in field_checks:
             if conf is not None and conf < _LOW_CONFIDENCE_THRESHOLD:
@@ -569,11 +560,7 @@ class InterviewService:
             return None, None
 
         structure_data, parsed_text = row
-        inner = (
-            structure_data.get("structure")
-            if isinstance(structure_data, dict)
-            else None
-        )
+        inner = structure_data.get("structure") if isinstance(structure_data, dict) else None
         if not isinstance(inner, dict):
             return None, parsed_text
         try:
@@ -641,6 +628,219 @@ class InterviewService:
             snippet_sha256_prefix=snip_h,
             snippet_len=len(snippet),
         )
+
+    # ----- 会话管理 -----
+
+    async def create_session(
+        self,
+        *,
+        candidate_id: uuid.UUID,
+        job_id: uuid.UUID,
+        interviewer_id: uuid.UUID,
+    ) -> InterviewSession:
+        """创建面试会话，关联最新 batch 的面试题。"""
+        # 检查已有会话（同一 candidate+job 只允许一个活跃会话）
+        existing = await self._db.scalar(
+            select(InterviewSession).where(
+                InterviewSession.candidate_id == candidate_id,
+                InterviewSession.job_id == job_id,
+                InterviewSession.status != "completed",
+            )
+        )
+        if existing is not None:
+            return existing
+
+        session = InterviewSession(
+            candidate_id=candidate_id,
+            job_id=job_id,
+            interviewer_id=interviewer_id,
+            status="scheduled",
+        )
+        self._db.add(session)
+        await self._db.flush()
+
+        # 关联已有的最新 batch 面试题
+        batch_result = await self._db.execute(
+            select(InterviewQuestion)
+            .where(
+                InterviewQuestion.candidate_id == candidate_id,
+                InterviewQuestion.job_id == job_id,
+            )
+            .order_by(InterviewQuestion.created_at.desc())
+        )
+        for q in batch_result.scalars().all():
+            if q.session_id is None:
+                q.session_id = session.id
+
+        await self._db.flush()
+        logger.info(
+            "interview_session_created",
+            session_id=str(session.id),
+            candidate_id=str(candidate_id),
+            job_id=str(job_id),
+        )
+        return session
+
+    async def get_session(self, *, session_id: uuid.UUID) -> InterviewSession | None:
+        """查询单个面试会话。"""
+        return await self._db.get(InterviewSession, session_id)
+
+    async def list_sessions(
+        self,
+        *,
+        team_id: uuid.UUID,
+        status: str | None = None,
+        job_id: uuid.UUID | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list[tuple[InterviewSession, str | None, str | None, str | None, int]], int]:
+        """分页列出团队内的面试会话，带候选人姓名、职位名称、面试官姓名、题目数。
+
+        Returns:
+            (rows, total) — 每行 (session, candidate_name, job_title, interviewer_name, question_count)
+        """
+        from app.models.interview import InterviewQuestion as IqModel
+
+        # 通过 candidate JOIN 限制团队
+        sub = (
+            select(InterviewSession.id)
+            .join(Candidate, Candidate.id == InterviewSession.candidate_id)
+            .where(Candidate.team_id == team_id)
+        )
+        if status:
+            sub = sub.where(InterviewSession.status == status)
+        if job_id:
+            sub = sub.where(InterviewSession.job_id == job_id)
+
+        count_q = select(InterviewSession).where(InterviewSession.id.in_(sub))
+        total_result = await self._db.execute(count_q)
+        total = len(total_result.scalars().all())
+
+        q = (
+            select(
+                InterviewSession,
+                Candidate.name,
+                Job.title,
+                User.name,
+            )
+            .join(Candidate, Candidate.id == InterviewSession.candidate_id)
+            .join(Job, Job.id == InterviewSession.job_id)
+            .outerjoin(User, User.id == InterviewSession.interviewer_id)
+            .where(InterviewSession.id.in_(sub))
+            .order_by(InterviewSession.created_at.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        result = await self._db.execute(q)
+        rows = result.all()
+
+        # 为每行统计题目数
+        session_ids = [r[0].id for r in rows]
+        qc_result = await self._db.execute(
+            select(IqModel.session_id).where(IqModel.session_id.in_(session_ids))
+        )
+        qc_map: dict[uuid.UUID, int] = {}
+        for (sid,) in qc_result:
+            qc_map[sid] = qc_map.get(sid, 0) + 1
+
+        enriched = [(r[0], r[1], r[2], r[3], qc_map.get(r[0].id, 0)) for r in rows]
+        return enriched, total
+
+    async def update_session(
+        self,
+        *,
+        session_id: uuid.UUID,
+        status: str | None = None,
+        interviewer_id: uuid.UUID | None = None,
+        overall_notes: str | None = None,
+    ) -> InterviewSession:
+        """更新面试会话字段。"""
+        session = await self._db.get(InterviewSession, session_id)
+        if session is None:
+            raise NotFoundError(
+                f"interview session {session_id} not found",
+                resource="interview_session",
+            )
+        if status is not None:
+            session.status = status
+        if interviewer_id is not None:
+            session.interviewer_id = interviewer_id
+        if overall_notes is not None:
+            session.overall_notes = overall_notes.strip() or None
+        await self._db.flush()
+        logger.info(
+            "interview_session_updated",
+            session_id=str(session_id),
+            status=status,
+        )
+        return session
+
+    async def batch_save_feedback(
+        self,
+        *,
+        session_id: uuid.UUID,
+        reviewer_id: uuid.UUID,
+        payload: BatchFeedbackRequest,
+    ) -> tuple[int, list[dict]]:
+        """批量保存面试反馈。
+
+        Returns:
+            (saved_count, errors) — 每条 error: {"question_id": ..., "error": ...}
+        """
+        session = await self._db.get(InterviewSession, session_id)
+        if session is None:
+            raise NotFoundError(
+                f"interview session {session_id} not found",
+                resource="interview_session",
+            )
+
+        saved = 0
+        errors: list[dict] = []
+
+        for item in payload.feedbacks:
+            try:
+                question = await self._db.get(InterviewQuestion, item.question_id)
+                if question is None:
+                    errors.append(
+                        {
+                            "question_id": str(item.question_id),
+                            "error": "question not found",
+                        }
+                    )
+                    continue
+
+                existing = await self._db.scalar(
+                    select(InterviewFeedback).where(
+                        InterviewFeedback.question_id == item.question_id,
+                        InterviewFeedback.reviewer_id == reviewer_id,
+                    )
+                )
+                if existing is not None:
+                    if item.feedback is not None:
+                        existing.feedback = item.feedback
+                    if item.rating is not None:
+                        existing.rating = item.rating
+                    existing.session_id = session_id
+                else:
+                    new = InterviewFeedback(
+                        session_id=session_id,
+                        question_id=item.question_id,
+                        reviewer_id=reviewer_id,
+                        feedback=item.feedback,
+                        rating=item.rating,
+                    )
+                    self._db.add(new)
+                saved += 1
+            except Exception as exc:
+                errors.append(
+                    {
+                        "question_id": str(item.question_id),
+                        "error": str(exc)[:200],
+                    }
+                )
+
+        await self._db.flush()
+        return saved, errors
 
 
 __all__ = [

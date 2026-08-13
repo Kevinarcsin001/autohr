@@ -5,9 +5,9 @@ import uuid
 from typing import Any
 
 from sqlalchemy import ForeignKey
-from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.models._compat import GUID, JSONB_COMPAT
 from app.models.base import Base, CreatedAtMixin, UUIDPKMixin
 from app.models.types import DedupMatchStatus
 
@@ -22,23 +22,23 @@ class DedupMatch(UUIDPKMixin, CreatedAtMixin, Base):
     __tablename__ = "dedup_matches"
 
     candidate_a: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        GUID,
         ForeignKey("candidates.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     candidate_b: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        GUID,
         ForeignKey("candidates.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-    similarity: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    similarity: Mapped[dict[str, Any]] = mapped_column(JSONB_COMPAT, nullable=False)
     status: Mapped[str] = mapped_column(
         DedupMatchStatus, default="pending", nullable=False, index=True
     )
     decided_by: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True),
+        GUID,
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
     )

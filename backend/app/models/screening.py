@@ -10,9 +10,9 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.models._compat import GUID, JSONB_COMPAT
 from app.models.base import Base, CreatedAtMixin, UUIDPKMixin
 
 
@@ -30,19 +30,19 @@ class ScreeningResult(UUIDPKMixin, CreatedAtMixin, Base):
     )
 
     job_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        GUID,
         ForeignKey("jobs.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     candidate_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        GUID,
         ForeignKey("candidates.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     disqualified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    reasons: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
+    reasons: Mapped[list[str] | None] = mapped_column(JSONB_COMPAT, nullable=True)
     manually_overridden: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False
     )
@@ -54,18 +54,18 @@ class ManualOverride(UUIDPKMixin, CreatedAtMixin, Base):
     __tablename__ = "manual_overrides"
 
     screening_result_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        GUID,
         ForeignKey("screening_results.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     actor_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        GUID,
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=False,
     )
-    old_value: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
-    new_value: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    old_value: Mapped[dict[str, Any] | None] = mapped_column(JSONB_COMPAT, nullable=True)
+    new_value: Mapped[dict[str, Any] | None] = mapped_column(JSONB_COMPAT, nullable=True)
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 

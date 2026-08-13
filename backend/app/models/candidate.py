@@ -6,9 +6,9 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import DateTime, ForeignKey, String, Text, func
-from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.models._compat import GUID, JSONB_COMPAT
 from app.models.base import Base, CreatedAtMixin, UUIDPKMixin
 from app.models.types import EncryptedString, ParseStatus, SourceType
 
@@ -19,7 +19,7 @@ class Candidate(UUIDPKMixin, CreatedAtMixin, Base):
     __tablename__ = "candidates"
 
     team_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        GUID,
         ForeignKey("teams.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
@@ -31,7 +31,7 @@ class Candidate(UUIDPKMixin, CreatedAtMixin, Base):
     phone: Mapped[str | None] = mapped_column(EncryptedString, nullable=True)
     email: Mapped[str | None] = mapped_column(EncryptedString, nullable=True, index=True)
     merged_into: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True),
+        GUID,
         ForeignKey("candidates.id", ondelete="SET NULL"),
         nullable=True,
     )
@@ -43,13 +43,13 @@ class CandidateSource(UUIDPKMixin, Base):
     __tablename__ = "candidate_sources"
 
     candidate_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        GUID,
         ForeignKey("candidates.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     source_type: Mapped[str] = mapped_column(SourceType, nullable=False, index=True)
-    source_meta: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    source_meta: Mapped[dict[str, Any] | None] = mapped_column(JSONB_COMPAT, nullable=True)
     fetched_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -61,13 +61,13 @@ class CandidateResume(UUIDPKMixin, Base):
     __tablename__ = "candidate_resumes"
 
     candidate_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        GUID,
         ForeignKey("candidates.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     source_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        GUID,
         ForeignKey("candidate_sources.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
@@ -90,17 +90,17 @@ class ParsedStructure(UUIDPKMixin, Base):
     __tablename__ = "parsed_structures"
 
     resume_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        GUID,
         ForeignKey("candidate_resumes.id", ondelete="CASCADE"),
         nullable=False,
         unique=True,
     )
-    data: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    data: Mapped[dict[str, Any]] = mapped_column(JSONB_COMPAT, nullable=False)
     extracted_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     llm_call_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True),
+        GUID,
         ForeignKey("llm_calls.id", ondelete="SET NULL"),
         nullable=True,
     )

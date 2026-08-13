@@ -22,9 +22,9 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.models._compat import GUID, JSONB_COMPAT
 from app.models.base import Base, CreatedAtMixin, UUIDPKMixin
 
 
@@ -43,7 +43,7 @@ class LLMConfig(UUIDPKMixin, CreatedAtMixin, Base):
     )
 
     team_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True),
+        GUID,
         ForeignKey("teams.id", ondelete="CASCADE"),
         nullable=True,
         index=True,
@@ -52,7 +52,7 @@ class LLMConfig(UUIDPKMixin, CreatedAtMixin, Base):
     primary: Mapped[str] = mapped_column(String, nullable=False)
     fallback: Mapped[str | None] = mapped_column(String, nullable=True)
     model_overrides: Mapped[dict[str, Any] | None] = mapped_column(
-        JSONB, nullable=True
+        JSONB_COMPAT, nullable=True
     )
     timeout_seconds: Mapped[int | None] = mapped_column(
         nullable=True,

@@ -26,6 +26,14 @@ db_url = os.getenv("DATABASE_URL")
 if db_url:
     config.set_main_option("sqlalchemy.url", db_url)
 
+# SQLite 开发环境使用 Base.metadata.create_all 建表，不走 alembic
+# （迁移链含 PG 专有 DDL：CREATE EXTENSION / CREATE TYPE 等，SQLite 无法执行）
+if (config.get_main_option("sqlalchemy.url") or "").startswith("sqlite"):
+    raise RuntimeError(
+        "SQLite 开发环境使用 create_all 建表，请勿运行 alembic。\n"
+        "重置开发库：rm data/autohr.db 后重启 backend。"
+    )
+
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 

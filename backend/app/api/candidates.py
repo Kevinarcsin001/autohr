@@ -12,12 +12,13 @@
 - 所有端点要求当前用户 team_id 非空
 - 跨 team 资源访问返回 404（不暴露存在性）
 """
+
 from __future__ import annotations
 
 from uuid import UUID
 
 from fastapi import APIRouter, Query, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.core.deps import CurrentUser, DbSession
 from app.core.middleware.error_handler import ForbiddenError, NotFoundError
@@ -52,6 +53,149 @@ def _require_team(user) -> UUID:
 
 
 # ============================================================================
+# 团队级候选人列表（跨职位）
+# ============================================================================
+
+
+@router.get("/")
+async def list_team_candidates(
+    user: CurrentUser,
+    db: DbSession,
+    source: str | None = Query(default=None),
+    education: str | None = Query(default=None),
+    skill: str | None = Query(default=None),
+    search: str | None = Query(default=None),
+    sort_by: str = Query(default="created_at"),
+    sort_order: str = Query(default="desc"),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=200),
+) -> dict:
+    """列出团队内所有候选人（跨职位聚合，简化版）。
+
+    支持筛选：source(来源)、education(学历)、skill(技能子串)、search(姓名搜索)
+    """
+    team_id = _require_team(user)
+
+    from app.models.candidate import Candidate, CandidateResume, CandidateSource, ParsedStructure
+
+    # 基础查询
+    base = (
+        select(
+            Candidate.id,
+            Candidate.name,
+            Candidate.email,
+            Candidate.phone,
+            Candidate.created_at,
+            CandidateSource.source_type,
+        )
+        .outerjoin(CandidateSource, CandidateSource.candidate_id == Candidate.id)
+        .where(Candidate.team_id == team_id, Candidate.merged_into.is_(None))
+        .distinct()
+    )
+
+    if source:
+        base = base.where(CandidateSource.source_type == source)
+    if search:
+        base = base.where(Candidate.name.ilike(f"%{search}%"))
+
+    # 总数：与 list 同条件（含 source outerjoin），用 COUNT() 让 DB 计算
+    # 注意：education/skill 是 Python 层过滤，未计入 total（同原行为）
+    count_q = (
+        select(func.count(func.distinct(Candidate.id)))
+        .select_from(Candidate)
+        .outerjoin(CandidateSource, CandidateSource.candidate_id == Candidate.id)
+        .where(Candidate.team_id == team_id, Candidate.merged_into.is_(None))
+    )
+    if source:
+        count_q = count_q.where(CandidateSource.source_type == source)
+    if search:
+        count_q = count_q.where(Candidate.name.ilike(f"%{search}%"))
+    total = (await db.scalar(count_q)) or 0
+
+    # 排序 + 分页
+    if sort_by == "name":
+        base = base.order_by(Candidate.name.asc() if sort_order == "asc" else Candidate.name.desc())
+    elif sort_by == "source_type":
+        base = base.order_by(
+            CandidateSource.source_type.asc()
+            if sort_order == "asc"
+            else CandidateSource.source_type.desc()
+        )
+    else:
+        base = base.order_by(
+            Candidate.created_at.asc() if sort_order == "asc" else Candidate.created_at.desc()
+        )
+
+    offset = (page - 1) * page_size
+    result = await db.execute(base.offset(offset).limit(page_size))
+    rows = result.all()
+
+    # 批量取 structured fields（学历/技能用于 Python 层过滤）
+    candidate_ids = [r[0] for r in rows]
+    struct_map: dict = {}
+    if candidate_ids:
+        # 取每个 candidate 的最新 ParsedStructure
+        from sqlalchemy import func as sa_func
+
+        latest_resume = (
+            select(
+                CandidateResume.candidate_id,
+                sa_func.max(CandidateResume.uploaded_at).label("max_uploaded"),
+            )
+            .where(CandidateResume.candidate_id.in_(candidate_ids))
+            .group_by(CandidateResume.candidate_id)
+            .subquery()
+        )
+        struct_result = await db.execute(
+            select(ParsedStructure.data, CandidateResume.candidate_id)
+            .join(CandidateResume, CandidateResume.id == ParsedStructure.resume_id)
+            .join(
+                latest_resume,
+                (latest_resume.c.candidate_id == CandidateResume.candidate_id)
+                & (latest_resume.c.max_uploaded == CandidateResume.uploaded_at),
+            )
+        )
+        for data, cid in struct_result:
+            inner = data.get("structure") if isinstance(data, dict) else {}
+            struct_map[cid] = inner if isinstance(inner, dict) else {}
+
+    # 组装返回
+    items = []
+    for r in rows:
+        cid, name, email, phone, created_at, source_type = r
+        struct = struct_map.get(cid) or {}
+        item_edu = struct.get("education")
+        item_skills = struct.get("skills", [])
+
+        # Python 层过滤
+        if education and item_edu != education:
+            continue
+        if skill and not any(skill.lower() in s.lower() for s in item_skills):
+            continue
+
+        items.append(
+            {
+                "id": str(cid),
+                "name": name,
+                "email": email,
+                "phone": phone,
+                "source_type": source_type,
+                "education": item_edu,
+                "skills": item_skills[:5] if item_skills else [],
+                "years_of_experience": struct.get("years_of_experience"),
+                "created_at": created_at.isoformat() if created_at else None,
+            }
+        )
+
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+# ============================================================================
 # dedup_match 列表
 # ============================================================================
 
@@ -60,9 +204,7 @@ def _require_team(user) -> UUID:
 async def list_dedup_matches(
     user: CurrentUser,
     db: DbSession,
-    status_filter: str | None = Query(
-        default="pending", pattern="^(pending|merged|rejected|all)$"
-    ),
+    status_filter: str | None = Query(default="pending", pattern="^(pending|merged|rejected|all)$"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
 ) -> DedupMatchListResponse:
@@ -72,9 +214,7 @@ async def list_dedup_matches(
 
     limit = page_size
     offset = (page - 1) * page_size
-    matches = await service.list_pending_matches(
-        team_id=team_id, limit=limit, offset=offset
-    )
+    matches = await service.list_pending_matches(team_id=team_id, limit=limit, offset=offset)
 
     # 取候选人姓名
     candidate_ids = set()
@@ -84,9 +224,7 @@ async def list_dedup_matches(
     names: dict[UUID, str] = {}
     if candidate_ids:
         result = await db.execute(
-            select(Candidate.id, Candidate.name).where(
-                Candidate.id.in_(candidate_ids)
-            )
+            select(Candidate.id, Candidate.name).where(Candidate.id.in_(candidate_ids))
         )
         for cid, name in result.all():
             names[cid] = name
@@ -129,9 +267,7 @@ async def merge_candidates(
     for cid in (payload.src_id, payload.dst_id):
         c = await db.get(Candidate, cid)
         if c is None or c.team_id != UUID(str(user.team_id)):
-            raise NotFoundError(
-                f"candidate {cid} 不存在或无权访问", resource="candidate"
-            )
+            raise NotFoundError(f"candidate {cid} 不存在或无权访问", resource="candidate")
 
     sources_moved, resumes_moved, fields_updated = await service.merge(
         src_id=payload.src_id, dst_id=payload.dst_id
@@ -273,9 +409,7 @@ async def list_candidate_activity(
     user: CurrentUser,
     db: DbSession,
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(
-        default=DEFAULT_ACTIVITY_PAGE_SIZE, ge=1, le=MAX_ACTIVITY_PAGE_SIZE
-    ),
+    page_size: int = Query(default=DEFAULT_ACTIVITY_PAGE_SIZE, ge=1, le=MAX_ACTIVITY_PAGE_SIZE),
 ) -> CandidateActivityListResponse:
     """取候选人的活动时间线（audit_logs + manual_overrides UNION 按时间倒序）。"""
     team_id = _require_team(user)

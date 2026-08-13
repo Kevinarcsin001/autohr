@@ -32,11 +32,17 @@ from app.adapters.llm.base import (
     Message,
 )
 from app.core.config import settings
+from app.core.db import AsyncSessionLocal
 from app.core.logging import get_logger
+from app.models.llm_call import LLMCall
+from app.models.types import LLMScope
 
 T = TypeVar("T", bound=BaseModel)
 
 _logger = get_logger(__name__)
+
+# LLMScope 派生的合法 scope 集合（避免硬编码不同步）
+_VALID_LLM_SCOPES: frozenset[str] = frozenset(LLMScope.enums)
 
 # ============================================================================
 # 熔断器
@@ -262,15 +268,8 @@ class LLMRouter:
         让调用方能在持久化业务数据时引用。
         """
         try:
-            from app.core.db import AsyncSessionLocal
-            from app.models.llm_call import LLMCall
-            from app.models.types import LLMScope
-
-            # 校验 scope 在 ENUM 内（fallback 到 'extractor'）
-            valid_scopes = {
-                e.name for e in LLMScope().enum_class.enums  # type: ignore[attr-defined]
-            } if False else {"extractor", "scorer", "reasoning", "interview"}
-            scope_value = scope if scope in valid_scopes else "extractor"
+            # 校验 scope ∈ PG ENUM，否则 fallback 到 'extractor'
+            scope_value = scope if scope in _VALID_LLM_SCOPES else "extractor"
 
             async with AsyncSessionLocal() as session:
                 call = LLMCall(

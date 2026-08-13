@@ -79,6 +79,10 @@ gen-keys: ## 生成 JWT RS256 密钥对
 gen-fernet: ## 生成 Fernet 加密密钥并输出（追加到 .env）
 	@python3 -c "from cryptography.fernet import Fernet; print('FERNET_KEY=' + Fernet.generate_key().decode())"
 
+db-dev-reset: ## 删除开发环境 SQLite 库（重启 backend 自动重建表）
+	@rm -f data/autohr.db data/autohr.db-wal data/autohr.db-shm
+	@echo "✓ 已删除 data/autohr.db（重启 backend 后自动 create_all）"
+
 clean: ## ⚠️ 危险：停止服务并删除所有数据卷（postgres/redis/minio）
 	@read -r -p "This will DELETE all data volumes. Continue? [y/N] " confirm; \
 	if [ "$$confirm" = "y" ] || [ "$$confirm" = "Y" ]; then \

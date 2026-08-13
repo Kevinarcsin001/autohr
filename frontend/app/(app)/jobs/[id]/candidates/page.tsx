@@ -334,11 +334,10 @@ function JobCandidatesContent() {
     setPipelineTriggering(true);
     setPipelineMessage("正在触发筛选...");
     try {
-      // 简化：触发当前 job 全量未评分候选人
-      // 实际生产中需要根据 candidateParams 取 candidate_ids
+      // 触发当前 job 全量未评分候选人（score_id 为 null）
       const candidateIds =
         candidatesQuery.data?.items
-          ?.filter((c) => c.screening_id === null)
+          ?.filter((c) => c.score_id === null)
           .map((c) => c.id) ?? [];
       if (candidateIds.length === 0) {
         setPipelineMessage("当前列表无需筛选的候选人");
@@ -408,6 +407,11 @@ function JobCandidatesContent() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <Link href={`/jobs/${jobId}/review`}>
+            <Button type="button" variant="outline">
+              人工评估
+            </Button>
+          </Link>
           <Button
             type="button"
             onClick={handleTriggerPipeline}

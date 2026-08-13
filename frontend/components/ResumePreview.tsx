@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { useResumeUrl } from "@/hooks/useResumeUrl";
+import { cn } from "@/lib/utils";
 
 /**
  * 简历预览（任务 24）。
@@ -20,17 +21,61 @@ import { useResumeUrl } from "@/hooks/useResumeUrl";
 interface ResumePreviewProps {
   candidateId: string;
   mimeType?: string | null;
+  parsedText?: string | null;
 }
-
-const PDF_LOAD_TIMEOUT_MS = 5_000;
 
 export function ResumePreview({
   candidateId,
   mimeType,
+  parsedText,
 }: ResumePreviewProps) {
   const { data, isLoading, isError } = useResumeUrl(candidateId);
   const [loadFailed, setLoadFailed] = useState(false);
-  const [timedOut, setTimedOut] = useState(false);
+  const [viewMode, setViewMode] = useState<"text" | "file">("file");
+  const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
+
+  // 从 URL 路径中提取扩展名（签名 URL 可能带 ?query）
+  const urlPath = data?.url ? data.url.split("?")[0].toLowerCase() : "";
+  const effectiveMime = mimeType || data?.mime_type || "";
+  const isPdf =
+    effectiveMime.includes("pdf") || urlPath.endsWith(".pdf");
+  const isImage = data?.url
+    ? effectiveMime.startsWith("image/") ||
+      /\.(png|jpe?g|webp|gif|bmp|tiff?)(\?|$)/i.test(data.url) ||
+      /\.(png|jpe?g|webp|gif|bmp|tiff?)$/i.test(urlPath)
+    : false;
+
+  useEffect(() => {
+    if (!data?.url || !isPdf) return;
+    let active = true;
+    let currentBlobUrl: string | null = null;
+
+    fetch(data.url)
+      .then((res) => {
+        if (!res.ok) throw new Error("Failed to fetch PDF file");
+        return res.blob();
+      })
+      .then((blob) => {
+        if (!active) return;
+        const pdfBlob = new Blob([blob], { type: "application/pdf" });
+        const url = URL.createObjectURL(pdfBlob);
+        currentBlobUrl = url;
+        setPdfBlobUrl(url);
+      })
+      .catch((err) => {
+        console.error("PDF blob load failed:", err);
+        if (active) {
+          setLoadFailed(true);
+        }
+      });
+
+    return () => {
+      active = false;
+      if (currentBlobUrl) {
+        URL.revokeObjectURL(currentBlobUrl);
+      }
+    };
+  }, [data?.url, isPdf]);
 
   if (isLoading) {
     return (
@@ -51,76 +96,149 @@ export function ResumePreview({
     );
   }
 
-  const effectiveMime = mimeType || data.mime_type || "";
-  const isPdf =
-    effectiveMime.includes("pdf") || data.url.toLowerCase().includes(".pdf");
-  const isImage =
-    effectiveMime.startsWith("image/") ||
-    /\.(png|jpe?g|webp|gif)$/i.test(data.url);
+  if (isPdf && !pdfBlobUrl && !loadFailed && viewMode === "file") {
+    return (
+      <div className="flex h-[70vh] items-center justify-center text-sm text-muted-foreground border rounded-md bg-slate-50 dark:bg-slate-900">
+        正在准备简历预览...
+      </div>
+    );
+  }
 
-  // 已知不支持类型 → 直接走下载降级
+  // 如果选择文本视图且有解析文本，直接渲染文本视图以避免自动下载 PDF/文件
+  if (viewMode === "text" && parsedText) {
+    return (
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-muted-foreground bg-muted/45 px-3 py-1.5 rounded-md flex-1 mr-4 truncate">
+            当前展示解析文本。如需查看排版或下载，请切换至“文件视图”或
+            <a href={data.url} download className="text-primary hover:underline font-medium ml-1">
+              下载原始文件
+            </a>
+          </span>
+          <div className="inline-flex rounded-lg border bg-muted p-0.5 text-xs shrink-0">
+            <button
+              type="button"
+              className="rounded-md px-3 py-1 font-medium transition-colors bg-background text-foreground shadow-sm"
+              onClick={() => setViewMode("text")}
+            >
+              文本视图
+            </button>
+            <button
+              type="button"
+              className="rounded-md px-3 py-1 font-medium transition-colors text-muted-foreground hover:text-foreground"
+              onClick={() => setViewMode("file")}
+            >
+              文件视图
+            </button>
+          </div>
+        </div>
+        <ParsedTextPreview text={parsedText} />
+      </div>
+    );
+  }
+
+  // 已知不支持类型
   if (!isPdf && !isImage) {
+    if (parsedText) {
+      return (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between text-xs text-muted-foreground bg-muted/45 px-3 py-1.5 rounded-md">
+            <span>当前格式暂不支持在线文件预览，已直接为您展示解析文本</span>
+            <a href={data.url} download className="text-primary hover:underline font-medium">
+              下载原始文件
+            </a>
+          </div>
+          <ParsedTextPreview text={parsedText} />
+        </div>
+      );
+    }
     return <DownloadFallback url={data.url} />;
   }
 
-  // 加载失败或超时 → 降级
-  if (loadFailed || timedOut) {
+  // 加载失败 → 降级
+  if (loadFailed) {
+    if (parsedText) {
+      return (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between text-xs text-muted-foreground bg-muted/45 px-3 py-1.5 rounded-md">
+            <span>在线文件预览失败，已为您加载解析文本</span>
+            <a href={data.url} download className="text-primary hover:underline font-medium">
+              下载原始文件
+            </a>
+          </div>
+          <ParsedTextPreview text={parsedText} />
+        </div>
+      );
+    }
     return <DownloadFallback url={data.url} reason="load-failed" />;
   }
 
   return (
-    <div className="relative h-[70vh] w-full overflow-hidden rounded-md border">
-      {isPdf && (
-        <PdfFrame
-          url={data.url}
-          onLoad={() => setTimedOut(false)}
-          onError={() => setLoadFailed(true)}
-          onTimeout={() => setTimedOut(true)}
-        />
+    <div className="space-y-2">
+      {parsedText && (
+        <div className="flex justify-end">
+          <div className="inline-flex rounded-lg border bg-muted p-0.5 text-xs">
+            <button
+              type="button"
+              className={cn(
+                "rounded-md px-3 py-1 font-medium transition-colors",
+                viewMode === "text"
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+              onClick={() => setViewMode("text")}
+            >
+              文本视图
+            </button>
+            <button
+              type="button"
+              className={cn(
+                "rounded-md px-3 py-1 font-medium transition-colors",
+                viewMode === "file"
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+              onClick={() => setViewMode("file")}
+            >
+              文件视图
+            </button>
+          </div>
+        </div>
       )}
-      {isImage && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={data.url}
-          alt="简历预览"
-          className="h-full w-full object-contain"
-          onError={() => setLoadFailed(true)}
-        />
-      )}
+      <div className="relative h-[70vh] w-full overflow-hidden rounded-md border bg-slate-50 dark:bg-slate-900">
+        {isPdf && pdfBlobUrl && (
+          <PdfFrame
+            url={pdfBlobUrl}
+          />
+        )}
+        {isImage && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={data.url}
+            alt="简历预览"
+            className="h-full w-full object-contain"
+            onError={() => setLoadFailed(true)}
+          />
+        )}
+      </div>
     </div>
   );
 }
 
-// ============================================================================
-// PDF iframe（带 5s 超时降级）
-// ============================================================================
+function ParsedTextPreview({ text }: { text: string }) {
+  return (
+    <div className="h-[70vh] w-full overflow-y-auto bg-background p-6 font-sans text-sm leading-relaxed whitespace-pre-wrap rounded-md border text-foreground">
+      {text}
+    </div>
+  );
+}
 
-function PdfFrame({
-  url,
-  onLoad,
-  onError,
-  onTimeout,
-}: {
-  url: string;
-  onLoad: () => void;
-  onError: () => void;
-  onTimeout: () => void;
-}) {
-  const [loaded, setLoaded] = useState(false);
-
-  // iframe 没有可靠的 onError；用 onLoad + 超时组合
-  useLoadTimeout(loaded, PDF_LOAD_TIMEOUT_MS, onTimeout);
-
+function PdfFrame({ url }: { url: string }) {
   return (
     <iframe
       src={url}
       title="简历预览"
       className="h-full w-full border-0"
-      onLoad={() => {
-        setLoaded(true);
-        onLoad();
-      }}
-      onError={onError}
     />
   );
 }
@@ -153,20 +271,4 @@ function DownloadFallback({
   );
 }
 
-// ============================================================================
-// Hook：超时检测
-// ============================================================================
 
-import { useEffect } from "react";
-
-function useLoadTimeout(
-  loaded: boolean,
-  timeoutMs: number,
-  onTimeout: () => void,
-) {
-  useEffect(() => {
-    if (loaded) return;
-    const t = setTimeout(onTimeout, timeoutMs);
-    return () => clearTimeout(t);
-  }, [loaded, timeoutMs, onTimeout]);
-}

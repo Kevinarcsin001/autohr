@@ -15,8 +15,10 @@
 
 注：题目生成由前端按需触发（score 完成后），不由 score 流程自动触发。
 """
+
 from __future__ import annotations
 
+import uuid
 from uuid import UUID
 
 from fastapi import APIRouter, Query, status
@@ -27,18 +29,27 @@ from app.core.deps import CurrentUser, DbSession
 from app.core.logging import get_logger
 from app.core.middleware.error_handler import ForbiddenError, NotFoundError
 from app.models.candidate import Candidate
-from app.models.interview import InterviewQuestion
+from app.models.interview import InterviewFeedback, InterviewQuestion
 from app.models.job import Job
 from app.schemas.interview import (
+    BatchFeedbackRequest,
+    BatchFeedbackResponse,
     BatchListResponse,
     BatchResponse,
+    CreateSessionRequest,
     FeedbackOut,
     FeedbackRequest,
     FeedbackResponse,
     InterviewQuestionListResponse,
     InterviewQuestionOut,
+    InterviewSessionListItem,
+    InterviewSessionListResponse,
+    InterviewSessionOut,
+    SessionDetailResponse,
+    UpdateSessionRequest,
 )
 from app.services.interview import InterviewError, InterviewService
+from app.services.question_bank import QuestionBankService
 
 logger = get_logger(__name__)
 
@@ -57,6 +68,24 @@ class _GenerateBody(BaseModel):
     job_id: UUID
 
 
+class _ComposeRequest(BaseModel):
+    """从题库凑分组卷请求（写入当前 session）。"""
+
+    quotas: dict[UUID, int] | None = None
+    tolerance: int = 5
+    exclude_question_ids: list[UUID] | None = None
+
+
+class _ComposeResponse(BaseModel):
+    """凑分组卷结果。"""
+
+    batch_id: UUID
+    question_count: int
+    actual_total: int
+    target_total: int
+    deficits: list[dict] = []
+
+
 # ============================================================================
 # 工具
 # ============================================================================
@@ -68,9 +97,7 @@ def _require_team(user) -> UUID:
     return UUID(str(user.team_id))
 
 
-async def _validate_candidate_in_team(
-    db, candidate_id: UUID, team_id: UUID
-) -> Candidate:
+async def _validate_candidate_in_team(db, candidate_id: UUID, team_id: UUID) -> Candidate:
     candidate = await db.get(Candidate, candidate_id)
     if candidate is None or candidate.team_id != team_id:
         raise NotFoundError(
@@ -90,9 +117,7 @@ async def _validate_job_in_team(db, job_id: UUID, team_id: UUID) -> Job:
     return job
 
 
-async def _validate_question_in_team(
-    db, question_id: UUID, team_id: UUID
-) -> InterviewQuestion:
+async def _validate_question_in_team(db, question_id: UUID, team_id: UUID) -> InterviewQuestion:
     """通过 candidate JOIN 校验 question 归属 team；跨 team 返回 404。"""
     stmt = (
         select(InterviewQuestion)
@@ -259,9 +284,7 @@ async def list_questions(
     service = InterviewService(db)
 
     if batch_id is None:
-        rows, _resolved = await service.list_latest_batch(
-            candidate_id=candidate_id, job_id=job_id
-        )
+        rows, _resolved = await service.list_latest_batch(candidate_id=candidate_id, job_id=job_id)
     else:
         rows = await service.list_batch(
             candidate_id=candidate_id,
@@ -297,9 +320,7 @@ async def list_batches(
     await _validate_job_in_team(db, job_id, team_id)
 
     service = InterviewService(db)
-    batches, current, total = await service.list_batches(
-        candidate_id=candidate_id, job_id=job_id
-    )
+    batches, current, total = await service.list_batches(candidate_id=candidate_id, job_id=job_id)
     return BatchListResponse(
         batches=batches,
         current_batch=current,
@@ -366,6 +387,321 @@ async def list_feedback(
     service = InterviewService(db)
     rows = await service.list_feedback(question_id=question_id)
     return [FeedbackOut.model_validate(r) for r in rows]
+
+
+# ============================================================================
+# 面试会话 API
+# ============================================================================
+
+
+@router.post(
+    "/sessions",
+    response_model=InterviewSessionOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_session(
+    payload: CreateSessionRequest,
+    user: CurrentUser,
+    db: DbSession,
+) -> InterviewSessionOut:
+    """手动创建面试会话（HR 发起面试）。"""
+    team_id = _require_team(user)
+    await _validate_candidate_in_team(db, payload.candidate_id, team_id)
+    await _validate_job_in_team(db, payload.job_id, team_id)
+
+    service = InterviewService(db)
+    session = await service.create_session(
+        candidate_id=payload.candidate_id,
+        job_id=payload.job_id,
+        interviewer_id=user.id,
+    )
+    await db.commit()
+
+    return InterviewSessionOut.model_validate(session)
+
+
+@router.get(
+    "/sessions",
+    response_model=InterviewSessionListResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def list_sessions(
+    user: CurrentUser,
+    db: DbSession,
+    status: str | None = Query(default=None),
+    job_id: UUID | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+) -> InterviewSessionListResponse:
+    """列出团队内的面试会话。"""
+    team_id = _require_team(user)
+    service = InterviewService(db)
+    rows, total = await service.list_sessions(
+        team_id=team_id,
+        status=status,
+        job_id=job_id,
+        limit=page_size,
+        offset=(page - 1) * page_size,
+    )
+    items = [
+        InterviewSessionListItem(
+            id=r[0].id,
+            candidate_id=r[0].candidate_id,
+            candidate_name=r[1],
+            job_id=r[0].job_id,
+            job_title=r[2],
+            status=r[0].status,
+            interviewer_id=r[0].interviewer_id,
+            interviewer_name=r[3],
+            question_count=r[4],
+            created_at=r[0].created_at.isoformat() if r[0].created_at else None,
+        )
+        for r in rows
+    ]
+    return InterviewSessionListResponse(items=items, total=total)
+
+
+@router.get(
+    "/sessions/{session_id}",
+    response_model=SessionDetailResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def get_session(
+    session_id: UUID,
+    user: CurrentUser,
+    db: DbSession,
+) -> SessionDetailResponse:
+    """获取面试会话详情（含题目+反馈+录用建议）。"""
+    team_id = _require_team(user)
+
+    service = InterviewService(db)
+    session = await service.get_session(session_id=session_id)
+    if session is None:
+        raise NotFoundError(
+            f"interview session {session_id} not found",
+            resource="interview_session",
+        )
+
+    # 校验跨 team
+    candidate = await db.get(Candidate, session.candidate_id)
+    if candidate is None or candidate.team_id != team_id:
+        raise NotFoundError(
+            f"interview session {session_id} not found",
+            resource="interview_session",
+        )
+
+    job = await db.get(Job, session.job_id)
+    candidate_name = candidate.name if candidate else None
+    candidate_email = candidate.email if candidate else None
+    job_title = job.title if job else None
+    job_jd_summary = (
+        (job.jd_text[:200] + "...")
+        if job and len(job.jd_text) > 200
+        else (job.jd_text if job else None)
+    )
+
+    # 题目（按 session_id 关联）
+    q_result = await db.execute(
+        select(InterviewQuestion)
+        .where(InterviewQuestion.session_id == session_id)
+        .order_by(InterviewQuestion.sort_order.asc())
+    )
+    questions = list(q_result.scalars().all())
+
+    # 为每道题附加最新反馈
+    question_outs: list[InterviewQuestionOut] = []
+    for q in questions:
+        fb_result = await db.execute(
+            select(InterviewFeedback)
+            .where(InterviewFeedback.question_id == q.id)
+            .order_by(InterviewFeedback.created_at.desc())
+            .limit(1)
+        )
+        latest_fb = fb_result.scalar_one_or_none()
+        question_outs.append(
+            InterviewQuestionOut(
+                id=q.id,
+                session_id=q.session_id,
+                candidate_id=q.candidate_id,
+                job_id=q.job_id,
+                batch_id=q.batch_id,
+                dimension=q.dimension,
+                question=q.question,
+                sort_order=q.sort_order,
+                generated_by=q.generated_by,
+                feedback_id=latest_fb.id if latest_fb else None,
+                feedback=latest_fb.feedback if latest_fb else None,
+                rating=latest_fb.rating if latest_fb else None,
+            )
+        )
+
+    # 录用建议
+    rec = None
+    from app.models.hiring import HiringRecommendation
+
+    hr = await db.scalar(
+        select(HiringRecommendation).where(HiringRecommendation.session_id == session_id)
+    )
+    if hr:
+        rec = {
+            "id": str(hr.id),
+            "session_id": str(hr.session_id),
+            "recommendation": hr.recommendation,
+            "reasons": hr.reasons,
+            "risks": hr.risks,
+            "probation_focus": hr.probation_focus,
+            "generated_by": hr.generated_by,
+            "created_at": hr.created_at.isoformat() if hr.created_at else None,
+        }
+
+    return SessionDetailResponse(
+        session=InterviewSessionOut.model_validate(session),
+        candidate_name=candidate_name,
+        candidate_email=candidate_email,
+        job_title=job_title,
+        job_jd_summary=job_jd_summary,
+        questions=question_outs,
+        recommendation=rec,
+    )
+
+
+@router.patch(
+    "/sessions/{session_id}",
+    response_model=InterviewSessionOut,
+    status_code=status.HTTP_200_OK,
+)
+async def update_session(
+    session_id: UUID,
+    payload: UpdateSessionRequest,
+    user: CurrentUser,
+    db: DbSession,
+) -> InterviewSessionOut:
+    """更新面试会话状态/面试官/整体评价。"""
+    team_id = _require_team(user)
+
+    service = InterviewService(db)
+    session = await service.get_session(session_id=session_id)
+    if session is None:
+        raise NotFoundError(
+            f"interview session {session_id} not found",
+            resource="interview_session",
+        )
+    candidate = await db.get(Candidate, session.candidate_id)
+    if candidate is None or candidate.team_id != team_id:
+        raise NotFoundError(
+            f"interview session {session_id} not found",
+            resource="interview_session",
+        )
+
+    updated = await service.update_session(
+        session_id=session_id,
+        status=payload.status,
+        interviewer_id=payload.interviewer_id,
+        overall_notes=payload.overall_notes,
+    )
+    await db.commit()
+
+    return InterviewSessionOut.model_validate(updated)
+
+
+@router.post(
+    "/sessions/{session_id}/compose",
+    response_model=_ComposeResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def compose_from_bank(
+    session_id: UUID,
+    user: CurrentUser,
+    db: DbSession,
+    payload: _ComposeRequest,
+) -> _ComposeResponse:
+    """从题库凑分组卷，写入当前 session（新 batch_id）。
+
+    凑不满 100 时返回 deficits；调用方据 deficits 决定 abort / AI 兜底。
+    """
+    team_id = _require_team(user)
+    service = InterviewService(db)
+    session = await service.get_session(session_id=session_id)
+    if session is None:
+        raise NotFoundError(
+            f"interview session {session_id} not found",
+            resource="interview_session",
+        )
+    candidate = await db.get(Candidate, session.candidate_id)
+    if candidate is None or candidate.team_id != team_id:
+        raise NotFoundError(
+            f"interview session {session_id} not found",
+            resource="interview_session",
+        )
+
+    items, actual, deficits = await QuestionBankService(db).assemble(
+        team_id=team_id,
+        quotas=payload.quotas,
+        tolerance=payload.tolerance,
+        exclude_question_ids=payload.exclude_question_ids,
+    )
+    if not items:
+        # 无题可选（题库空），不实例化，直接返回空缺口信息
+        return _ComposeResponse(
+            batch_id=uuid.uuid4(),  # 占位（未实例化）
+            question_count=0,
+            actual_total=0,
+            target_total=sum(d["target"] for d in deficits),
+            deficits=deficits,
+        )
+
+    batch_id = await QuestionBankService(db).instantiate_from_bank(
+        candidate_id=session.candidate_id,
+        job_id=session.job_id,
+        session_id=session.id,
+        items=items,
+    )
+    await db.commit()
+    return _ComposeResponse(
+        batch_id=batch_id,
+        question_count=len(items),
+        actual_total=actual,
+        target_total=actual + sum(d["target"] for d in deficits),
+        deficits=deficits,
+    )
+
+
+@router.post(
+    "/sessions/{session_id}/feedback",
+    response_model=BatchFeedbackResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def batch_save_feedback(
+    session_id: UUID,
+    payload: BatchFeedbackRequest,
+    user: CurrentUser,
+    db: DbSession,
+) -> BatchFeedbackResponse:
+    """批量保存面试反馈。"""
+    team_id = _require_team(user)
+
+    service = InterviewService(db)
+    session = await service.get_session(session_id=session_id)
+    if session is None:
+        raise NotFoundError(
+            f"interview session {session_id} not found",
+            resource="interview_session",
+        )
+    candidate = await db.get(Candidate, session.candidate_id)
+    if candidate is None or candidate.team_id != team_id:
+        raise NotFoundError(
+            f"interview session {session_id} not found",
+            resource="interview_session",
+        )
+
+    saved, errors = await service.batch_save_feedback(
+        session_id=session_id,
+        reviewer_id=user.id,
+        payload=payload,
+    )
+    await db.commit()
+
+    return BatchFeedbackResponse(saved=saved, errors=errors)
 
 
 __all__ = ["router"]

@@ -134,6 +134,7 @@ export default function CandidateDetailPage() {
               <ResumePreview
                 candidateId={candidate.id}
                 mimeType={resume.mime_type}
+                parsedText={resume.parsed_text}
               />
             </div>
           ) : (

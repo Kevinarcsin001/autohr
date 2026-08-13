@@ -74,3 +74,36 @@ export async function triggerPipelineApi(
   );
   return data;
 }
+
+// ============================================================================
+// HR 评估（人工审核通过/淘汰）
+// ============================================================================
+
+export interface ReviewResponse {
+  session_id?: string;
+  batch_id?: string;
+  question_count?: number;
+  status: string;
+}
+
+export async function approveCandidateApi(
+  screeningResultId: string,
+  reason?: string,
+): Promise<ReviewResponse> {
+  const { data } = await apiClient.post<ReviewResponse>(
+    `/api/screening/results/${screeningResultId}/approve`,
+    { reason: reason ?? null },
+  );
+  return data;
+}
+
+export async function rejectCandidateApi(
+  screeningResultId: string,
+  reason?: string,
+): Promise<ReviewResponse> {
+  const { data } = await apiClient.post<ReviewResponse>(
+    `/api/screening/results/${screeningResultId}/reject`,
+    { reason: reason ?? null },
+  );
+  return data;
+}

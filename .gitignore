@@ -64,6 +64,7 @@ htmlcov/
 .ruff_cache/
 test-results/
 .playwright/
+.playwright-mcp/
 
 # === Logs ===
 *.log

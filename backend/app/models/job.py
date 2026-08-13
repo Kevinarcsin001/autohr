@@ -10,10 +10,10 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
+from sqlalchemy import DateTime, ForeignKey, Integer, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.models._compat import GUID, JSONB_COMPAT, STRING_ARRAY_COMPAT
 from app.models.base import Base, TimestampMixin, UUIDPKMixin
 from app.models.types import EducationLevel, JobStatus
 
@@ -24,7 +24,7 @@ class Job(UUIDPKMixin, TimestampMixin, Base):
     __tablename__ = "jobs"
 
     team_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        GUID,
         ForeignKey("teams.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
@@ -35,11 +35,11 @@ class Job(UUIDPKMixin, TimestampMixin, Base):
         JobStatus, default="draft", nullable=False, index=True
     )
     llm_config: Mapped[dict[str, Any] | None] = mapped_column(
-        JSONB, nullable=True
+        JSONB_COMPAT, nullable=True
     )
     current_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     created_by: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        GUID,
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=False,
     )
@@ -51,15 +51,15 @@ class JobVersion(UUIDPKMixin, Base):
     __tablename__ = "job_versions"
 
     job_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        GUID,
         ForeignKey("jobs.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     version: Mapped[int] = mapped_column(Integer, nullable=False)
-    snapshot: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    snapshot: Mapped[dict[str, Any]] = mapped_column(JSONB_COMPAT, nullable=False)
     changed_by: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        GUID,
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=False,
     )
@@ -76,7 +76,7 @@ class JobHardRequirement(UUIDPKMixin, Base):
     __tablename__ = "job_hard_requirements"
 
     job_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        GUID,
         ForeignKey("jobs.id", ondelete="CASCADE"),
         nullable=False,
         unique=True,
@@ -86,10 +86,10 @@ class JobHardRequirement(UUIDPKMixin, Base):
     )
     min_years: Mapped[int | None] = mapped_column(Integer, nullable=True)
     required_skills: Mapped[list[str] | None] = mapped_column(
-        ARRAY(String), nullable=True
+        STRING_ARRAY_COMPAT, nullable=True
     )
     excluded_companies: Mapped[list[str] | None] = mapped_column(
-        ARRAY(String), nullable=True
+        STRING_ARRAY_COMPAT, nullable=True
     )
 
 

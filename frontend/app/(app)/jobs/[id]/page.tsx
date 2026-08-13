@@ -271,17 +271,17 @@ export default function JobDetailPage() {
                     {STATUS_LABEL[v.snapshot.status] ?? v.snapshot.status}
                   </div>
                   <div className="mt-1 text-xs text-muted-foreground">
-                    {v.snapshot.hard_requirements.min_education
+                    {v.snapshot.hard_requirements?.min_education
                       ? `学历≥${
                           EDUCATION_LABEL[
                             v.snapshot.hard_requirements.min_education
                           ]
                         }`
                       : "学历不限"}
-                    {v.snapshot.hard_requirements.min_years != null
+                    {v.snapshot.hard_requirements?.min_years != null
                       ? ` · 年限≥${v.snapshot.hard_requirements.min_years}`
                       : ""}
-                    {v.snapshot.hard_requirements.required_skills?.length
+                    {v.snapshot.hard_requirements?.required_skills?.length
                       ? ` · 必备 ${
                           v.snapshot.hard_requirements.required_skills
                             .length

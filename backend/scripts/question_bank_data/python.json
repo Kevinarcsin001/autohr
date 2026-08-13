@@ -1,0 +1,716 @@
+{
+  "category": {
+    "slug": "python",
+    "name": "Python 基础",
+    "target_points": 10,
+    "sort_order": 1
+  },
+  "items": [
+    {
+      "question": "解释 Python GIL（全局解释器锁）的作用，以及它对多线程程序的影响。",
+      "points": 10,
+      "difficulty": 3,
+      "tags": [
+        "并发",
+        "GIL",
+        "多线程"
+      ],
+      "dimension": "skill",
+      "reference_answer": "GIL 是 CPython 解释器在执行字节码时持有的一把互斥锁，同一进程内同一时刻只有一个线程能执行 Python 字节码。\n影响：\n1) CPU 密集型多线程无法真正并行，甚至因线程切换开销比单线程更慢；\n2) I/O 密集型任务受益于多线程——线程在 I/O 阻塞时会释放 GIL，其他线程可执行；\n3) 绕开方式：用 multiprocessing 利用多核，或用 C 扩展/NumPy 在计算时释放 GIL，或用 asyncio 做高并发 I/O。\n注：GIL 是 CPython 实现细节，Jython/PyPy 无 GIL；Python 3.13 起 PEP 703 提供了实验性 no-GIL 构建。"
+    },
+    {
+      "question": "asyncio 中协程与线程的主要区别是什么？什么场景该用协程？",
+      "points": 10,
+      "difficulty": 3,
+      "tags": [
+        "asyncio",
+        "协程",
+        "并发"
+      ],
+      "dimension": "skill",
+      "reference_answer": "区别：\n- 调度：线程由 OS 抢占式调度，协程由事件循环在用户态协作式调度（await 处让出）；\n- 开销：线程切换需内核态上下文，协程切换在用户态，开销低一个量级；\n- 并发模型：线程可被中断在任何点，协程只在 await 点切换，无需锁保护临界区；\n- GIL：协程单线程内运行，不受 GIL 并行限制影响（但仍单核）。\n适用场景：高并发 I/O 密集型（HTTP 网关、爬虫、DB 连接池、聊天服务）。\n不适用：CPU 密集型任务（应 multiprocessing）或需要真正并行的场景。"
+    },
+    {
+      "question": "写一个带参数的装饰器 @retry(times=3)，对函数异常自动重试，并说明 functools.wraps 的作用。",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "装饰器",
+        "闭包",
+        "functools"
+      ],
+      "dimension": "skill",
+      "reference_answer": "带参数装饰器是三层嵌套函数：\nfrom functools import wraps\nimport time\ndef retry(times=3, delay=0):\n    def decorator(func):\n        @wraps(func)\n        def wrapper(*args, **kwargs):\n            last_exc = None\n            for i in range(times):\n                try:\n                    return func(*args, **kwargs)\n                except Exception as e:\n                    last_exc = e\n                    if delay: time.sleep(delay)\n            raise last_exc\n        return wrapper\n    return decorator\nfunctools.wraps 作用：把被装饰函数的 __name__、__doc__、__module__、__wrapped__ 等元信息复制到 wrapper，避免反射、日志、调试时看到的是 wrapper 而非原函数，也避免重复装饰时元信息丢失。"
+    },
+    {
+      "question": "生成器（yield）相比返回 list 的函数有什么优势？举一个适合用生成器的场景。",
+      "points": 5,
+      "difficulty": 2,
+      "tags": [
+        "生成器",
+        "yield",
+        "内存"
+      ],
+      "dimension": "skill",
+      "reference_answer": "优势：惰性求值，逐个产出元素而非一次性构建完整列表，内存占用 O(1) 而非 O(n)；可表示无限序列；管道式处理时减少中间集合。\n适合场景：逐行读大文件、流式处理日志、分页拉取 API、按需生成（如斐波那契无穷序列）、协程的基础（yield 也可接收 send 的值）。\n对比：return [x for x in range(10**8)] 会立即占满内存，而 yield 逐个产出几乎零开销。"
+    },
+    {
+      "question": "简述 Python 的内存管理机制：引用计数与垃圾回收如何协作？",
+      "points": 10,
+      "difficulty": 3,
+      "tags": [
+        "内存管理",
+        "GC",
+        "引用计数"
+      ],
+      "dimension": "skill",
+      "reference_answer": "两层机制：\n1) 引用计数（主要）：每个对象维护 refcnt，引用 +1/解引用 -1，归零立即回收。优点：即时、确定性强；缺点：无法处理循环引用（a.b=b; b.a=a）。\n2) 分代垃圾回收（辅助）：gc 模块用标记-清除解决循环引用，分 3 代（0/1/2），新对象在 0 代，经历 GC 未被回收则晋升，越老的对象 GC 频率越低（假设长寿对象更可能继续长寿）。\n协作：引用计数处理绝大多数即时回收，分代 GC 周期性扫描清理循环引用。\n调优：__slots__ 减少实例 dict 开销；大循环引用对象可手动 gc.collect()；禁用 GC 在某些纯引用计数场景能提速但需自行避免循环引用。"
+    },
+    {
+      "question": "Python 中浅拷贝与深拷贝的区别？下列代码输出什么并解释：a=[[1,2]]; b=list(a); b[0].append(3)。",
+      "points": 5,
+      "difficulty": 2,
+      "tags": [
+        "拷贝",
+        "可变对象"
+      ],
+      "dimension": "skill",
+      "reference_answer": "输出：a 变成 [[1,2,3]]，b 也是 [[1,2,3]]。\n原因：list(a) 是浅拷贝——新建外层 list，但内层元素仍是原引用。b[0] 与 a[0] 指向同一个内层 list，append(3) 修改的是这个共享对象，所以两边都看到变化。\n区别：\n- 浅拷贝（list()、copy()、dict.copy()、切片[:]）：复制容器本身，元素仍是引用；\n- 深拷贝（copy.deepcopy）：递归复制所有层级的可变对象，完全独立。\n要互不影响：import copy; b = copy.deepcopy(a)。"
+    },
+    {
+      "question": "为什么 def f(items=[]) 是常见的 Python 陷阱？如何避免？",
+      "points": 5,
+      "difficulty": 2,
+      "tags": [
+        "可变默认参数",
+        "陷阱"
+      ],
+      "dimension": "skill",
+      "reference_answer": "陷阱：默认参数在函数定义时只求值一次，并被所有调用共享同一个对象。多次调用 f() 往 items 里 append，会累积之前调用的残留。\n例如 def f(x, lst=[]): lst.append(x); return lst，f(1) 返回 [1]，f(2) 返回 [1,2] 而非 [2]。\n避免：用 None 作为哨兵，在函数体内新建可变对象：\ndef f(x, lst=None):\n    if lst is None: lst = []\n    lst.append(x); return lst\n原则：默认参数只用不可变对象（None/False/0/字符串/元组），可变对象一律在函数体内构造。"
+    },
+    {
+      "question": "解释 == 与 is 的区别。a is b 什么时候为 True？",
+      "points": 5,
+      "difficulty": 2,
+      "tags": [
+        "相等性",
+        "身份",
+        "is"
+      ],
+      "dimension": "skill",
+      "reference_answer": "== 比较的是值是否相等，调用对象的 __eq__ 方法；is 比较的是身份（内存地址是否相同，即 id(a)==id(b)）。\na is b 为 True 的情况：\n1) 同一对象赋值：a=b=[]，则 a is b；\n2) 小整数缓存：CPython 缓存 -5~256，a=256;b=256 则 a is b（257 不保证）；\n3) 字符串驻留（intern）：短字符串、标识符风格的字符串会被复用；\n4) 单例：None/True/False/小元组常量。\n注意：a=[]; b=[] 则 a==b 但 a is not b（两个不同对象）。判空用 if x is None 而非 if x == None，更准确且符合 PEP8。"
+    },
+    {
+      "question": "Python dict 的底层实现原理是什么？从 3.7 起 dict 为什么保证插入顺序？",
+      "points": 10,
+      "difficulty": 3,
+      "tags": [
+        "dict",
+        "哈希表",
+        "有序"
+      ],
+      "dimension": "skill",
+      "reference_answer": "dict 基于哈希表实现。键经 hash() 得到桶位置，冲突用开放寻址法（CPython 用伪随机探测，二次哈希）解决。\n历史：3.6 之前 dict 用「稀疏哈希数组」存条目，无序且内存浪费；3.6 起改用紧凑实现——两个数组：一个稀疏的索引数组（按哈希定位）+ 一个紧凑的条目数组（按插入顺序追加）。条目数组天然有序，遍历时按它走，故 3.7 起 dict 保证插入顺序成为语言规范。\n好处：内存占用降 20-25%，且有序。\n查找复杂度：平均 O(1)，最坏 O(n)（哈希攻击/大量冲突）。\n注意：依赖顺序是 3.7+ 特性，旧代码迁移需注意。"
+    },
+    {
+      "question": "列表推导式与 map()/filter() 相比各有什么优劣？",
+      "points": 5,
+      "difficulty": 2,
+      "tags": [
+        "列表推导",
+        "map",
+        "filter"
+      ],
+      "dimension": "skill",
+      "reference_answer": "列表推导式 [x*2 for x in xs if x>0]：可读性高、可集成过滤与变换、Pythonic；生成新列表。\nmap/filter：返回迭代器（惰性），适合函数已存在（map(str.upper, names)）或与 lambda 组合；多函数式风格、可链式。\n优劣：\n- 可读性：推导式更直观，复杂逻辑用推导式；\n- 惰性：map/filter 是迭代器，大数据省内存（配 itertools）；推导式立即求值（除非用生成器表达式 (x for x in ...)）；\n- 性能：推导式通常比 map+lambda 快（lambda 调用开销）；裸 map(str.upper) 比推导式快。\n经验：优先推导式/生成器表达式，函数已存在时用 map，避免 map+lambda（等价推导式更清晰）。"
+    },
+    {
+      "question": "解释 *args 和 **kwargs 的含义及使用场景。",
+      "points": 5,
+      "difficulty": 2,
+      "tags": [
+        "args",
+        "kwargs",
+        "函数签名"
+      ],
+      "dimension": "skill",
+      "reference_answer": "*args 收集多余的位置参数为元组；**kwargs 收集多余的关键字参数为字典。星号是解包/收集操作符。\n使用场景：\n1) 可变参数函数：print、max、logging 等接收任意数量参数；\n2) 转发参数：装饰器、代理函数、子类调用 super().__init__(*args, **kwargs) 透传；\n3) 灵活 API：def configure(**options) 接受配置字典。\n参数顺序：def f(pos, /, normal, *args, kw_only, **kwargs)（仅位置 / 仅关键字 / 可变位置 / 可变关键字）。\n解包：调用时 func(*lst) 把列表展开为位置参数，func(**d) 把字典展开为关键字参数。args/kwargs 是约定名，可改名，关键是 * 和 **。"
+    },
+    {
+      "question": "海象运算符（:=）解决什么问题？给一个典型用例。",
+      "points": 5,
+      "difficulty": 2,
+      "tags": [
+        "海象运算符",
+        "walrus",
+        "PEP572"
+      ],
+      "dimension": "skill",
+      "reference_answer": "海象运算符（:=，PEP 572，3.8+）在表达式内部赋值并返回该值，实现「赋值 + 使用」一步完成，避免重复求值或重复写变量。\n典型用例：\n1) while 循环读取，避免在条件里调用一次、循环体里又取一次：\n   while chunk := f.read(8192): process(chunk)\n2) 列表推导式中复用过滤表达式结果：\n   [y for x in xs if (y := f(x)) > 0]  # y 复用，不必再算一次 f(x)\n3) 条件赋值减少行数：\n   if (n := len(data)) > 10: print(f\"too long {n}\")\n原则：用于消除重复求值或让代码更紧凑；不要为用而用，简单赋值用 = 即可。"
+    },
+    {
+      "question": "set 去重的原理是什么？为什么列表不能放进 set，而元组可以？",
+      "points": 5,
+      "difficulty": 2,
+      "tags": [
+        "set",
+        "哈希",
+        "可哈希"
+      ],
+      "dimension": "skill",
+      "reference_answer": "set 基于哈希表，元素必须可哈希（hash() 稳定且 __eq__ 一致）。去重即：新元素的哈希值不在表中则保留，在则判等丢弃。\n可哈希性要求对象的哈希值在其生命周期内不变。不可变对象（int/str/tuple/frozenset）可哈希；可变对象（list/dict/set）不可哈希——因为内容可变会导致哈希值变化，破坏哈希表不变量。\n列表不能放 set：list 可变，unhashable。元组可以：tuple 不可变；但注意含可变元素的元组（如 ([1],)）也不可哈希，因为 hash(tuple) 依赖元素的 hash。\n自定义类默认可哈希（用 id），若重写 __eq__ 则需同时重写 __hash__ 保持契约：相等的对象必须有相同哈希。要禁止放入 set 可设 __hash__ = None。"
+    },
+    {
+      "question": "解释闭包的「延迟绑定」问题，下列代码输出什么：fs=[lambda: i for i in range(3)]; print([f() for f in fs])？",
+      "points": 10,
+      "difficulty": 3,
+      "tags": [
+        "闭包",
+        "延迟绑定",
+        "作用域"
+      ],
+      "dimension": "skill",
+      "reference_answer": "输出 [2, 2, 2] 而非 [0, 1, 2]。\n原因：闭包捕获的是变量本身（引用），不是当时的值。lambda 在被调用时才去查 i 的值，而此时循环已结束，i=2。所有 lambda 共享同一个外层 i。\n修复（绑定当前值）：\n1) 用默认参数立即求值：lambda i=i: i（默认参数在定义时求值）；\n2) 用偏函数：from functools import partial; partial(lambda x: x, i)；\n3) 写成函数工厂 def make(j): return lambda: j。\n本质：Python 闭包是「词法作用域 + 晚绑定」。for 循环变量在循环结束后仍存在于函数作用域，闭包引用的是同一个变量对象。理解这一点能避免大量回调/延迟求值的 bug。"
+    },
+    {
+      "question": "functools.partial 的作用是什么？它和 lambda 有什么区别？",
+      "points": 5,
+      "difficulty": 2,
+      "tags": [
+        "partial",
+        "functools",
+        "柯里化"
+      ],
+      "dimension": "skill",
+      "reference_answer": "functools.partial(func, *args, **kwargs) 把一个函数的部分参数固定，返回一个新的可调用对象（partial 实例），调用时再补剩余参数——即偏应用/柯里化。\n用途：\n1) 适配回调签名：按钮点击回调 on_click(event)，但处理器需 (event, user_id)，可 partial(handler, user_id=user_id)；\n2) 简化重复参数：int2 = partial(int, base=2)，之后 int2('1010') 即二进制转换；\n3) 与 map 配合：map(partial(pow, exp=2), xs)。\n与 lambda 区别：partial 是显式工具，保留原函数元信息（__wrapped__、__module__、__name__），调试更友好；lambda 是匿名函数，每次写一层包装。partial 适合「固定已有函数的参数」，lambda 适合写任意小逻辑。partial 还支持内省（.func、.args、.keywords）。"
+    },
+    {
+      "question": "如何用类实现一个装饰器（带状态）？说明 __call__ 的作用。",
+      "points": 10,
+      "difficulty": 3,
+      "tags": [
+        "类装饰器",
+        "__call__",
+        "状态"
+      ],
+      "dimension": "skill",
+      "reference_answer": "类装饰器利用 __init__ 接收被装饰函数（或参数），__call__ 让实例可像函数一样被调用，从而拦截每次调用。\n例（带调用计数的装饰器）：\nclass CountCalls:\n    def __init__(self, func):\n        self.func = func\n        self.count = 0\n        functools.update_wrapper(self, func)\n    def __call__(self, *args, **kwargs):\n        self.count += 1\n        print(f\"call #{self.count}\")\n        return self.func(*args, **kwargs)\n@CountCalls\ndef hello(): pass\n__call__ 作用：定义实例的「调用协议」，使 obj() 等价于 type(obj).__call__(obj)，是鸭子类型可调用对象的核心。\n类装饰器优势：天然持有状态（实例属性），比闭包+nonlocal 更清晰，适合需要维护计数/缓存/锁/配置的装饰器。带参数的类装饰器则 __init__ 接收参数、再在 __call__ 内接收函数并返回包装（多套一层）。"
+    },
+    {
+      "question": "with 语句的本质是什么？如何自定义一个支持 with 的上下文管理器？",
+      "points": 10,
+      "difficulty": 3,
+      "tags": [
+        "上下文管理器",
+        "with",
+        "contextlib"
+      ],
+      "dimension": "skill",
+      "reference_answer": "with 语句保证「进入-退出」成对执行：进入时调用 __enter__（返回值赋给 as 变量），退出时无论是否异常都调用 __exit__(exc_type, exc_val, exc_tb)；__exit__ 返回 True 则吞掉异常。\n自定义方式一（类）：\nclass Timer:\n    def __enter__(self): self.t=time.time(); return self\n    def __exit__(self, *exc): print(time.time()-self.t); return False\n方式二（contextlib.contextmanager，推荐）：\nfrom contextlib import contextmanager\n@contextmanager\ndef timer():\n    t=time.time()\n    try: yield  # with 块在此处执行\n    finally: print(time.time()-t)\ncontextmanager 把生成器函数转为上下文管理器：yield 前的代码对应 __enter__，yield 后对应 __exit__，异常会从 yield 抛出让 try/except 捕获。\n用途：资源管理（文件/锁/连接）、状态保存恢复、事务、计时、临时改环境。优先用 contextlib，代码更简洁。"
+    },
+    {
+      "question": "__new__ 与 __init__ 的区别？什么时候需要重写 __new__？",
+      "points": 10,
+      "difficulty": 3,
+      "tags": [
+        "__new__",
+        "__init__",
+        "对象创建"
+      ],
+      "dimension": "skill",
+      "reference_answer": "__new__(cls, ...) 是类方法，负责创建并返回实例（分配内存），在 __init__ 之前调用；__init__(self, ...) 负责初始化已创建的实例。两者都接收构造参数。\n流程：MyClass(x) → type.__call__ → cls.__new__(cls, x) 得到 obj → 若 isinstance(obj, cls) 则 obj.__init__(x)。\n重写 __new__ 的场景：\n1) 单例模式：__new__ 检查类属性，已存在则返回旧实例，不再 __init__；\n2) 不可变类型（int/str/tuple）的子类化：实例在 __new__ 中就定型，__init__ 无法改值（甚至 str 子类的 __init__ 不被调用）；\n3) 元类/工厂：根据参数返回不同子类的实例；\n4) 自定义内存布局（如 __slots__ 配合、C 扩展代理）。\n注意：__new__ 必须返回 cls 的实例，否则 __init__ 不会执行；返回了别的类型对象则只调用那个对象的 __init__。"
+    },
+    {
+      "question": "解释 Python 多继承的 MRO（方法解析顺序），C3 线性化解决什么问题？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "MRO",
+        "多继承",
+        "C3"
+      ],
+      "dimension": "skill",
+      "reference_answer": "MRO 是方法查找的顺序列表，Cls.__mro__ 给出从自身到 object 的线性序列。Python 2.3+ 用 C3 线性化算法计算 MRO。\nC3 解决的问题：旧式类的深度优先 DFS 在菱形继承下会破坏局部优先级（基类顺序）和单调性（同一类在 MRO 中出现多次或顺序矛盾）。C3 保证：\n1) 子类在父类之前（局部优先级）；\n2) 若 A 在 B 前（在继承列表中），则 MRO 中 A 恒在 B 前（单调性）；\n3) 合并多个父类 MRO 时取「不破坏约束的头部」。\n当继承结构无法线性化（如 class X(A,B) 与 class Y(B,A) 后 class Z(X,Y)）Python 抛 TypeError: Cannot create a consistent MRO。\nsuper() 实际是按 MRO 的下一个类查找，而非「父类」，故多继承下 super() 会走完整个 MRO 链（协作式多重继承），这也是混入（Mixin）模式的基础。"
+    },
+    {
+      "question": "__hash__ 与 __eq__ 有什么契约？为什么重写 __eq__ 后对象就不能放 set 了？",
+      "points": 10,
+      "difficulty": 3,
+      "tags": [
+        "__hash__",
+        "__eq__",
+        "哈希契约"
+      ],
+      "dimension": "skill",
+      "reference_answer": "契约：若 a==b 为 True，则 hash(a) 必须等于 hash(b)（反之不要求，哈希冲突正常）。可哈希对象在生命周期内 hash 值必须不变。\n为什么重写 __eq__ 后不能放 set：Python 规定，若类定义了 __eq__ 但未定义 __hash__，则 __hash__ 被隐式设为 None，类变成「不可哈希」（因为默认的 id 哈希已不再与值相等语义一致，可能破坏契约）。\n解决：\n1) 值对象（相等即同一逻辑实体）应同时重写 __eq__ 和 __hash__，让哈希基于参与相等的不可变字段：\n   def __hash__(self): return hash((self.id, self.name))\n2) 实体对象（按 id 区分）想用默认行为：显式 __hash__ = parent.__hash__；\n3) 确实不想可哈希：__hash__ = None。\n注意：参与 __hash__ 的字段必须不可变，否则对象在 set 中的桶定位会失效（mutate 后找不到）。这也是 dataclass(frozen=True) 自动生成安全 __hash__ 的原因。"
+    },
+    {
+      "question": "@property 的作用是什么？什么时候该用它？",
+      "points": 5,
+      "difficulty": 2,
+      "tags": [
+        "property",
+        "封装",
+        "getter"
+      ],
+      "dimension": "skill",
+      "reference_answer": "@property 把一个方法包装成「属性访问」，使 obj.x 像字段一样读取，但实际执行方法逻辑，可带 getter/setter/deleter。\n用途：\n1) 计算属性：obj.area 由 width*height 算出，无需存冗余字段；\n2) 受控访问：setter 里加校验（score 不能为负）、类型转换、副作用（修改时刷新缓存）；\n3) 封装升级：原来 public 字段 later 要加逻辑，用 property 包一层，调用方代码不用改（接口稳定）；\n4) 只读属性：只定义 getter 不定义 setter。\n示例：\n@property\ndef score(self): return self._score\n@score.setter\ndef score(self, v):\n    if v<0: raise ValueError\n    self._score = v\n原则：不要滥用 property 把所有访问都包一层（YAGNI）；在需要计算、校验、隐藏内部表示时才用。"
+    },
+    {
+      "question": "什么是描述符协议？@property、classmethod、实例方法是如何基于描述符工作的？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "描述符",
+        "descriptor",
+        "__get__"
+      ],
+      "dimension": "skill",
+      "reference_answer": "描述符是实现了 __get__/__set__/__delete__ 之一（前两者为数据描述符，只有 __get__ 为非数据描述符）的类对象，且作为「类属性」存在。属性访问 obj.x 时，若 type(obj) 的 __dict__ 中 x 是描述符，则拦截为 descriptor.__get__(obj, type(obj))，而非简单取字典值。\n查找优先级：数据描述符 > 实例 __dict__ > 非数据描述符 > 类 __dict__。\n基于描述符的机制：\n- @property：数据描述符，__get__ 调 getter、__set__ 调 setter；\n- classmethod/staticmethod：非数据描述符，__get__ 返回绑定了 cls 的方法；\n- 普通 def 方法：函数是非数据描述符，__get__ 把 self 绑定，故 obj.method() 等价 method(obj)；\n- 字段校验、ORM 字段（SQLAlchemy Column）、缓存属性（functools.cached_property）都用描述符实现。\n理解描述符是理解 Python OOP「方法绑定」「属性拦截」机制的关键，也是元编程的基础。"
+    },
+    {
+      "question": "dataclass 解决什么问题？frozen=True 有什么作用？",
+      "points": 10,
+      "difficulty": 3,
+      "tags": [
+        "dataclass",
+        "数据类",
+        "frozen"
+      ],
+      "dimension": "skill",
+      "reference_answer": "@dataclass（3.7+）自动为声明字段的类生成 __init__/__repr__/__eq__（可选 __hash__/__lt__ 等），消除样板代码，适合「数据容器」类。\n特性：\n- 字段注解即定义：x: int = 0；可用 field(default_factory=list) 处理可变默认值；\n- eq=True 默认按字段生成值相等比较（替代手写 __eq__）；\n- order=True 生成排序方法。\nfrozen=True：\n1) 生成 __hash__（基于字段），实例可哈希、可放 set/当 dict 键；\n2) 字段不可变（赋值抛 FrozenInstanceError），天然线程安全、可作缓存键；\n3) 适合值对象、配置、缓存键、函数式风格。\n与 NamedTuple 区别：dataclass 是普通类（可继承、可加方法、可变），NamedTuple 是 tuple 子类（更省内存、不可变、可按位置访问）。选型：需可变/继承用 dataclass，需 tuple 兼容/极轻量用 NamedTuple。"
+    },
+    {
+      "question": "简述 Python 元类（metaclass）的概念与 type 的角色。",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "元类",
+        "metaclass",
+        "type"
+      ],
+      "dimension": "skill",
+      "reference_answer": "元类是「类的类」——类是元类的实例。普通类的元类是 type。class Foo: pass 等价 Foo = type('Foo', (), {})。定义类时，Python 调用元类的 __new__/__init__/__prepare__ 来构造类对象，因此元类能拦截、改写类的创建（增删属性、校验、注册、改方法）。\ntype 的三重身份：\n1) 内置函数 type(obj) 返回对象的类型；\n2) 元类之母：所有类的 type 链最终指向 type，type 的元类是它自己；\n3) 类工厂 type(name, bases, attrs) 动态创建类。\n使用场景：\n- ORM（SQLAlchemy/Django Model）：字段声明转为表结构；\n- 插件注册：元类自动把子类登记到注册表；\n- ABC：ABCMeta 强制抽象方法实现；\n- 接口/Schema 校验（pydantic 用元类收集字段）。\nmetaclass 用法：class Meta(type): def __new__(mcs, name, bases, ns): ...; class Foo(metaclass=Meta): pass。\n原则：能用 __init_subclass__（更简单）或装饰器解决的，就不要上元类（YAGNI，元类魔法大、调试难）。"
+    },
+    {
+      "question": "鸭子类型与抽象基类（ABC）各自的优势？什么场景该用 ABC？",
+      "points": 5,
+      "difficulty": 3,
+      "tags": [
+        "鸭子类型",
+        "ABC",
+        "类型系统"
+      ],
+      "dimension": "skill",
+      "reference_answer": "鸭子类型：「如果一个对象走起来像鸭子、叫起来像鸭子，那它就是鸭子」。不检查类型，只要有需要的方法/属性就用。优势：灵活、解耦、契合 Python 动态本性；劣势：错误延迟到运行时、无显式契约、IDE 提示弱。\nABC（abc.ABC + @abstractmethod）：定义显式接口契约，子类必须实现抽象方法，否则实例化抛 TypeError；可用 isinstance 校验、@register 让虚拟子类注册（无需真继承）。\nABC 优势：显式契约、提前失败（实例化即报错）、自文档、配合 type hint。劣势：略增耦合、过度抽象。\n用 ABC 的场景：\n1) 框架/库定义稳定接口（容器协议、存储后端、策略族）；\n2) 多人协作明确契约；\n3) 需要运行时类型校验（register/isinstance）。\n经验：简单脚本用鸭子类型；设计可复用抽象/库时用 ABC 或 Protocol（结构化类型，更轻）。typing.Protocol 兼顾鸭子类型与静态检查，是新项目首选。"
+    },
+    {
+      "question": "threading.Lock 与 RLock（可重入锁）的区别？什么时候需要 RLock？",
+      "points": 5,
+      "difficulty": 3,
+      "tags": [
+        "Lock",
+        "RLock",
+        "锁"
+      ],
+      "dimension": "skill",
+      "reference_answer": "Lock 是互斥锁，同一线程二次 acquire 会死锁（不记录持有者）。RLock（可重入锁）记录持有线程与计数，同一线程可多次 acquire，需等量 release 才释放，不会自死锁。\n需要 RLock 的场景：\n1) 递归函数加锁——函数内部递归调用自己且都要获取同一把锁；\n2) 方法互相调用且各自加锁——a() 持锁后调用 b()，b() 也 acquire 同一把锁；\n3) 装饰器/回调链中嵌套加锁。\nLock 场景：临界区是平铺的单段代码，无嵌套加锁，性能略高（省去计数）。\n注意：RLock 的可重入只对「同一线程」有效，跨线程仍互斥。死锁四条件含「不可抢占」「循环等待」，RLock 解的是「同线程重复请求」。Semaphore 用于限流（允许多许可）。优先用 with lock:（上下文管理器）保证释放。GIL 下纯 Python 临界区虽不会被线程切换打断到一半字节码，但复合操作（读-改-写）仍需锁保护。"
+    },
+    {
+      "question": "concurrent.futures 的 ThreadPoolExecutor 与 ProcessPoolExecutor 如何选择？",
+      "points": 10,
+      "difficulty": 3,
+      "tags": [
+        "concurrent.futures",
+        "线程池",
+        "进程池"
+      ],
+      "dimension": "skill",
+      "reference_answer": "ThreadPoolExecutor：多线程，受 GIL 限制无法 CPU 并行，但线程轻量、共享内存。适合 I/O 密集（网络、磁盘、DB 调用）。\nProcessPoolExecutor：多进程，独立内存空间、绕开 GIL 实现真正 CPU 并行。适合 CPU 密集（数值计算、图像处理、模型推理）。代价：进程创建/通信开销大，参数与返回值需 pickle 序列化，不能传 lambda/不可序列化对象/打开的连接。\n选型口诀：I/O 密集 → 线程池或 asyncio；CPU 密集 → 进程池。\n用法：\nwith ThreadPoolExecutor(max_workers=16) as ex:\n    futures = [ex.submit(fetch, url) for url in urls]\n    results = [f.result() for f in as_completed(futures)]\n或 ex.map(fn, iterable) 保序返回。\nmax_workers：I/O 可设较大（几十~几百，取决于下游限流）；CPU 一般 = os.cpu_count()。\n注意：进程池的函数须在模块顶层定义（pickle 按全名定位），闭包/局部函数不可用。"
+    },
+    {
+      "question": "asyncio 中 asyncio.gather、asyncio.wait、asyncio.TaskGroup 的区别与选择？",
+      "points": 10,
+      "difficulty": 3,
+      "tags": [
+        "asyncio",
+        "gather",
+        "TaskGroup"
+      ],
+      "dimension": "skill",
+      "reference_answer": "asyncio.gather(*aws, return_exceptions)：并发运行多个协程，按输入顺序返回结果列表；默认任一抛异常会向上传播（其他仍在跑），return_exceptions=True 则把异常作为结果返回不抛。适合「并发取一批结果」。\nasyncio.wait(aws, return_when=ALL_COMPLETED/FIRST_COMPLETED/FIRST_EXCEPTION)：返回 (done, pending) 两个集合，不直接给结果，更底层，适合「谁先完成就处理谁」或需对未完成任务做精细控制。3.8+ 已不推荐传协程直接给它，需先 Task 化。\nasyncio.TaskGroup（3.11+，推荐）：async with asyncio.TaskGroup() as tg: tg.create_task(coro()) 结构化并发——退出 with 时自动等待全部任务；任一任务异常会取消组内其他任务并抛 ExceptionGroup。更强：自动取消、异常不遗漏、作用域清晰。\n选择：新代码优先 TaskGroup（结构化、安全）；需收集顺序结果用 gather（可与 TaskGroup 配合 tg 内 gather）；需「首个完成」用 wait 或 asyncio.wait_for（带超时）。"
+    },
+    {
+      "question": "用 threading.Queue 实现生产者-消费者模型相比用锁+条件变量有什么优势？",
+      "points": 10,
+      "difficulty": 3,
+      "tags": [
+        "Queue",
+        "生产者消费者",
+        "并发"
+      ],
+      "dimension": "skill",
+      "reference_answer": "queue.Queue 是线程安全的 FIFO（底层用 deque + Lock + Condition），put/get 自带阻塞与唤醒，maxsize 还可做有界缓冲（背压）。\n优势：\n1) 无需手写锁与 wait/notify，避免遗漏唤醒、死锁、竞态；\n2) 天然解耦生产与消费速率（有界队列缓冲、背压）；\n3) 支持任务追踪：task_done() + join() 让主线程等到所有任务处理完；\n4) 可换 PriorityQueue/LifoQueue。\n手写锁+条件变量的痛点：while+condition.wait() 的「条件检查-等待-通知」易写错（忘记在持有锁时检查、notify 时机错、虚假唤醒），调试困难。\n示例骨架：\nq = Queue(maxsize=100)\ndef worker():\n    while True:\n        item = q.get()  # 阻塞至有数据\n        process(item); q.task_done()\n起若干线程跑 worker；主线程 q.put(...) 投递；最后 q.join() 等全部处理完。\n进程间通信用 multiprocessing.Queue（pickle 序列化）。协程场景用 asyncio.Queue。"
+    },
+    {
+      "question": "面对一个任务，如何在多线程、多进程、协程之间选型？",
+      "points": 10,
+      "difficulty": 3,
+      "tags": [
+        "并发选型",
+        "多进程",
+        "协程"
+      ],
+      "dimension": "skill",
+      "reference_answer": "选型依据：任务是 CPU 密集还是 I/O 密集、是否需共享状态、并发量级、库的兼容性。\n决策树：\n1) CPU 密集（计算、推理、压缩）：多进程（multiprocessing / ProcessPoolExecutor）绕开 GIL 真并行；注意序列化开销，函数须可 pickle。\n2) I/O 密集 + 高并发（>数百）：协程（asyncio）——单线程事件循环、低开销、易扩展到上万连接；前提是 I/O 库支持 async（aiohttp/asyncpg）。\n3) I/O 密集 + 中低并发 / 依赖同步库：多线程（threading / ThreadPoolExecutor）——I/O 阻塞会释放 GIL，代码改动小。\n4) 混合：CPU 用进程池、I/O 用协程/线程，可组合（如 worker 进程内跑 asyncio 循环）。\n其他考量：\n- 共享状态：线程最易（共享内存，需锁）；进程难（需 Queue/Manager/共享内存）；协程单线程无需锁（但 await 处可被切换）。\n- 库兼容：async 库生态不全时勿强行协程。\n- 部署：进程数受 CPU 限，连接数受内存/句柄限。\n经验：默认 I/O 用协程、CPU 用进程；不确定先量化的 profile 再定。"
+    },
+    {
+      "question": "__slots__ 的作用、好处与代价是什么？",
+      "points": 10,
+      "difficulty": 3,
+      "tags": [
+        "__slots__",
+        "内存优化",
+        "属性"
+      ],
+      "dimension": "skill",
+      "reference_answer": "默认每个实例有 __dict__ 存储实例属性，灵活但占内存（dict 本身有开销）。__slots__ = ['x','y'] 声明固定属性集，实例改用描述符存于紧凑数组，省去 __dict__。\n好处：\n1) 内存占用大幅降低（每实例省 ~40-100 字节 + 属性按 slot 紧凑排列），海量实例场景显著；\n2) 属性访问略快（少了 __dict__ 哈希查找）；\n3) 防止拼错属性名（新增未声明属性抛 AttributeError）。\n代价/限制：\n1) 不能动态新增 __slots__ 外的属性（失去灵活性）；\n2) 默认无 __dict__ 与 __weakref__，需要时显式加 '__dict__'/'__weakref__' 到 slots；\n3) 继承复杂：子类也需声明 __slots__（= () 可）才不重新引入 __dict__，多继承下同名 slot 冲突；\n4) 影响某些库（pickle、ORM、依赖 __dict__ 的序列化）。\n适用：实例量极大（百万级）、属性固定的数据对象、游戏实体、树节点。配置类、需要动态属性的对象不宜用。"
+    },
+    {
+      "question": "如何定位 Python 程序的性能瓶颈？列出常用工具与步骤。",
+      "points": 5,
+      "difficulty": 3,
+      "tags": [
+        "性能剖析",
+        "cProfile",
+        "profiling"
+      ],
+      "dimension": "skill",
+      "reference_answer": "步骤：先整体测量（耗时/内存基线）→ 定位热点（profile）→ 针对优化 → 复测验证。\n工具：\n1) timeit：测小代码片段耗时，消除测量误差；\n2) cProfile / profile：统计函数调用次数与累计耗时，python -m cProfile -s cumulative main.py；用 pstats 排序，snakeviz 可视化；\n3) line_profiler（@profile）：逐行耗时，精确定位热点行；\n4) memory_profiler / tracemalloc：内存增长与泄漏定位；\n5) py-spy / scalene：采样式 profiler，无需改代码、可挂生产进程、支持线程/火焰图；\n6) pyinstrument：调用树式、低开销、易读报告。\n常见优化方向：算法/数据结构换（O(n²)→O(n)）、用内置/C 扩展（sum/str.join 代替循环+拼接）、向量化（NumPy/pandas）、缓存（functools.lru_cache）、减少 I/O（批量/异步）、用 __slots__/生成器省内存。\n原则：先测量后优化（勿过早优化），优化最热的 20% 代码（80/20），每次只改一处并复测。"
+    },
+    {
+      "question": "Python 中如何实现高效的缓存？functools.lru_cache 的原理与限制？",
+      "points": 5,
+      "difficulty": 3,
+      "tags": [
+        "缓存",
+        "lru_cache",
+        "记忆化"
+      ],
+      "dimension": "skill",
+      "reference_answer": "缓存（记忆化）用空间换时间，把函数结果按参数存入缓存，重复调用直接返回。典型场景：纯函数、递归（斐波那契）、昂贵计算、配置解析。\nfunctools.lru_cache(maxsize=None, typed=False)：基于 LRU（最近最少使用）淘汰策略的线程安全缓存。\n原理：用有序字典实现，命中时把条目移到末尾（标记最近用），超出 maxsize 删头部（最久未用）；按参数哈希查缓存。maxsize 建议 2 的幂以取模高效；typed=True 则 1 与 1.0 视为不同键。\n用法：@lru_cache(maxsize=128) def fib(n): ...；.cache_info() 看命中/未命中，.cache_clear() 清空。\n限制：\n1) 参数必须可哈希（list/dict 不行，可转 tuple/frozenset 或 str）；\n2) 缓存的是返回值引用，返回可变对象被调用方修改会污染缓存；\n3) 长期运行进程缓存常驻内存，需控制 maxsize；\n4) 线程安全但单进程，分布式需 Redis 等外部缓存。\n3.9+ 有 @functools.cache = lru_cache(maxsize=None)（纯字典无淘汰）。"
+    },
+    {
+      "question": "举例说明 itertools 中最常用的几个工具及其用途。",
+      "points": 10,
+      "difficulty": 3,
+      "tags": [
+        "itertools",
+        "迭代工具",
+        "惰性"
+      ],
+      "dimension": "skill",
+      "reference_answer": "itertools 提供惰性迭代器组合工具，省内存、表达力强。\n常用：\n1) chain(*iters) / chain.from_iterable：拼接多个可迭代对象（展平一层）；\n2) islice(iter, start, stop, step)：对迭代器切片（生成器无法直接切片，用它）；\n3) groupby(iter, key)：按 key 分组（需先按 key 排序，相邻相同 key 才归组）；\n4) product(*iters, repeat=n)：笛卡尔积（多重循环、排列组合）；\n5) permutations/combinations(iter, r)：全排列 / 组合；\n6) accumulate(iter, func)：前缀和/累积运算；\n7) starmap(func, iter)：把可迭代的元组解包给 func（如 starmap(pow, [(2,3),(2,4)])）；\n8) takewhile/dropwhile(pred, iter)：取/丢到谓词失效为止；\n9) cycle/count/repeat：无限迭代器（配合 islice 限长）；\n10) tee(iter, n)：把一个迭代器复制成 n 个（有内存代价）。\n例：展平 [[1,2],[3]] → list(chain.from_iterable(...)); 笛卡尔积产品配置 → product(colors, sizes)。\n原则：大数据优先 itertools（惰性、C 实现、内存友好），避免先 list 化再处理。"
+    },
+    {
+      "question": "collections 模块中 Counter、defaultdict、namedtuple 分别解决什么问题？",
+      "points": 5,
+      "difficulty": 2,
+      "tags": [
+        "collections",
+        "Counter",
+        "defaultdict"
+      ],
+      "dimension": "skill",
+      "reference_answer": "Counter：计数字典，统计可哈希元素频次。Counter('abca') → {'a':2,'b':1,'c':1}；支持 most_common(n) 取 top、elements()、算术运算（+合并、-差集、&交集、|并集）。用于词频、投票、排行榜。\ndefaultdict(default_factory)：访问缺失键时自动调用 factory 生成默认值，省去 setdefault/判空。defaultdict(list) 做分组（key→list）、defaultdict(int) 做计数、defaultdict(set) 做归类。比 dict 更简洁地构建多值映射。\nnamedtuple：创建具名元组类型，实例既可按名字访问又可按位置访问，且是不可变、轻量（无 __dict__）。Point=namedtuple('P',['x','y']); p=Point(1,2); p.x。用于返回多值结构、CSV/DataFrame 行、替代简单类。\n其他常用：deque（双端队列，O(1) 头尾操作，固定长可做滑动窗口）、OrderedDict（3.7 前 dict 无序时的替代，现多用于有序+额外特性）、ChainMap（叠加多个映射查找）。\n原则：数据结构需求先看 collections，往往已有现成、高效的实现。"
+    },
+    {
+      "question": "Python 类型注解（type hints）是强类型的吗？typing 模块的核心工具有哪些？",
+      "points": 10,
+      "difficulty": 3,
+      "tags": [
+        "类型注解",
+        "typing",
+        "mypy"
+      ],
+      "dimension": "skill",
+      "reference_answer": "Python 类型注解运行时默认不强制（CPython 不检查），它是「可选静态类型」——给 IDE/mypy/pyright 等静态检查器与文档用，运行时仍动态。用 from __future__ import annotations 让注解延迟求值（存为字符串），3.14 起 PEP 649 默认惰性。\ntyping 核心工具：\n- 基础容器泛型：list[int]、dict[str,int]、tuple[int,...]（3.9+ 内置支持，旧版用 List/Dict）；\n- Optional[int] = int | None（3.10+ 用 X | Y 联合）；\n- Union[X,Y]、Any、Literal['a','b']（字面量类型）；\n- Callable[[int], str]、TypeVar('T') 泛型；\n- Protocol（结构化子类型/鸭子类型的静态版，PEP 544）；\n- TypedDict（dict 的固定键值类型）；\n- Generic/TypeVar/ParamSpec（自定义泛型）；\n- ClassVar/Final/Annotated。\n工具链：mypy/pyright 静态检查、pydantic 运行时校验（FastAPI 依赖）、beartype 运行时强制。\n收益：更早发现 bug、IDE 自动补全/重构、自文档、团队协作。建议新代码逐步加注解，从公共 API/复杂签名开始。"
+    },
+    {
+      "question": "pathlib 相比 os.path 有什么优势？写出常见操作。",
+      "points": 5,
+      "difficulty": 2,
+      "tags": [
+        "pathlib",
+        "路径",
+        "面向对象"
+      ],
+      "dimension": "skill",
+      "reference_answer": "pathlib（3.4+）用面向对象的 Path 对象替代 os.path 的字符串拼接，更直观、更安全、跨平台。\n优势：\n1) 操作链式、表达力强：Path('a')/'b'/'c.txt' 代替 os.path.join；\n2) 方法聚合：p.exists()/p.is_file()/p.mkdir()/p.read_text()/p.glob('*.py')；\n3) 属性访问：p.name/p.stem/p.suffix/p.parent/p.parts；\n4) / 运算符拼路径，类型安全（避免忘 join 的字符串拼接错误）；\n5) 统一 Path 处理 POSIX/Windows 差异。\n常见操作：\n- Path('dir').mkdir(parents=True, exist_ok=True)\n- list(Path('.').rglob('*.py'))  # 递归找文件\n- Path('f.txt').read_text(encoding='utf-8') / .write_text(...)\n- for p in Path('img').glob('*.png'): ...\n- p.with_suffix('.bak')  # 改扩展名\n- p.resolve()  # 绝对路径（解析符号链接）\n原则：新代码用 pathlib；与只收 str 的旧库交互时 str(p) 转换。"
+    },
+    {
+      "question": "Python 3.10 的 match-case（结构化模式匹配）相比 if-elif 链有什么优势？",
+      "points": 5,
+      "difficulty": 2,
+      "tags": [
+        "match",
+        "模式匹配",
+        "PEP634"
+      ],
+      "dimension": "skill",
+      "reference_answer": "match-case（PEP 634，3.10+）是结构化模式匹配，远超 switch：能按结构（序列/映射/类/字面量/或模式/守卫）解构数据并绑定变量，匹配成功执行对应块。\n优势：\n1) 解构赋值：match point: case (0,0): ...; case (x,0): ...; case (x,y): ...；\n2) 类模式：case Point(x=0, y=y): ...（按属性匹配+绑定）；\n3) 映射模式：case {'type':'error','msg':msg}: ...（按键存在性与值匹配）；\n4) 字面量/或模式/通配：case 1|2|3: ...; case _: ...；\n5) 守卫：case [x,*_] if x>0: ...；\n6) 比 if-elif 更声明式、可读，复杂分支与数据解析尤其受益（AST 处理、配置、协议解析）。\n注意：_ 是通配（匹配任意且不绑定），变量名（小写）会绑定而非比较，要按字面量匹配常量需加 Enum 或 Point（大写类名视为类模式）。\n原则：分支多/需解构时用 match；简单二分仍用 if。"
+    },
+    {
+      "question": "Python 字符串格式化的几种方式及推荐用法？",
+      "points": 5,
+      "difficulty": 2,
+      "tags": [
+        "f-string",
+        "格式化",
+        "format"
+      ],
+      "dimension": "skill",
+      "reference_answer": "主要方式：\n1) f-string（3.6+，推荐）：f'{name=} {pi:.2f}'，直接内嵌表达式，支持 = 调试、格式说明符、3.8+ 表达式内 =；3.12+ 支持嵌套字段与多行；性能最好；\n2) str.format()：'{n:.2f}'.format(n=pi)，适合模板与 i18n（字符串与参数分离）；\n3) % 格式化：'%s' % name，旧式，C 风格，可读性差，多线程日志里为避免花括号仍用（logging 惯例）；\n4) string.Template：$var 风格，最安全（用户提供的模板不会执行表达式），适合用户可编辑模板。\n格式说明符：:.2f 浮点、:, 千分位、:>10 右对齐宽 10、:.2% 百分比、:%x 十六进制、:>08 填零。\n推荐：日常用 f-string（最快最直观）；模板/国际化用 .format；日志用 %（logging 的 lazy 求值，避免无谓格式化开销）；不可信用户模板用 Template。\n注意：f-string 在 logging 的 logger.info(f'...') 会立即格式化即使日志级别不输出，应 logger.info('...', arg) 用 % 延迟。"
+    },
+    {
+      "question": "解释 raise ... from ... 的异常链机制及其作用。",
+      "points": 5,
+      "difficulty": 2,
+      "tags": [
+        "异常链",
+        "raise from",
+        "异常处理"
+      ],
+      "dimension": "skill",
+      "reference_answer": "raise NewExc from orig 把原始异常 orig 附加到新异常的 __cause__，形成异常链；raise ... from None 则显式抑制链（表示「不是由前一个异常引起，故意替换」）。\n作用：\n1) 保留根因：在抽象层捕获底层异常并抛领域异常时，链让最终 traceback 显示 'The above exception was the direct cause of...' 完整因果，便于排查；\n2) from None：明确切断链，避免误导（如重试耗尽后只关心最终错误，不展示中间每一次异常）。\n示例：\ntry:\n    data = json.loads(raw)\nexcept json.JSONDecodeError as e:\n    raise ConfigError('配置文件格式错误') from e   # 保留解析错误细节\n场景：\n- 库的内部异常转译为公共 API 异常（封装实现细节同时不丢上下文）；\n- 校验失败包装原始数据问题；\n- 重试循环最终抛错用 from None 清理。\n原则：转译异常几乎总应 from 原异常（保留根因）；只有明确要切断噪声时才 from None。这比吞掉异常（except: pass）健康得多。"
+    },
+    {
+      "question": "Pydantic 解决什么问题？它和 dataclass 有什么区别？",
+      "points": 10,
+      "difficulty": 3,
+      "tags": [
+        "pydantic",
+        "数据校验",
+        "schema"
+      ],
+      "dimension": "skill",
+      "reference_answer": "Pydantic：基于类型注解的数据校验与序列化库（v2 用 Rust 重写核心，快）。定义模型类时声明字段类型，Pydantic 自动：实例化时校验类型（str/int/EmailStr/自定义）、转换兼容类型（\"1\"→1）、序列化（model_dump/to_json）、生成 JSON Schema。\n解决：配置/请求体/响应体的类型安全——错误数据在入口被拒而非运行时崩。\nvs dataclass：dataclass 只生成样板方法（init/repr/eq），不校验类型（注解只是提示）；Pydantic 主动校验+转换+序列化。\n场景：FastAPI 请求/响应模型、配置管理（pydantic-settings）、ORM/DTO、API schema。\n优势：运行时校验（vs 静态 mypy）、自动转换、Schema 导出（OpenAPI）、嵌套模型、自定义校验器、与 FastAPI 深度集成。\n选型：需校验/序列化/API → Pydantic；纯数据容器、无需校验 → dataclass（更轻）。"
+    },
+    {
+      "question": "Enum（枚举）的作用？与普通常量相比有什么好处？",
+      "points": 5,
+      "difficulty": 3,
+      "tags": [
+        "Enum",
+        "枚举",
+        "常量"
+      ],
+      "dimension": "skill",
+      "reference_answer": "Enum：把一组相关的命名常量组织成枚举类型。每个成员有 name 和 value。\n好处（vs 散落的常量/魔法数字）：\n1) 可读性：Color.RED 比 1 或 \"red\" 直观；\n2) 类型安全：函数参数标 Color 类型，传非法值可被静态检查/IDE 提示发现；\n3) 命名空间：集中管理，防拼写错、防重复；\n4) 可迭代：遍历所有成员（Color.__members__）；\n5) 不可变单例：成员是单例，is 比较安全；\n6) 防「魔法值」扩散。\n变体：IntEnum/IntFlag（可与 int 互操作、支持位运算 Flag）、auto()（自动赋值）。\n用法：状态机、配置选项、错误码、API 枚举字段（FastAPI/OpenAPI 序列化为枚举）。\n注意：Enum 成员比较用 is；value 可重复（用 @unique 装饰防重复 value）；序列化时注意（JSON 需转 .value）。"
+    },
+    {
+      "question": "super() 到底做了什么？为什么多继承下它不是「调用父类」？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "super",
+        "MRO",
+        "多继承"
+      ],
+      "dimension": "skill",
+      "reference_answer": "super() 不是简单地「调父类」，而是按 MRO（方法解析顺序）调用「当前类的下一个类」。\n机制：super() 实际是 super(当前类, self)，它找到 self 的 __class__ 的 MRO 中「当前类之后」的第一个类，调用其方法。\n为什么这样设计（协作式多重继承）：\n- 多继承下，「父类」不唯一，super() 沿 MRO 链传递，确保每个类被调用一次且顺序确定（C3 线性化）；\n- 例如钻石继承 A→B,A→C→D，B.method 中 super().method() 不是调 A，而是调 MRO 中 B 的下一个（C 或 D），最终遍历整条 MRO。\n实践含义：\n1) super().__init__(*args, **kwargs) 在多继承下会沿 MRO 初始化所有父类（协作式），需各层用 super 传递；\n2) super() 的两参形式（super(Class, obj)）可指定起点，灵活；\n3) Mixin 模式依赖 super() 链。\n注意：super() 调用的可能是「兄弟」类（同 MRO 但非父子），这是协作式继承的关键。\n理解 super() 按 MRO 而非「父类」工作，是理解 Python 多继承、Mixin、协作式初始化的基础。C3 MRO + super() 共同支撑了 Python 多继承的确定性。"
+    },
+    {
+      "question": "@staticmethod、@classmethod、实例方法的区别？",
+      "points": 5,
+      "difficulty": 3,
+      "tags": [
+        "staticmethod",
+        "classmethod",
+        "方法"
+      ],
+      "dimension": "skill",
+      "reference_answer": "实例方法：def method(self, ...)，第一个参数是实例，可访问/修改实例与类状态。最常见。\n@classmethod：def method(cls, ...)，第一个参数是类（cls），可访问/修改类状态、创建实例（替代构造器、工厂方法）。常用于：替代构造（from_string/from_dict）、操作类级状态、工厂模式。\n@staticmethod：def method(...)，无 self/cls，就是个放在类命名空间的普通函数。用于：逻辑上属于该类但不需访问实例/类（工具函数），组织代码归属。\n区别核心：第一个参数（实例/类/无）与能访问的范围。\n选择：\n- 需访问/改实例 → 实例方法；\n- 需访问类/工厂构造 → classmethod；\n- 仅逻辑归属、不需实例/类 → staticmethod。\n注意：staticmethod 不能被实例覆写多态（无 cls/self），少用；classmethod 灵活（工厂/继承友好）。Python 中 classmethod 比静态方法更常用且有实际价值（继承时 cls 是子类）。"
+    },
+    {
+      "question": "什么是 Mixin？如何正确使用多重继承的 Mixin？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "Mixin",
+        "多重继承",
+        "设计"
+      ],
+      "dimension": "skill",
+      "reference_answer": "Mixin：一种「可复用功能模块」类，提供单一能力（如 LogMixin/SerializeMixin/CachedMixin），不单独实例化，设计为被其他类多重继承组合。\n目的：组合优于继承，把功能拆成小块按需混入，避免深继承树。\n正确使用：\n1) Mixin 单一职责：每个 Mixin 提供一个清晰功能；\n2) Mixin 不定义 __init__（或用 super() 协作式初始化，不破坏继承链）；\n3) Mixin 方法依赖宿主接口（约定宿主需有某些属性/方法，鸭子类型）；\n4) 继承顺序：class MyClass(MixinA, MixinB, BaseClass)——Mixin 在前，Base 在后（Base 提供基础，Mixin 增强）；\n5) 用 super() 协作（Mixin 内调 super() 让链传递）；\n6) 显式接口（ABC/Protocol）声明 Mixin 依赖，更清晰。\n常见问题：\n- 多个 Mixin 方法/属性名冲突（后写覆盖）；\n- Mixin 间隐式依赖难追溯；\n- MRO 复杂难理解；\n- __init__ 冲突。\n实践：\n- 保持 Mixin 小而专注；\n- 组合（has-a，把功能对象作属性）常比 Mixin（is-a）更清晰、更少耦合——能用组合就别滥用 Mixin；\n- Mixin 适合「横切」的轻量增强，复杂功能用组合。\n理解 Mixin 是 Python 多继承的常见用法，配合 super()/MRO 实现协作式组合。但警惕过度，组合往往是更清晰的选择。"
+    },
+    {
+      "question": "Python 的 import 机制是怎样的？循环导入如何解决？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "import",
+        "循环导入",
+        "模块"
+      ],
+      "dimension": "skill",
+      "reference_answer": "import 机制：\n1) 首次 import 时，Python 在 sys.modules 缓存查找；未命中则查找模块（sys.path/包定位）；\n2) 编译（.pyc）、执行模块顶层代码、构建模块对象，存入 sys.modules；\n3) 后续 import 直接返回缓存对象（模块只执行一次顶层代码）。\n4) from x import y：执行 x 模块后绑定 y 名字到当前命名空间。\n循环导入：A import B，B import A，若在模块顶层互相 import 且顶层就用到对方名字，会因对方未执行完（部分初始化）而 NameError/AttributeError。\n解决：\n1) 重构消除循环（最佳）：把共享逻辑抽到第三方模块 C，A、B 都依赖 C 而非互依；\n2) 延迟导入：把 import 移到函数/方法内（用到时才导入），避开顶层循环；\n3) 只在顶层 import 模块（import x），用 x.name 延迟访问（运行时模块已初始化完）；\n4) 调整导入顺序/内容。\n最佳实践：模块依赖应是 DAG（无环），循环依赖通常是设计问题，优先重构解耦（提取共享层、接口抽象、依赖注入）。\n注意：包内相对/绝对导入、__init__.py 的副作用、sys.modules 缓存与 reload、命名空间包。\n理解 import 机制与循环导入，是排查「ImportError/部分初始化」类 bug 的基础，也是设计清晰模块依赖的前提。"
+    },
+    {
+      "question": "Python 的打包与依赖管理（pyproject.toml / uv / poetry）现状？",
+      "points": 5,
+      "difficulty": 3,
+      "tags": [
+        "打包",
+        "pyproject",
+        "依赖管理"
+      ],
+      "dimension": "skill",
+      "reference_answer": "演进：\n- 早期：setup.py（脚本式）+ requirements.txt + pip + venv；\n- 过渡：setup.cfg + pyproject.toml（PEP 518，定义构建系统）；\n- 现代：pyproject.toml 统一配置（元数据/依赖/构建/工具配置，PEP 621）。\npyproject.toml：\n- [project]：name/version/dependencies/optional-dependencies 等元数据；\n- [build-system]：构建后端（setuptools/hatchling/flit）；\n- [tool.xxx]：各工具配置（ruff/pytest/mypy）。\n依赖管理工具：\n1) pip + venv：标准、通用、但慢、无 lockfile；\n2) poetry：成熟、有 lockfile、虚拟环境管理、打包发布一体；配置 pyproject；\n3) uv（Astral，Rust 写）：极快（10-100× pip）、lockfile、虚拟环境、项目管理、逐渐成新标准；\n4) pip-tools/pipenv：较早方案，渐被替代；\n5) hatch/pdm：现代 PEP 标准实现。\n虚拟环境：venv（标准）、uv venv（快）、conda（科学计算/非 Python 依赖）。\n现状（2025）：\n- pyproject.toml 是标准配置文件；\n- uv 因极快正快速流行（新一代默认）；\n- 旧项目用 setup.py/poetry 仍多。\n实践：新项目用 pyproject.toml + uv（快）或 poetry（成熟）；依赖锁版本（lockfile）保证可复现；区分生产依赖与开发依赖（optional-dependencies/dev）。autohr 用 uv（pyproject.toml）。"
+    },
+    {
+      "question": "typing 中的 TypeVar、Generic、Protocol 如何实现泛型与结构化类型？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "TypeVar",
+        "Generic",
+        "Protocol"
+      ],
+      "dimension": "skill",
+      "reference_answer": "TypeVar：定义类型变量，用于泛型函数/类。T = TypeVar(\"T\")，def first(xs: list[T]) -> T，表示输入输出类型关联。可加约束（T = TypeVar(\"T\", bound=Comparable) 或 T = TypeVar(\"T\", int, str) 限定）。\nGeneric：让类支持泛型。class Stack(Generic[T]): def push(self, x: T)，实例化时 Stack[int]() 固化类型。使容器/工具类类型安全。\nProtocol（PEP 544，结构化子类型/静态鸭子类型）：\n- 定义「有这些方法/属性即算该类型」的协议，不要求显式继承；\n- 例 protocol Closeable: def close(self) -> None: ...，任何有 close() 的类都是 Closeable；\n- 静态检查（mypy）按结构判断，无需继承声明。\nParamSpec：用于装饰器/高阶函数，保留被装饰函数的参数签名类型。\nTypeVarTuple：可变泛型（类似 *args 泛型）。\n价值：\n- 泛型让容器/工具类型安全且复用（list[T] vs list[Any]）；\n- Protocol 实现鸭子类型的静态版（按结构而非继承），灵活解耦（vs ABC 需显式继承）；\n- 提升 IDE/mypy 辅助，及早发现类型 bug。\n注意：这些是静态检查（运行时不强制，除非用 runtime_checkable/库）。现代 Python 类型系统日趋完善，新代码应善用类型注解 + mypy/pyright。"
+    },
+    {
+      "question": "如何用 Python 实现常见设计模式（单例/工厂/观察者/策略）？",
+      "points": 10,
+      "difficulty": 3,
+      "tags": [
+        "设计模式",
+        "单例",
+        "工厂"
+      ],
+      "dimension": "skill",
+      "reference_answer": "单例：保证全局唯一实例。\n- 模块级（Python 模块天然单例，最简）；\n- __new__ 控制（class Singleton: _inst=None; def __new__: if not _inst: create; return _inst）；\n- 元类/装饰器实现；\n- 注意多线程安全（加锁）。\n工厂：封装对象创建。\n- 简单工厂：函数/类按参数返回不同子类；\n- 工厂方法：类方法（@classmethod from_xxx）作替代构造；\n- 抽象工厂：创建系列产品。\n观察者：发布订阅。\n- Subject 维护 observers 列表，notify 时调各 observer.update；\n- 弱引用（WeakSet）避免观察者泄露；\n- 应用：事件系统、数据绑定、信号。\n策略：算法族可互换。\n- 定义策略接口（ABC/Protocol），多实现；\n- Context 持有策略对象，调用策略方法；\n- 函数即策略（Python 中传函数作策略最简）。\nPython 特色：\n- 函数是一等对象，很多模式可简化（策略=传函数、命令=函数对象）；\n- 装饰器实现代理/职责链；\n- 生成器实现迭代器；\n- 描述符实现属性协议；\n- 不必教条套 Java 模式，用 Python 惯用法更简洁。\n原则：模式是工具非目的，按需用，优先用语言特性（函数/装饰器/描述符）简化，避免过度设计。"
+    },
+    {
+      "question": "pytest 的 fixture 与 mock 如何使用？",
+      "points": 10,
+      "difficulty": 3,
+      "tags": [
+        "pytest",
+        "fixture",
+        "测试"
+      ],
+      "dimension": "skill",
+      "reference_answer": "fixture：测试的前置准备与清理（setup/teardown），可复用、可组合、可参数化。\n- 定义：@pytest.fixture def db(): setup; yield db; teardown（yield 前是 setup，后是 teardown）；\n- 使用：测试函数参数名匹配 fixture 名即注入；\n- scope：function/class/module/session 控制复用范围（session fixture 全程一次）；\n- 参数化：@pytest.mark.parametrize 跑多组参数；\n- conftest.py：共享 fixture（自动发现，无需 import）；\n- 依赖：fixture 可依赖其他 fixture，pytest 自动解析顺序。\nmock：替换被测代码的外部依赖（API/DB/时间/函数），隔离测试。\n- unittest.mock.patch：patch('module.func') 临时替换为 Mock，with 退出恢复；\n- Mock/ MagicMock：模拟对象，可设返回值（.return_value）、断言调用（.assert_called_with）；\n- side_effect：设异常/多返回值序列；\n- patch 位置：patch 被测模块引用的名字（非定义处）。\n最佳实践：\n- 测试隔离（每测试独立，fixture 负责准备/清理）；\n- mock 外部依赖（网络/DB/时间），测纯逻辑；\n- 测行为非实现（不过度 mock 内部）；\n- 参数化覆盖多场景；\n- 覆盖率监控（pytest-cov）。\npytest fixture + mock 是 Python 测试主力，让测试可复用、隔离、可维护。理解 scope/yield/conftest 与 patch 位置是关键。"
+    },
+    {
+      "question": "threading 的高级同步原语：Condition、Semaphore、Event 各是什么？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "Condition",
+        "Semaphore",
+        "Event"
+      ],
+      "dimension": "skill",
+      "reference_answer": "Condition：条件变量，配合锁，让线程等待某条件满足后唤醒。\n- wait() 释放锁并阻塞，notify/notify_all 唤醒（唤醒后重新获锁）；\n- 典型：生产者-消费者（队列非空/非满的条件）、复杂状态协调；\n- 比 Lock 更高级（Lock 只互斥，Condition 支持等待-通知）。\nSemaphore：信号量，计数器控制「同时访问某资源的线程数」。\n- acquire 计数-1（为0则阻塞），release 计数+1；\n- 用途：限流（最多 N 个线程同时访问）、连接池、资源池；\n- BinarySemaphore（计数1）= Lock。\nEvent：事件标志，一个线程设信号、其他等待。\n- set() 置标志，clear() 清除，wait() 阻塞至被 set；\n- 用途：一次性通知、启动信号、优雅停止（设 event 让线程退出循环）。\n区别：\n- Lock/RLock：互斥（同一时刻一个）；\n- Semaphore：限流（最多 N 个）；\n- Condition：等待-通知（条件满足协调）；\n- Event：简单信号通知；\n- Queue：线程安全队列（封装了 Condition，最常用的高级工具）。\n选择：\n- 简单互斥 → Lock；\n- 限流/池 → Semaphore；\n- 等待条件 → Condition 或直接用 Queue；\n- 启动/停止信号 → Event。\n原则：能用 Queue（封装好）就别手写 Condition/Lock（易错）。理解各原语适用场景才能正确并发编程。"
+    },
+    {
+      "question": "multiprocessing 的进程间通信（Queue/Pipe/Manager）与共享内存？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "multiprocessing",
+        "IPC",
+        "共享内存"
+      ],
+      "dimension": "skill",
+      "reference_answer": "进程间无共享内存，需 IPC：\n1) Queue（multiprocessing.Queue）：进程安全的 FIFO，类似 threading.Queue 但跨进程（pickle 序列化数据）。最常用，生产者-消费者、结果回收。\n2) Pipe：两个进程间的双向管道（返回两端 Connection）。简单点对点通信，比 Queue 轻但只两点。\n3) Manager：代理一个 Python 对象（list/dict/自定义）让多进程共享访问（Manager 创建服务进程管理对象，其他进程通过代理访问）。灵活但慢（每次访问跨进程 RPC）。适合共享复杂结构，性能敏感用共享内存。\n4) 共享内存（Value/Array，multiprocessing.sharedctypes 或 Python 3.8+ multiprocessing.shared_memory）：进程间共享原始内存（无需 pickle），快。适合大数据（数组/图像），但需自己管理同步。\n5) 共享内存（shared_memory.ShareableMemory，3.8+）：更通用的共享内存块，可跨进程命名访问，零拷贝传大数据（如 numpy 数组）。\n选择：\n- 简单任务/结果传递 → Queue；\n- 点对点 → Pipe；\n- 共享复杂对象 → Manager（慢）；\n- 大数据/高性能 → 共享内存（Value/Array 或 shared_memory）。\n注意：\n- Queue/Pipe 数据要 pickle 序列化（不能传 lambda/不可序列化对象/打开的连接）；\n- Manager 慢（RPC 开销）；\n- 共享内存需同步（Lock）防竞争；\n- 进程退出时清理（shared_memory 需显式 unlink）。\nGIL 下 CPU 并行靠多进程，IPC 是其代价。理解各 IPC 方式的速度/灵活性/适用场景，才能高效做多进程并行。现代大数据并行（numpy/图像）倾向共享内存零拷贝。"
+    },
+    {
+      "question": "什么是 ContextVar？它解决了什么问题？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "ContextVar",
+        "上下文",
+        "asyncio"
+      ],
+      "dimension": "skill",
+      "reference_answer": "ContextVar（contextvars 模块，3.7+）：上下文变量，提供「上下文局部存储」，类似「线程局部变量（threading.local）」但支持 asyncio（协程/任务级隔离）。\n解决的问题：\n- 线程局部变量（threadlocal）：每线程独立副本，但 asyncio 单线程跑多协程，threadlocal 无法区分协程——多个协程共享同一线程的 threadlocal，互相污染；\n- ContextVar：每「上下文」（任务/协程）独立副本，asyncio 自动为每个 Task 复制上下文，协程间隔离。\n用途：\n- 请求级数据（request_id/user_id/trace_id）贯穿调用链，无需层层传参；\n- 日志上下文（自动带 request_id）；\n- 数据库 session/事务隔离；\n- 分布式追踪（trace 传递）。\n用法：\n  req_id: ContextVar = ContextVar(\"req_id\", default=None)\n  req_id.set(\"abc123\")  # 设当前上下文\n  req_id.get()  # 取当前上下文\nasyncio.create_task 会复制当前 context，Task 内的 ContextVar 修改不影响外部。\nvs threadlocal：ContextVar 是 threadlocal 的现代替代，async 友好。新代码用 ContextVar。\n价值：避免「传参地狱」（request_id 层层透传），用上下文隐式传递横切数据，代码更干净。FastAPI/Starlette 用 ContextVar 实现 request 对象注入（dependency）。理解 ContextVar 是写现代异步 Python（尤其带上下文/追踪的应用）的关键。"
+    },
+    {
+      "question": "什么是弱引用（weakref）？它解决什么问题？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "weakref",
+        "弱引用",
+        "GC"
+      ],
+      "dimension": "skill",
+      "reference_answer": "弱引用：指向对象但不增加其引用计数——不影响对象被垃圾回收。对象无强引用时仍会被回收，弱引用变为无效。\n解决的问题：\n1) 缓存：缓存对象用弱引用，内存紧时对象可被回收（vs 强引用缓存致内存堆积）。weakref.WeakValueDictionary/WeakKeyDictionary；\n2) 观察者/监听器：观察者用弱引用持有被观察对象，避免阻止其回收（防内存泄露）；\n3) 关联额外数据：用 WeakKeyDictionary 给对象关联元数据，对象回收时关联自动清；\n4) 避免循环引用泄漏（部分场景）。\n用法：\n  import weakref\n  ref = weakref.ref(obj)  # 创建弱引用\n  o = ref()  # 取对象，若已回收返回 None\n类需支持弱引用（默认支持，定义 __slots__ 时需含 __weakref__ 或未禁用）。\n与普通引用区别：\n- 强引用（普通变量）：增引用计数，阻止回收；\n- 弱引用：不增计数，对象可回收。\nWeakValueDictionary：值是弱引用，值对象无其他强引用时自动从字典移除——做缓存神器。\n注意：\n- 弱引用访问前需判空（ref() 可能 None）；\n- 不可哈希/部分内置类型（list/dict）不能直接弱引用（可用子类）；\n- weakref.finalize 注册对象回收时的回调（清理资源）。\n理解弱引用有助于设计缓存、观察者、关联数据，避免内存泄漏。Python 标准库与第三方（如 functools 缓存、observer 模式）大量用 weakref。"
+    },
+    {
+      "question": "Python 的 GIL 在 3.13（PEP 703）有什么变化？free-threading 意味着什么？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "GIL",
+        "PEP703",
+        "free-threading"
+      ],
+      "dimension": "skill",
+      "reference_answer": "背景：CPython GIL 长期限制多线程 CPU 并行（多线程 CPU 密集无法用多核），需多进程绕开。\nPEP 703（Python 3.13，实验性）：可选「free-threaded」构建（no-GIL），移除 GIL，允许多线程真正 CPU 并行。\n变化：\n1) 3.13 提供实验性 no-GIL 构建（python3.13t），需单独编译/安装，默认仍带 GIL；\n2) 引用计数改「biased reference counting」（线程局部+共享）降低无锁开销；\n3) 内部数据结构改线程安全；\n4) C 扩展需适配（线程安全、新 ABI）。\n意义：\n- 多线程 CPU 密集任务可用多核（无需多进程）；\n- 简化 CPU 并行（多线程替代多进程，共享内存无需 IPC）；\n- 影响 numpy/scipy 等科学计算生态的并行模式。\n现状（2025）：\n- 实验性，性能/兼容性仍在优化（no-GIL 单线程可能略慢，多线程并行才赢）；\n- C 扩展生态适配中（关键库未全部支持）；\n- 未来版本（3.14+）逐步成熟，可能默认或主流。\n影响：\n- 短期：多数项目仍用带 GIL 版本（稳定）；\n- 长期：free-threading 成熟后改变 Python 并行范式（多线程 CPU 并行可行）；\n- 库作者需考虑线程安全；\n- 多进程/multiprocessing 在 CPU 并行上的必要性下降。\n注意：I/O 并行（asyncio/线程）本就不受 GIL 限制，PEP 703 主要解锁 CPU 并行。理解这一变化有助把握 Python 并行未来趋势，但短期生产仍以 GIL 假设为准。"
+    },
+    {
+      "question": "如何用 Python 的 AST 做代码分析或变换？",
+      "points": 5,
+      "difficulty": 4,
+      "tags": [
+        "AST",
+        "代码分析",
+        "元编程"
+      ],
+      "dimension": "skill",
+      "reference_answer": "AST（抽象语法树）：Python 源码解析成的树结构（ast 模块），每个节点是语法元素（函数/循环/赋值/表达式）。\n用途：\n1) 静态分析：找未用变量、复杂度、模式（lint 工具如 ruff/pylint 基于 AST）；\n2) 代码变换：自动重构、注入代码（如加日志/类型检查）、代码生成；\n3) 安全：检查可疑代码（eval/exec 内容、危险调用）；\n4) DSL：自定义语法解析转换；\n5) 文档/测试生成。\n用法：\n  import ast\n  tree = ast.parse(source_code)  # 解析成 AST\n  for node in ast.walk(tree):  # 遍历\n      if isinstance(node, ast.FunctionDef): ...\n  ast.NodeTransformer：重写 AST（visit 方法返回新节点），改后 ast.unparse/compile 生成代码。\n示例：统计函数个数、找所有 print 调用、自动给函数加装饰器、检测 hardcoded 密钥。\n相关：\n- ast.literal_eval：安全 eval（只允许字面量，防代码注入）；\n- compile + exec：动态执行（谨慎，安全风险）；\n- dis：反汇编字节码（更底层）；\n- inspect：运行时反射（源码/签名/对象）。\n库：ast（标准）、libcst（保留格式/注释的 AST，适合重构）、redbaron。\n理解 AST 是做代码工具（lint/格式化/重构/安全检查）与元编程的基础。注意 AST 变换生成代码需保证语法正确，且生产用需谨慎（安全/正确性）。"
+    },
+    {
+      "question": "Python 3.10-3.13 引入了哪些重要新特性？",
+      "points": 5,
+      "difficulty": 3,
+      "tags": [
+        "新版本",
+        "特性",
+        "演进"
+      ],
+      "dimension": "skill",
+      "reference_answer": "3.10：\n- 结构化模式匹配（match-case，PEP 634）：强大模式匹配（值/结构/类/映射/序列）；\n- 类型：TypeAlias、ParamSpec、parenthesized context managers（with 多个）；\n- 更好的错误信息（精确指向错误位置）。\n3.11：\n- 速度：解释器优化，比 3.10 快 10-60%（自适应解释器）；\n- 异常组 ExceptionGroup（PEP 654）+ except*（处理一组异常，TaskGroup 用）；\n- TaskGroup（结构化并发）；\n- Self 类型、Required/NotRequired（TypedDict）、LiteralString；\n- 改进的错误高亮（traceback 精确位置）。\n3.12：\n- 类型：类型参数语法（PEP 695，def func[T](x: T) 无需 TypeVar）、type 语句（类型别名）、泛型类/函数简化；\n- f-string 增强（嵌套引号、多行、表达式）；\n- 每解释器 GIL（PEP 683，为 free-threading 铺路）；\n- 性能持续改进。\n3.13：\n- free-threading 实验构建（no-GIL，PEP 703）；\n- 实验性 JIT；\n- 改进的交互式解释器（多行编辑、颜色、help）；\n- TypedDict 只读/非只读键；\n- 移除过期模块。\n趋势：\n- 性能持续提升（3.11+ 显著快）；\n- 类型系统增强（模式匹配、泛型简化）；\n- 并发现代化（TaskGroup/ExceptionGroup/free-threading）；\n- 易用性（f-string、错误信息、REPL）。\n实践：新项目用最新稳定版（3.12/3.13），享性能与特性；关注 free-threading（3.13 实验，未来并行范式）。"
+    },
+    {
+      "question": "functools 的 lru_cache 与 cache 的区别？cachetools 提供什么？",
+      "points": 5,
+      "difficulty": 3,
+      "tags": [
+        "缓存",
+        "functools",
+        "cachetools"
+      ],
+      "dimension": "skill",
+      "reference_answer": "functools.cache（3.9+）：纯字典缓存（无淘汰/无上限），等价 lru_cache(maxsize=None)。简单、无 LRU 开销，适合结果集有限且不增长的函数。会无限增长（参数组合多时内存泄漏）。\nfunctools.lru_cache：LRU（最近最少使用）淘汰，设 maxsize（超则淘汰最久未用）。有 .cache_info()/.cache_clear()。适合结果集大需限制内存的缓存。maxsize 建议 2 的幂（取模高效）。typed=True 区分类型（1 vs 1.0 不同键）。\n区别：\n- cache：无淘汰（无限增长），更快（少 LRU 维护）；\n- lru_cache：LRU 淘汰（控内存），略慢。\ncachetools（第三方）：提供多种缓存策略：\n- LRUCache（同 functools）；\n- TTLCache（带过期时间，适合数据有时效）；\n- LFUCache（最不经常用淘汰）；\n- RRCache（随机淘汰）；\n- MRUCache；\n以及 @cached 装饰器（支持上述各种缓存、可自定义 key 函数、并发安全可选）。\n选择：\n- 结果有限、不需过期 → functools.cache；\n- 需限制内存 → lru_cache；\n- 需 TTL/LFU/并发安全/自定义 key → cachetools；\n- 分布式/大规模 → Redis 等外部缓存。\n注意：缓存函数参数必须可哈希（list/dict 不行）；返回可变对象被修改会污染缓存；缓存长期运行内存需控。"
+    },
+    {
+      "question": "如何用 Python 实现一个类型安全的属性（描述符实战）？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "描述符",
+        "类型检查",
+        "实战"
+      ],
+      "dimension": "skill",
+      "reference_answer": "需求：类的属性赋值时自动校验类型/范围，且复用。\n用描述符：\n  class TypedField:\n      def __init__(self, type_): self.type = type_\n      def __set_name__(self, owner, name): self.name = name\n      def __get__(self, instance, owner):\n          return instance.__dict__.get(self.name)\n      def __set__(self, instance, value):\n          if not isinstance(value, self.type):\n              raise TypeError(f\"{self.name} must be {self.type}\")\n          instance.__dict__[self.name] = value\n  class User:\n      name = TypedField(str)\n      age = TypedField(int)\n  # User().age = \"x\" → TypeError\n扩展：校验范围（min/max）、必填、自定义校验函数、ORM 字段（含列名/类型映射）。\n这正是 ORM（SQLAlchemy 字段）、Pydantic 字段、dataclass + __post_init__ 校验的底层思想。\nvs @property：property 适合单属性定制（每属性写一遍 getter/setter）；描述符适合「同类校验规则复用到多属性」（TypedField 复用）。\nvs __slots__ + __setattr__：也可统一校验，但描述符更声明式、可组合。\n描述符是 Python 属性系统的底层，理解它能：\n- 实现 ORM/Schema 字段；\n- 写声明式校验/约束；\n- 理解 property/classmethod/staticmethod（都是描述符）的工作原理；\n- 元编程。\n实战中 Pydantic/dataclass 已封装好校验，但理解描述符有助深度定制与理解框架内部。"
+    }
+  ]
+}

@@ -6,6 +6,54 @@ import { apiClient } from "./client";
 // 类型（与 backend/app/schemas/candidate_list.py 对应）
 // ============================================================================
 
+// ============================================================================
+// 团队级候选人列表
+// ============================================================================
+
+export interface TeamCandidateItem {
+  id: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  source_type: string | null;
+  education: string | null;
+  skills: string[];
+  years_of_experience: number | null;
+  created_at: string | null;
+}
+
+export interface TeamCandidateListResponse {
+  items: TeamCandidateItem[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface TeamCandidateListParams {
+  source?: string;
+  education?: string;
+  skill?: string;
+  search?: string;
+  sort_by?: string;
+  sort_order?: string;
+  page?: number;
+  page_size?: number;
+}
+
+export async function listTeamCandidatesApi(
+  params: TeamCandidateListParams,
+): Promise<TeamCandidateListResponse> {
+  const { data } = await apiClient.get<TeamCandidateListResponse>(
+    "/api/candidates",
+    { params },
+  );
+  return data;
+}
+
+// ============================================================================
+// 职位级候选人列表
+// ============================================================================
+
 export type CandidateGroup = "all" | "passed" | "disqualified" | "pending";
 
 export type SortBy =
