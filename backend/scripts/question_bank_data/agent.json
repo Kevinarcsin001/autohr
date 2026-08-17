@@ -2,7 +2,7 @@
   "category": {
     "slug": "agent",
     "name": "LLM Agent",
-    "target_points": 15,
+    "target_points": 10,
     "sort_order": 5
   },
   "items": [

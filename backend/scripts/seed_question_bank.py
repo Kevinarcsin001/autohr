@@ -67,7 +67,7 @@ def _load_categories() -> list[dict]:
         raise SystemExit(f"{path} 中未声明任何分类")
     total = sum(c["target_points"] for c in cats)
     print(f"分类声明：{len(cats)} 个，target_points 合计 = {total}"
-          + (" ✓" if total == 100 else f" ⚠（建议=100）"))
+          + (" ✓" if total == 155 else " ⚠（建议=155，约 31 题）"))
     return cats
 
 

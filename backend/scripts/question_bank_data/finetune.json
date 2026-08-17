@@ -3,7 +3,7 @@
     "slug": "finetune",
     "name": "模型微调",
     "target_points": 10,
-    "sort_order": 6
+    "sort_order": 7
   },
   "items": [
     {

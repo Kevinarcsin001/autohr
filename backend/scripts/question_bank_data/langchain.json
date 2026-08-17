@@ -1,0 +1,298 @@
+{
+  "category": {
+    "slug": "langchain",
+    "name": "LangChain/LangGraph",
+    "target_points": 10,
+    "sort_order": 6
+  },
+  "items": [
+    {
+      "question": "LangChain 的定位是什么？它解决了 LLM 应用开发的哪些痛点？核心组件有哪些？",
+      "points": 5,
+      "difficulty": 2,
+      "tags": [
+        "LangChain",
+        "架构",
+        "定位"
+      ],
+      "dimension": "skill",
+      "reference_answer": "定位：LLM 应用开发框架，把「模型 I/O、数据接入、编排、记忆、工具、评估观测」六大件的拼装方式标准化。\n痛点（没有框架时）：\n1. 各家 SDK 接口不统一（OpenAI/Anthropic/本地模型的消息结构、流式、参数各异），换模型=重写；\n2. prompt 组装、重试、缓存、批处理等横切逻辑重复造轮子；\n3. RAG/Agent 等模式的最佳实践难以沉淀复用。\n核心组件（0.2/0.3 架构）：langchain-core（Runnable/LCEL、消息、prompt 抽象）+ 集成包（langchain-openai 等 partner 包）+ langchain-community（长尾集成）；编排上 LCEL 组无状态链、LangGraph 编排有状态 Agent；配套 LangSmith 做 tracing 与评估。\n答题要点：能说出「统一抽象 + 生态集成 + 编排 + 可观测」四层价值，并客观指出它不是必需品——简单场景直接调 SDK 更轻，复杂编排（RAG 流水线、多 Agent、需要持久化）才体现框架价值。"
+    },
+    {
+      "question": "LangChain 为什么要拆成 langchain-core / langchain-community / partner packages 多个包？",
+      "points": 5,
+      "difficulty": 3,
+      "tags": [
+        "LangChain",
+        "包结构",
+        "依赖"
+      ],
+      "dimension": "skill",
+      "reference_answer": "历史：0.1 之前单包 langchain 装完拖全部可选依赖——安装重、版本冲突频发、发版互相牵制（改一个小集成也要发大包）。\n拆分方案：\n- langchain-core：Runnable/LCEL、消息类型、prompt 等纯抽象，零集成依赖，接口最稳定的底座；\n- partner packages（langchain-openai / langchain-anthropic / langchain-google-genai…）：官方与厂商协作维护，独立发版，快速跟进厂商 API 节奏；\n- langchain-community：社区长尾集成（向量库/文档加载器/工具），质量分层管理；\n- langchain 主包：链与 Agent 编排逻辑（Agent 部分逐步迁往 LangGraph）。\n价值：依赖最小化（只用 OpenAI 就不装其他全家桶）、发版解耦（core 稳定慢发、集成快跑）、职责清晰。\n工程含义：requirements 应精确到集成包（langchain-openai）而非老的大包；从 0.1 升 0.2+ 的主要破坏点是废弃 API（LLMChain/AgentExecutor/Memory）迁移到 LCEL 与 LangGraph。"
+    },
+    {
+      "question": "什么是 LCEL（LangChain Expression Language）？Runnable 协议统一了哪些方法？",
+      "points": 10,
+      "difficulty": 3,
+      "tags": [
+        "LangChain",
+        "LCEL",
+        "Runnable"
+      ],
+      "dimension": "skill",
+      "reference_answer": "LCEL：用 | 运算符把 Runnable 组件组合成链的声明式语法，prompt | model | parser 即一个 RunnableSequence。\nRunnable 协议统一方法：invoke / batch（自动并发批处理）/ stream（逐块生成器）+ 异步版 ainvoke / abatch / astream，以及 astream_events（细粒度事件流）、astream_log。任何组件实现该协议即可自由嵌套。\n关键设计：\n1. 同步/异步/批/流四套能力免费获得——写一次链四种方式都能调；\n2. 组合原语：RunnableSequence（|）、RunnableParallel（dict 字面量并行）、RunnableLambda（包装普通函数）、RunnablePassthrough（透传/追加）；\n3. 横切能力链式挂载：with_retry、with_fallbacks（主备切换）、with_config（打标追踪）、bind（传 run-time 参数如 tools/stop）。\n面试要点：LCEL 本质是「无状态 DAG 数据管道」抽象，适合一次转换流；有循环、分支、人工审批、持久状态的需求应上 LangGraph——LCEL 刻意不做图灵完备。"
+    },
+    {
+      "question": "RAG 检索链中 RunnablePassthrough、RunnableParallel 与 .assign() 如何协作？写出典型结构。",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "LangChain",
+        "LCEL",
+        "RAG"
+      ],
+      "dimension": "skill",
+      "reference_answer": "典型 RAG 链：\nchain = ({\"context\": retriever, \"question\": RunnablePassthrough()} | prompt | model | StrOutputParser())\n要点：dict 字面量即 RunnableParallel——两路并行：retriever 取 context，Passthrough 把用户 query 透传；retriever 的输入是字符串 query，prompt 需要 {context, question} 两键。\n进阶 .assign()（在已有 state 上追加键，不丢前面的字段）：常用于两段式（先改写 query 再检索）：\nrewrite = rewrite_prompt | model | parser\nfull = rewrite | RunnablePassthrough.assign(context=lambda x: retriever.invoke(x[\"query\"]))\nassign 保证 rewrite 输出的 query 字段保留，同时追加检索结果。\n加分点：itemgetter(\"question\") 从多键输入取单键喂下游；调试 LCEL 链的核心功力是画数据流图——分清每个组件的输入/输出 schema，逐段 invoke 定位断裂点。"
+    },
+    {
+      "question": "ChatPromptTemplate 的 MessagesPlaceholder 解决什么问题？典型用法是什么？",
+      "points": 5,
+      "difficulty": 3,
+      "tags": [
+        "LangChain",
+        "Prompt",
+        "多轮"
+      ],
+      "dimension": "skill",
+      "reference_answer": "问题：对话历史是「消息对象列表」而非纯字符串，f-string 模板塞不进去。\nMessagesPlaceholder(\"history\") 在模板中占一个消息序列槽位，invoke 时传 messages=[HumanMessage(...), AIMessage(...)] 列表按序展开。\n典型用法：\nprompt = ChatPromptTemplate.from_messages([\n    (\"system\", \"你是招聘助手…\"),\n    MessagesPlaceholder(\"history\"),\n    (\"human\", \"{question}\"),\n])\n配合 RunnableWithMessageHistory（按 session_id 隔离）或 LangGraph 的 add_messages 状态实现多轮记忆。\n细节：MessagesPlaceholder(\"history\", optional=True) 允许首轮无历史时省略；Agent 场景用它放工具调用消息序列（AIMessage(tool_calls=…) + ToolMessage(tool_call_id=…)）。\n加分：消息角色（system/human/ai/tool）到各家 API 的映射由集成层处理，业务代码只用统一的 Message 类型——这是换模型不改业务代码的关键。"
+    },
+    {
+      "question": "with_structured_output 的原理是什么？与手工 OutputParser 方案有何差异？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "LangChain",
+        "结构化输出",
+        "OutputParser"
+      ],
+      "dimension": "skill",
+      "reference_answer": "with_structured_output(schema)（Pydantic 类 / TypedDict / JSON Schema）：优先走模型原生的 tool-calling 或 JSON mode，让模型按 schema 生成后自动解析为对象并校验；集成层按模型能力自动选路径（OpenAI function calling、Anthropic tool use，不支持的模型回退到 JSON 提示 + 修复）。\n手工 OutputParser 路线：prompt 里贴 schema 说明 + JsonOutputParser / PydanticOutputParser 解析文本——依赖模型自觉输出合法 JSON，格式错误要自己兜（parser.with_retry、修复装饰器）。\n差异总结：前者是「能力内建」，成功率与稳定性高，schema 可复用且自动用上模型的结构化机制；后者兼容性最广（任何能出文本的模型都行）但脆弱。\n工程建议：生产结构化输出一律先试 with_structured_output；复杂 schema 拆小（嵌套越深解析失败率越高）；OpenAI strict 模式可进一步保证字段完整；两者都建议配 with_retry + 类型校验后的业务兜底。"
+    },
+    {
+      "question": "@tool 装饰器如何生成工具 schema？bind_tools 与 ToolMessage 如何配合完成一次工具调用循环？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "LangChain",
+        "Tool",
+        "Function Calling"
+      ],
+      "dimension": "skill",
+      "reference_answer": "@tool 从函数签名（类型注解）+ docstring 自动生成 name / description / args_schema（Pydantic），LLM 据此理解何时、如何调用；复杂参数校验可显式传 args_schema，或用 StructuredTool.from_function；return_direct=True 可让该工具结果直接终结 agent 循环。\nbind_tools：model.bind_tools([f1, f2]) 把工具定义绑定到该模型实例的每次调用（请求级 tools 参数）；响应中 AIMessage.tool_calls 携带 [{name, args, id}]。\n完整循环：\n1. 模型返回 tool_calls →\n2. 执行函数（参数已由 schema 校验）→\n3. 构造 ToolMessage(content=结果, tool_call_id=id) 回填 →\n4. 模型基于工具结果继续，直到无 tool_calls。\nLangGraph 的 ToolNode / prebuilt agent 已封装该循环。\n常见坑：docstring 写差→模型不会选用该工具；参数缺注解→schema 退化或报错；工具内部抛异常应捕获并把错误信息作为 ToolMessage 返回（让模型自纠），而不是让整条链崩掉。"
+    },
+    {
+      "question": "LangChain 的 Memory 体系为什么被废弃？现代替代方案是什么？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "LangChain",
+        "Memory",
+        "废弃迁移"
+      ],
+      "dimension": "skill",
+      "reference_answer": "旧 Memory（ConversationBufferMemory / SummaryMemory / ConversationBufferWindowMemory 等）随 LLMChain / AgentExecutor 一并废弃，原因：\n1. 与 Runnable 无状态管道模型冲突——Memory 是藏在链内部的有状态副作用，不可组合、不可测试、不可观测；\n2. 会话管理（session 隔离、持久化、裁剪）在各 Memory 实现里重复且质量参差。\n现代方案：\n- 轻量多轮：RunnableWithMessageHistory 包装 Runnable + BaseChatMessageHistory（按 session_id 隔离历史）；\n- 复杂有状态：LangGraph + Checkpointer——thread_id 天然会话隔离，State 里放 messages（add_messages reducer 自动合并），免费获得持久化、断点恢复、HITL、时间旅行；\n- 长对话治理：trim_messages 按 token/条数窗口裁剪，或摘要节点压缩。\n理解要点：记忆=「会话状态持久化」+「注入 prompt」两件事；新版把隐藏在链里的副作用拆成显式、可组合的层——这是从「链思维」到「图思维」的核心转变。"
+    },
+    {
+      "question": "RecursiveCharacterTextSplitter 为什么按 [\"\\n\\n\", \"\\n\", \" \", \"\"] 递归切分？参数怎么调？",
+      "points": 5,
+      "difficulty": 3,
+      "tags": [
+        "LangChain",
+        "Splitter",
+        "RAG"
+      ],
+      "dimension": "skill",
+      "reference_answer": "递归策略：先用最大语义边界（段落 \\n\\n）尝试切分，块仍超长才降级到更细粒度（行 → 空格 → 字符）——尽可能保留语义完整性（段落>句子>词），只有不得已才硬切，比固定长度切割的检索质量显著更好。\n关键参数：\n- chunk_size：目标块长（默认按字符计量）；\n- chunk_overlap：相邻块重叠（防关键句被切断，经验取 chunk_size 的 10-20%）；\n- separators：可定制——Markdown 用 [\"\\n# \", \"\\n## \", \"\\n\\n\", …] 按标题层级，代码按函数/类边界，中文可加 \"。\" \"，\"。\n调参要点：chunk_size 与 embedding 模型最佳输入长度匹配（多数模型 512-1024 token）；中文注意字符≠token；父子分块（小块检索、大块生成）时子块取小（如 300）。\n加分：from_tiktoken_encoder / length_function 可按真实 token 精确计量，避免字符估算偏差。"
+    },
+    {
+      "question": "MultiQueryRetriever、ContextualCompressionRetriever、ParentDocumentRetriever、EnsembleRetriever 分别解决什么问题？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "LangChain",
+        "Retriever",
+        "RAG"
+      ],
+      "dimension": "skill",
+      "reference_answer": "四类检索器各解决一个单点矛盾：\n- MultiQueryRetriever：用 LLM 把一个 query 改写成多个变体并行检索、合并去重——解决「单一表述召回窄」，提升 recall；代价是每 query 多一次 LLM 调用；\n- ContextualCompressionRetriever：检索后用压缩器二次加工——LLMChainExtractor 抽取相关片段、或 Rerank 模型过滤重排——解决「块内噪声多、上下文浪费」，提升 precision 省 token；\n- ParentDocumentRetriever：小块做 embedding 检索、返回其父块（大块/整文档）——解决「检索粒度与生成粒度矛盾」（small-to-big：召回准 + 上下文完整）；\n- EnsembleRetriever：多路检索器（典型 BM25 + 向量）结果用 RRF（Reciprocal Rank Fusion）融合——解决「关键词精确匹配与语义泛化各有所长」，专有名词/型号靠稀疏检索兜底。\n组合套路：MultiQuery（扩 query）→ Ensemble（混合召回）→ Rerank 压缩（精排）是生产 RAG 常见全链路。答题时先点矛盾再给方案，体现选型思维而非 API 背诵。"
+    },
+    {
+      "question": "LangGraph 是什么？为什么官方用 LangGraph 取代 AgentExecutor 作为 Agent 的推荐方案？",
+      "points": 10,
+      "difficulty": 3,
+      "tags": [
+        "LangGraph",
+        "Agent",
+        "架构"
+      ],
+      "dimension": "skill",
+      "reference_answer": "LangGraph：基于有向图（允许环）的有状态编排框架——节点是函数/LLM 调用，边（可带条件）控制流转，State 在节点间传递并由 reducer 合并，Checkpointer 持久化每步快照。\n取代 AgentExecutor 的原因：\n1. 表达力：AgentExecutor 只有「LLM↔工具」单一循环；多 Agent 协作、审批分支、循环修复、并行扇出等结构表达不了，图模型任意拓扑；\n2. 持久化一等公民：thread 级 checkpoint，中断恢复、跨会话记忆、时间旅行开箱即用；AgentExecutor 无状态；\n3. Human-in-the-loop：interrupt + 人工审批后恢复是原生模式，AgentExecutor 只能 hack；\n4. 可观测：每个 super-step 一次状态快照，事件流清晰，配 LangSmith 定位卡点；\n5. 三级流式：token 级 / 节点更新级 / 状态级。\n现状：官方推荐路径 = LangGraph（简单场景用 prebuilt create_react_agent 一行起，复杂场景手写 StateGraph）。"
+    },
+    {
+      "question": "StateGraph 的核心概念（State / Node / Edge / 条件边）？画出一个最小的工具调用 Agent 图。",
+      "points": 10,
+      "difficulty": 3,
+      "tags": [
+        "LangGraph",
+        "StateGraph",
+        "入门"
+      ],
+      "dimension": "skill",
+      "reference_answer": "最小骨架：\nfrom langgraph.graph import StateGraph, START, END\nfrom langgraph.graph.message import add_messages\nclass State(TypedDict): messages: Annotated[list, add_messages]\ng = StateGraph(State)\ng.add_node(\"agent\", call_model)          # LLM 决策\n g.add_node(\"tools\", ToolNode(tools))      # 工具执行\ng.add_edge(START, \"agent\")\ng.add_conditional_edges(\"agent\", route, {\"tools\": \"tools\", END: END})  # 有无 tool_calls 决定去向\ng.add_edge(\"tools\", \"agent\")             # 工具结果回填后回到 agent\napp = g.compile(checkpointer=MemorySaver())\n要素：State（TypedDict/Pydantic，定义共享数据与合并规则）；Node（函数 state→dict 增量）；普通边（固定流转）；条件边（路由函数返回下一节点名，映射表限定合法目标）；START/END 哨兵；compile 后得到可 invoke/stream 的 Runnable。\n关键认知：节点返回的是「增量」——只写要更新的键，由 reducer 合并进全局 State，不是整 state 覆盖。"
+    },
+    {
+      "question": "LangGraph State 的 reducer 机制是什么？add_messages 做了哪些事？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "LangGraph",
+        "State",
+        "reducer"
+      ],
+      "dimension": "skill",
+      "reference_answer": "每个 State 键本质是一个 channel，带 reducer 定义「新值如何并入旧值」：\n- 默认 LastValue：直接覆盖——适合 question/answer 这类单值键；\n- Annotated[list, operator.add]：列表拼接——适合累计中间结果（如并行子任务产出）；\n- Annotated[list, add_messages]：消息专用 reducer——新消息 append；同 id 消息替换（编辑语义）；ToolMessage 按 tool_call_id 对齐去重，保证工具调用回合完整。\n自定义 reducer：写 (left, right) -> merged 函数即可实现任意合并逻辑（如带窗口裁剪的消息合并、去重聚合）。\n易错点：\n1. messages 定义成普通 list（无 reducer）→ 每个节点返回会覆盖历史，对话记忆「丢了」——新手最常见 bug；\n2. 想「修改」上一条消息：返回同 id 的新消息即可（replace 语义）；\n3. 多个节点并发写同一键（Send 扇出场景）：必须用可交换的 reducer（operator.add 满足，顺序无关），LastValue 并发写会相互覆盖。"
+    },
+    {
+      "question": "LangGraph 的 stream 有哪几种 stream_mode？各自适合什么场景？",
+      "points": 5,
+      "difficulty": 3,
+      "tags": [
+        "LangGraph",
+        "流式",
+        "stream"
+      ],
+      "dimension": "skill",
+      "reference_answer": "graph.stream(input, config, stream_mode=…) 支持：\n- \"values\"：每个 super-step 后输出完整 State——看状态全貌，调试状态演化；\n- \"updates\"：每步只输出 {节点名: 状态增量}——轻量，适合进度推送/审计「谁改了什么」；\n- \"messages\"：吐 LLM token 级增量（AIMessageChunk + 元数据）——接前端打字机效果；\n- \"debug\"：最详细事件流（任务调度/状态/checkpoint 全量）——开发排查用。\n可传列表同时开多模式，如 stream_mode=[\"updates\", \"messages\"]。\n生产常见组合：updates 打日志审计 + messages 驱动前端流式。\n加分点：理解 super-step 概念——同一 super-step 内的节点并行执行，全部完成后进入下一步，跨步才有依赖序；LangSmith trace 里的 step 编号即 super-step 数。另外 astream_events 是 LangChain 生态统一的事件订阅协议，LCEL 与 LangGraph 都支持，适合做统一可观测层。"
+    },
+    {
+      "question": "LangGraph 的 Checkpointer 与 thread_id 如何实现多轮对话记忆？存储怎么选？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "LangGraph",
+        "Checkpointer",
+        "多轮"
+      ],
+      "dimension": "skill",
+      "reference_answer": "机制：compile(checkpointer=saver) 后，invoke 时传 config={\"configurable\": {\"thread_id\": \"user-123\"}}：\n1. 每个 super-step 结束把 State 快照（+下一步任务）写入 checkpoint 存储；\n2. 同 thread_id 再次 invoke 只传新增输入 {\"messages\": [HumanMessage(…)]}——框架自动从最后快照恢复状态续跑；\n3. 多轮对话=同 thread 不断追加；不同会话用不同 thread_id 天然隔离——不再需要 Memory 类，「记忆」退化为图状态的持久化。\n存储选型：MemorySaver/InMemorySaver（开发调试）、SqliteSaver（单机持久化）、PostgresSaver/RedisSaver（生产，多实例共享）；实现 AsyncCheckpointSaver 接口可自定义。\n注意事项：\n1. messages 无限增长会撑爆上下文——配 trim_messages 裁剪或定期摘要节点；\n2. thread_id 设计成 user+session 粒度（每个会话一个），全局共用一个 id 会互相污染；\n3. checkpoint 保留策略（TTL/数量上限）要配，否则存储无限膨胀。"
+    },
+    {
+      "question": "interrupt() 与 Command(resume=…) 如何实现 Human-in-the-Loop？完整流程是什么？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "LangGraph",
+        "HITL",
+        "interrupt"
+      ],
+      "dimension": "skill",
+      "reference_answer": "场景：Agent 执行危险工具（支付/删数据/外发邮件）前需人工批准。\n完整流程：\n1. 节点内在需要审批处调用 interrupt(payload)——图暂停，invoke 返回 __interrupt__ 信息（含 payload，如待执行的操作摘要）；\n2. 应用把审批请求推给人类（Web UI / IM / 工单），进程可以退出，状态由 checkpointer 保管（必须有 checkpointer）；\n3. 人类决策后恢复：graph.invoke(Command(resume=decision), config)——同 thread_id，节点从 interrupt 断点拿到 resume 值继续执行（可跨进程、跨天）；\n4. 变体：graph.update_state(config, values, as_node=…) 直接修改历史状态再重放（修正坏输入）。\n设计要点：\n- NodeInterrupt 异常是节点级变体（校验不满足即停）；\n- 审批粒度两种：工具内部 interrupt（每个危险工具自理）或 条件边外置审批节点（统一入口）；\n- 拒绝也走 resume 值，传结构化原因让模型改道而不是硬失败。"
+    },
+    {
+      "question": "LangGraph 的 Send API 如何实现动态 map-reduce 并行？与静态 RunnableParallel 的区别？",
+      "points": 10,
+      "difficulty": 5,
+      "tags": [
+        "LangGraph",
+        "Send",
+        "map-reduce"
+      ],
+      "dimension": "skill",
+      "reference_answer": "问题：静态图无法在运行前确定并行分支数（如「对检索到的 N 个文档各自摘要」，N 由上游决定）。\n用法：条件边路由函数不返回节点名，而返回 Send 列表：\ndef fan_out(state):\n    return [Send(\"summary\", {\"doc\": d}) for d in state[\"docs\"]]\ngraph.add_conditional_edges(\"retrieve\", fan_out)\n每个 Send 以独立输入实例化 \"summary\" 节点，同一 super-step 内全部并行执行；各分支结果按该节点写入的 State 键的 reducer（典型 operator.add 列表拼接）自动汇合，再由 reduce 节点聚合（拼接或 LLM 合并）。\n经典模板：retrieve → Send 扇出 summary（并行）→ aggregate 节点归并。\n与 RunnableParallel 区别：后者分支在编写时静态固定；Send 在运行时动态决定数量与每分支的私有输入。\n注意：\n1. 分支输入是「私有 state」，键名要与全局 State 兼容（写入同一 reducer）；\n2. 分支数失控风险——fan_out 前做 top-k 截断防扇出爆炸；\n3. reducer 必须可交换（operator.add 可以），因为并行完成顺序不定。"
+    },
+    {
+      "question": "LangGraph 子图（subgraph）什么时候用？状态如何映射？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "LangGraph",
+        "subgraph",
+        "封装"
+      ],
+      "dimension": "skill",
+      "reference_answer": "用途：\n1. 复用：把一个完整 RAG 图封装为大 Agent 图的一个节点；\n2. 团队分工：各团队独立开发/测试自己的子图；\n3. 递归结构：同一图自我嵌套（如树搜索）。\n接入方式：\n- 直接 add_node(\"rag\", compiled_subgraph)：共享同名 State 键自动流通（输入输出键取交集）；\n- 包装函数节点（推荐）：def rag_node(state): return rag_subgraph.invoke({\"q\": state[\"question\"]})——显式映射/裁剪状态，隔离内部 schema，防止两个团队的 State 定义耦合；\n- 私有 State：子图用自己的 State schema，仅映射后的键回传父图。\n检查点：子图 checkpoint 存于父图同一 thread 下，interrupt 在子图内同样生效，恢复粒度到子图节点级。\n反模式：为了「模块化」把一切拆成子图——状态映射复杂度与调度开销上升；一个函数能封装的逻辑就不要上图，图是给「需要持久化/中断/分支循环」的流程用的。"
+    },
+    {
+      "question": "LangGraph 多 Agent 的 supervisor、swarm（handoff）、hierarchical 三种模式各是什么？如何选型？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "LangGraph",
+        "Multi-Agent",
+        "架构模式"
+      ],
+      "dimension": "skill",
+      "reference_answer": "三种官方模式：\n- Supervisor（主管）：一个 supervisor 节点（LLM 决策）+ N 个 worker；supervisor 综合任务与各 worker 产出，用条件边或 Command(goto=…) 分派下一执行者，判定完成后转 END。流程可控、易调试，是默认起点；\n- Hierarchical（分层）：supervisor 树——团队 leader 管子 supervisor，各子 supervisor 再管 worker；适合大规模多阶段分工，复杂度高，小规模不值得；\n- Swarm（蜂群/handoff）：无中心，每个 agent 可在响应中声明转交——节点返回 Command(goto=\"other_agent\", update={…}) 直接切换控制权并携带状态；省一次中央决策延迟低，但流程不可预测，需严格约束转交条件（典型：客服→技术→售后的角色流转）。\n选型：可控性/可审计优先 → supervisor；对话式多角色流转 → swarm；大任务多团队 → hierarchical。官方 langgraph-supervisor / langgraph-swarm 库封装了常见实现。\n共同要点：agent 间通信设计——共享黑板（全局 State）vs 消息传递（HandoffMessage）两种，前者简单后者隔离好。"
+    },
+    {
+      "question": "LangGraph 的 recursion_limit 是什么？为什么默认 25？超限后如何处理？",
+      "points": 5,
+      "difficulty": 3,
+      "tags": [
+        "LangGraph",
+        "recursion_limit",
+        "防护"
+      ],
+      "dimension": "skill",
+      "reference_answer": "LangGraph 图允许成环（这是表达 Agent 循环的核心），为防死循环设步数预算 recursion_limit，默认 25 个 super-step，超限抛 GraphRecursionError。通过 config={\"recursion_limit\": N} 调整。\n设计含义：一次 invoke 内「LLM+工具」往返越多越烧钱，25 覆盖多数单任务 agent；深链路（多阶段审批、长反思链）需显式调大。\n处理与防御：\n1. 捕获 GraphRecursionError 后用 get_state 取最后状态，汇报「在 N 步耗尽」而不是静默失败；\n2. 防御性设计：State 里加 steps 计数器，节点自增，条件边到阈值主动转 END/人工节点；\n3. 工具连续失败熔断改道，避免「重试-失败」空转吃满预算。\n细节：recursion_limit 计的是 super-step（图递归深度），不是 LLM 调用次数——一个 super-step 内的多个并行节点（Send 扇出）只算一步；LangSmith trace 的 step 数即 super-step 序号。"
+    },
+    {
+      "question": "langgraph.prebuilt.create_react_agent 提供了什么？哪些点可以定制？",
+      "points": 5,
+      "difficulty": 3,
+      "tags": [
+        "LangGraph",
+        "create_react_agent",
+        "prebuilt"
+      ],
+      "dimension": "skill",
+      "reference_answer": "from langgraph.prebuilt import create_react_agent：一行生成标准 ReAct 工具循环图（agent 节点 ↔ ToolNode），内置：模型调用、tool_calls 条件路由、工具执行与 ToolMessage 回填、默认 messages State。\n可定制面：\n- tools：工具列表；model：模型（或预 bind_tools 的实例）；\n- prompt：字符串（system）或完整消息模板（可用 MessagesPlaceholder 注入历史/上下文）；\n- state_schema：扩展自己的 State 键（如 user_id、iteration 计数）；\n- checkpointer：开启持久化与多轮 thread 记忆；\n- response_format：末步结构化输出（Pydantic schema）；\n- pre_model_hook / post_model_hook：模型调用前后钩子（HITL 拦截、动态工具注入、审计）。\n判断标准：标准「LLM+工具」循环直接用；一旦需要自定义路由、多 agent 协作、审批分支，换手写 StateGraph。学习建议：create_react_agent 本身就是官方参考实现，读它的源码（图结构、路由函数、状态定义）是掌握 LangGraph 惯用模式的捷径。"
+    },
+    {
+      "question": "LangGraph 的「时间旅行」（time travel）是什么？get_state_history 与 update_state 能做什么？",
+      "points": 10,
+      "difficulty": 5,
+      "tags": [
+        "LangGraph",
+        "时间旅行",
+        "调试"
+      ],
+      "dimension": "skill",
+      "reference_answer": "Checkpointer 保存了每步快照序列，形成可回放的历史：\n- get_state_history(config)：按时间倒序列出各快照（state 值、next 待执行节点、checkpoint_id、元数据）——用于定位「哪一步走错」；\n- 从某快照重放：invoke(新输入或 None, config={\"configurable\": {\"thread_id\": t, \"checkpoint_id\": c}})——从该点分叉继续（换策略重试）；\n- update_state(config, values, as_node=…)：不改图直接改某快照的状态值（修正坏数据、注入人工答案），后续从修正后的状态继续，生成新 checkpoint 分支（不覆盖原记录）。\n应用场景：\n1. Agent 走错路回滚到岔路口换策略重跑；\n2. 评估：同一前缀多种续跑（checkpoint 复用省 token）；\n3. 线上事故取证：快照序列即完整审计日志；\n4. fork 新 thread 做实验不影响原会话。\n治理注意：时间旅行操作应收敛到管理员权限并写审计日志——能改历史的能力本身是高危能力。"
+    },
+    {
+      "question": "LangGraph 应用的重试与容错怎么做？哪些层级可用？",
+      "points": 5,
+      "difficulty": 4,
+      "tags": [
+        "LangGraph",
+        "容错",
+        "重试"
+      ],
+      "dimension": "skill",
+      "reference_answer": "分四层：\n1. 节点内重试：节点函数本身是 Runnable——model.with_retry(stop_after_attempt=3, retry_if_exception_type=(RateLimitError,))，粒度最细（只重模型调用，副作用不重复）；\n2. 图级 RetryPolicy：compile(retry=RetryPolicy(max_attempts=3, initial_interval=1, jitter=True)) 指数退避，按异常类型过滤——注意重试的是「整个节点」，要求节点幂等；\n3. fallback：model.with_fallbacks([backup_model]) 主备模型切换；工具节点内 try/except 把错误信息作为 ToolMessage 返回，让模型自纠（工具容错的推荐形态）；\n4. 熔断与预算：State 放失败计数，条件边达到阈值转人工/END；超 recursion_limit 捕获 GraphRecursionError，把快照 id 落死信队列人工介入。\n原则：幂等节点才自动重试；外部副作用（写库/发邮件/支付）绝不能裸重试——用幂等键（idempotency key）或转 HITL 审批。"
+    },
+    {
+      "question": "LangSmith 在 LangChain/LangGraph 工程化中扮演什么角色？典型接入与用法？",
+      "points": 10,
+      "difficulty": 3,
+      "tags": [
+        "LangChain",
+        "LangSmith",
+        "可观测"
+      ],
+      "dimension": "skill",
+      "reference_answer": "LangSmith：官方观测 + 评估平台（可自托管）。四大用途：\n1. Tracing：设 LANGSMITH_TRACING=true + API key 即全链路追踪——每次 invoke 一棵 trace 树：LCEL 每步输入输出、token/耗时/成本，LangGraph 每个 super-step / 节点 / 工具调用；「哪一步慢、哪个 prompt 变贵」一眼定位；\n2. Feedback：线上点赞/点踩回写 trace，沉淀带标注的样本池；\n3. Datasets & Experiments：把 trace 固化为数据集，改 prompt/换模型后批量重跑对比（评估器支持规则、LLM-as-judge、人工标注）——prompt 的回归测试基础设施；\n4. LangGraph 深度集成：thread/步骤级查看、Studio 可视化调试、时间旅行。\n工程要点：环境隔离（dev 全采、生产按采样率）；敏感字段脱敏（PII hiding 规则）；评估脚本接入 CI 防 prompt 无声回归；不想用 SaaS 可选 Langfuse 等开源替代（追踪协议兼容 LangChain 生态）。"
+    }
+  ]
+}
