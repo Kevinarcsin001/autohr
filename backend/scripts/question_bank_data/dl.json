@@ -449,6 +449,54 @@
       ],
       "dimension": "skill",
       "reference_answer": "端到端学习：用一个模型直接从原始输入学到最终输出，不手动设计中间阶段/特征工程。与之相对的是流水线/分阶段方法（每阶段独立模块+人工特征）。\n例：语音识别从「手工声学特征→GMM-HMM→语言模型」分阶段，变为「波形→神经网络→文本」端到端（Deep Speech）；目标检测从「特征→候选区→分类」变为单网络直接输出框；自动驾驶从「感知→规划→控制」分模块到端到端（输入图像/雷达→输出转向/油门）。\n优点：\n1) 联合优化：所有参数为最终目标共同优化，避免各阶段误差累积、目标不一致；\n2) 自动学特征：免去人工特征工程，能学到人类未设计的表示；\n3) 简化系统：模块少、部署简单；\n4) 数据驱动：随数据/算力扩展持续提升。\n缺点/挑战：\n1) 数据需求大：需大量标注覆盖输入到输出，小数据效果差；\n2) 可解释性差：黑盒，难定位错误、难保证安全；\n3) 难引入先验：丢掉领域知识（分阶段可注入专家规则）；\n4) 训练难：目标稀疏（如强化学习的奖励）、易不稳定；\n5) 不易模块化复用。\n实践常折中：核心端到端 + 关键安全/可解释环节保留模块与约束（如自动驾驶保留安全规则层、可解释感知）。理解端到端的权衡有助于根据数据、安全、可解释需求选架构。"
+    },
+    {
+      "question": "RMSNorm 与 LayerNorm 的区别是什么？为什么现代 LLM 普遍改用 RMSNorm？",
+      "points": 5,
+      "difficulty": 4,
+      "tags": [
+        "归一化",
+        "RMSNorm",
+        "LLM结构"
+      ],
+      "dimension": "skill",
+      "reference_answer": "LayerNorm：对每个样本按特征维减均值再除标准差，带可学习缩放 γ 与偏移 β。\nRMSNorm：省去均值中心化，只用均方根归一化：x / sqrt(mean(x²)+ε) × γ（无 β）。源于观察：LN 的增益主要来自缩放不变性而非重新中心化。\nLLM 采用原因：\n1. 计算省：少一次均值计算与减法，长序列大 batch 下累计可观（与 Pre-LN 配合实现稳定深网络）；\n2. 效果持平：LLaMA/T5/GPT 系大量验证不掉点；\n3. 实现简单、硬件友好。\n注意：两层数量级差异更多在训练吞吐而非精度；小模型/非 Transformer 场景 LN 依然常用。面试加分：能提到 Pre-LN vs Post-LN 的梯度稳定性差异（深 Transformer 用 Pre-LN 免 warmup 依赖）。"
+    },
+    {
+      "question": "ALiBi 位置编码的原理是什么？相比可学习位置嵌入与 RoPE 的优劣？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "位置编码",
+        "ALiBi",
+        "外推"
+      ],
+      "dimension": "skill",
+      "reference_answer": "ALiBi（Attention with Linear Biases）：不给 token 加位置嵌入，而是在 attention 分数上加线性惩罚：bias = -m·(i-j)（query 与 key 的距离），m 按头编号几何递减（如 2^(-8k/64)）——近处注意力强、远处衰减，不同头衰减速率不同形成多尺度。\n优势：\n1. 天然长度外推：训练 1k 可直接推理 10k+ 且困惑度平稳（RoPE 直接外推会崩，需插值/YaRN）；\n2. 零参数、实现简单；\n3. 推理快（无位置计算开销）。\n劣势：\n1. 长程依赖被显式压低——需要真正「全文检索」的任务（needle-in-haystack 远端）不如 RoPE 系；\n2. 相对位置线性 bias 在超长时可能过度惩罚。\nRoPE 通过旋转编码保留精确相对位置、配合插值技巧可扩展且长程检索强，故主流 LLM 用 RoPE；ALiBi 多见于对长序列外推要求高的早期模型（MPT/BLOOM）与流式场景。"
+    },
+    {
+      "question": "为什么现代 LLM 的 FFN 层普遍用 SwiGLU 激活？相比 ReLU/GELU 好在哪？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "SwiGLU",
+        "FFN",
+        "激活函数"
+      ],
+      "dimension": "skill",
+      "reference_answer": "GLU 家族：门控线性单元——输出 = 线性路径 ⊙ 门控路径（sigmoid(W₁x) · W₂x），一条支路决定「过多少」，另一条提供内容。SwiGLU = 用 Swish(β=1) 替代 sigmoid 做门：Swish(W₁x) ⊙ (W₃x)。\n好处：\n1. 表达力：乘性门控带来更丰富的非线性变换，同等参数下损失更低（Shazeer 2020 在同 FLOPs 对比中 SwiGLU 优于 ReLU/GELU/GLU 变体）；\n2. 平滑门控：Swish 处处可导、负区间小幅通过（缓解神经元死亡），梯度性质好。\n代价：三个权重矩阵（W₁/W₂/W₃）而非两个——为保持参数量持平，隐藏维通常取 2/3·4d 并取 256 倍数（LLaMA 系做法）。\n现状：LLaMA/Qwen/Mistral 等主流开源模型 FFN 标配 SwiGLU（+ RMSNorm + RoPE 并称现代 LLM 三件套）。"
+    },
+    {
+      "question": "注意力机制有哪些稀疏化/线性化变体（Sliding Window / Sparse / Linear Attention）？各自解决什么？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "稀疏注意力",
+        "线性注意力",
+        "长上下文"
+      ],
+      "dimension": "skill",
+      "reference_answer": "动机：标准注意力 O(n²) 显存与计算，长序列不可承受；三种主流路线：\n1. 滑窗（SWA，Mistral/Gemma 用）：每个 token 只 attend 最近 w 个（如 4096），局部依赖强、实现简单；常与全局层交错（少量全局 token 补长程）；\n2. 稀疏模式（Longformer/BigBird）：窗口 + 随机连接 + 全局 token 的固定稀疏模式，理论保证连通性；复杂度 O(n·w)；\n3. 线性注意力（Performer/Linear Transformer/Mamba 类状态空间是另一路线）：用核函数/状态递推把复杂度降到 O(n)，但近似带来质量损失，近年 RWKV/Mamba/MLA 等混合架构在追赶。\n实践要点：Flash Attention 是「精确注意力的 IO 优化」不改变 O(n²) 复杂度（计算量降但显存 O(n)）；训练长上下文常用「注意力量化 + 滑窗」组合（Qwen 长版、Gemma2 交替 SWA/全局）。选型：50k 内长 RoPE+FlashAttention 足够；超长流式考虑 SSM/线性混合架构。"
     }
   ]
 }

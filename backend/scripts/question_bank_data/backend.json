@@ -401,6 +401,54 @@
       ],
       "dimension": "skill",
       "reference_answer": "挑战：高频更新（每秒数千-数万次点赞/浏览），直接写 DB 会打垮 DB（行锁竞争、写放大）。\n方案：\n1) Redis 原子计数（INCR/HINCRBY）：\n- Redis 单线程原子操作，高并发安全；\n- 计数存 Redis（like:post_id → count），毫秒级；\n- 读直接读 Redis；\n- 适合实时计数，但 Redis 故障丢未持久化数据（需 AOF + 定期落 DB）。\n2) Redis + 异步落 DB（主流）：\n- 实时增减在 Redis（高并发承载）；\n- 定时/批量异步把 Redis 计数同步到 DB（持久化、分析）；\n- DB 只承受批量写，压力小。\n3) 防重复计数：\n- 点赞（一人一次）：用 Set/Bitmap 记录已点赞用户（SISMEMBER 判重），计数 = Set 大小；\n- 浏览量（去重 UV）：HyperLogLog（PFADD/PFCOUNT，极省空间，有误差）或 Set（精确但大）；\n- 设备/用户维度去重。\n4) 写合并（Write Coalescing）：\n- 多次增减在内存/Redis 合并，定期刷一次 DB（减写次数）；\n- 如 1 秒内某文章的多次浏览合并为一次 +N 更新。\n5) 分片计数：\n- 超高并发单 key 热点，分片到多 key（counter:post_id:0/1/2...），读时合并；\n- 减少单 key 竞争（Redis 单线程，单 key 高 QPS 也行，但分片减热点）。\n一致性：\n- 实时显示可接受短暂延迟（最终一致）；\n- 关键计数（金额）需强一致（DB 事务）。\n架构：客户端 → 计数服务 → Redis（实时）→ 异步落 DB。读：Redis。\n扩展：\n- 排行榜（ZSET，见系统设计题）；\n- 分时段统计（按小时/天 key，Hash/Bitmap）；\n- 实时大屏（Redis 聚合 + 推送）。\nkey 设计：counter:{type}:{id}，TTL 管理冷数据。\n关键：把高频写从 DB 卸载到 Redis（内存+原子），异步批量持久化，是高并发计数器核心。防重复用 Set/Bitmap/HyperLogLog。autohr 评分等场景可参考此模式（Celery 异步承载重计算）。"
+    },
+    {
+      "question": "数据库 schema 变更如何做到零停机（zero-downtime migration）？expand-contract 模式是什么？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "数据库迁移",
+        "零停机",
+        "expand-contract"
+      ],
+      "dimension": "skill",
+      "reference_answer": "问题：锁表变更（加列锁、改类型、建索引）在千万行表上会阻塞线上读写数分钟。\nexpand-contract 三阶段：\n1. Expand（扩展）：加新列/新表（可空、带默认值用 metadata 方式避免 PG11 前的整表重写）、新索引用 CONCURRENTLY（不锁写）；新旧结构并存；\n2. Migrate（双写+回填）：应用双写新旧字段；存量数据分批回填（按主键分页，每批限量 + sleep，避免主从延迟与锁竞争）；回填完成校验一致性；\n3. Contract（收缩）：读路径切到新字段（灰度），观察后删旧列/旧索引——删列在 PG 里也要锁，放低峰或用 CONCURRENTLY 系工具。\n关键纪律：\n- 迁移脚本可回滚或至少可前向修复；\n- 大表变更前在 staging 用等量数据演练（锁时长实测）；\n- 与部署解耦：DB 变更先上（兼容旧代码），应用后上——一次只动一边。\n工具：gh-ost/pt-online-schema-change（MySQL 在线改表）、alembic 分步迁移。"
+    },
+    {
+      "question": "服务的优雅停机如何设计？连接排空与 SIGTERM 处理要注意什么？",
+      "points": 5,
+      "difficulty": 3,
+      "tags": [
+        "优雅停机",
+        "SIGTERM",
+        "K8s"
+      ],
+      "dimension": "skill",
+      "reference_answer": "目标：发布/缩容时不切断正在处理的请求，不做一半的事务。\n步骤：\n1. 收到 SIGTERM：立刻停止接收新请求（从 LB/服务发现摘除注册，K8s 里 preStop 先 sleep 确保端点摘除传播完成）；\n2. 排空：等在途请求完成，设排空超时（如 30s）；长连接逐个通知关闭；\n3. 清理：flush 缓冲（日志/指标批量上报）、提交/回滚事务、关闭 DB/Redis 连接池；\n4. 超时兜底：到时仍有请求未完（客户端断连/死循环）强制退出，残留靠幂等与重试恢复。\n坑：\n- 只 kill 进程（K8s 默认 terminationGracePeriodSeconds 30s 到点 SIGKILL，在途请求直接断）；\n- prePost sleep 顺序错误：endpoint 摘除是异步的，先摘再进信号，否则新流量还在打进来；\n- 后台任务（Celery）停机：停止拉新任务，当前任务跑完或 ack 机制保证不丢；\n- 连接池没有 dispose，重启风暴时旧连接悬挂占满 PG max_connections。"
+    },
+    {
+      "question": "大文件上传下载如何设计？分片、断点续传与秒传的实现要点？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "大文件",
+        "分片上传",
+        "断点续传"
+      ],
+      "dimension": "skill",
+      "reference_answer": "直传对象存储（关键架构决策）：应用服务器只签发预签名 URL，客户端直传 S3/MinIO——避免文件流经业务后端（带宽/内存双杀）。\n上传流程（分片 + 断点续传）：\n1. 初始化：客户端请求 create_multipart_upload，拿到 uploadId；\n2. 分片直传：文件按 5-10MB 切片并行上传（预签名 URL per part），失败单片重传不影响整体；\n3. 进度与续传：已传分片记录（客户端本地 + 服务端查询 API），重开后从缺失分片继续；\n4. 完成：全部分片后请求 complete，S3 合并；\n5. 秒传：上传前算整文件 hash（分片 hash 聚合，如 MD5/xxhash），服务端查已有同 hash 对象直接建引用——防碰撞需 hash+size 双校验，高安全场景再抽检。\n下载：预签名 URL 直下 + 大文件支持 Range 请求（断点续传由 HTTP 206 实现）。\n其他要点：病毒扫描/格式校验异步化（先隔离区后转正）、上传回调触发处理流水线、配额与限速（防滥用）、生命周期清理未完成的 multipart（S3 残片收费）。"
+    },
+    {
+      "question": "什么是舱壁隔离模式？后端服务如何防止慢依赖拖垮全部线程资源？",
+      "points": 5,
+      "difficulty": 3,
+      "tags": [
+        "舱壁隔离",
+        "线程池",
+        "级联故障"
+      ],
+      "dimension": "skill",
+      "reference_answer": "问题：一个慢依赖（如某个下游 API 超时 30s）占满全局线程池/连接池，其他健康依赖与请求全部排队——级联故障。\n舱壁：像船舱隔板，把资源按依赖分组隔离，各组独立配额：\n1. 线程池隔离：每个下游独立线程池（大小按其容量算），慢依赖只能耗尽自己的池；\n2. 信号量隔离（更轻）：不换线程，只对并发数计数，超发快速失败——适合本地/快速调用；\n3. 连接池隔离：DB/Redis/HTTP 各自连接池，独立超时；\n4. 队列隔离：异步任务按类型分队列（转码队列挂了不影响通知队列）。\n配套：每组设超时 + 熔断（失败率触发后快速失败不再打下游）+ fallback（降级返回缓存/默认值）；配额要压测定（池大小 = 稳态 QPS × P99 延迟的小数倍）。\n实现参考：Hystrix 模式思想、 resilience4j Bulkhead、asyncio 的Semaphore 分组限流。原则：任何跨网络的调用都要回答「它挂了会拖死谁」。"
     }
   ]
 }

@@ -2,12 +2,51 @@
 
 任务 2 阶段：仅提供 RSA 密钥临时生成 + structlog 静默 fixture。
 任务 3+ 将扩展 DB / Redis / Celery mock fixtures。
+
+⚠️ 开发库防护门：集成测试的 TRUNCATE fixture 直连 ``settings.DATABASE_URL``，
+若在开发库（容器内 postgres:5432/autohr）上跑会清空真实数据。收集阶段
+fail-fast（见 ``_guard_dev_database``），需在开发库跑时显式设
+``AUTOHR_ALLOW_DEV_DB_TESTS=1``。CI（testcontainers 临时库，库名 autohr_test）
+与本地 SQLite 不受影响。
 """
 from __future__ import annotations
 
+import os
+import sys
 from typing import Any
 
 import pytest
+
+# ============================================================================
+# 开发库防护门（import 时即执行，早于任何 fixture/engine 使用）
+# ============================================================================
+
+
+def _guard_dev_database() -> None:
+    """拒绝在开发库上跑集成测试（防 TRUNCATE 清库事故）。
+
+    判定（同时满足）：
+    - DATABASE_URL 指向 PG（容器内开发库主机名为 ``postgres``，compose 服务名）
+    - 库名为 ``autohr``（开发库名；CI 临时库为 ``autohr_test``，SQLite 为文件路径）
+    - 未显式设 ``AUTOHR_ALLOW_DEV_DB_TESTS=1``（逃生门：有意在开发库跑时使用）
+    """
+    url = os.environ.get("DATABASE_URL", "")
+    allowed = os.environ.get("AUTOHR_ALLOW_DEV_DB_TESTS") == "1"
+    if allowed or "postgres" not in url:
+        return
+    # 提取库名：postgresql+asyncpg://user:pass@host:port/dbname
+    path = url.rsplit("/", 1)[-1].split("?")[0]
+    if path == "autohr":
+        sys.exit(
+            "\n🛑 拒绝在开发库上跑集成测试！\n"
+            "DATABASE_URL 指向开发库 postgres/autohr，而集成测试的 TRUNCATE 会清空全部真实数据。\n"
+            "  - 本地跑：用 SQLite（DATABASE_URL=sqlite+aiosqlite:///./data/test.db）\n"
+            "  - CI：用 testcontainers 临时库（autohr_test）\n"
+            "  - 确实要在开发库跑：AUTOHR_ALLOW_DEV_DB_TESTS=1 pytest ...（自担风险）\n"
+        )
+
+
+_guard_dev_database()
 
 # ============================================================================
 # pytest-asyncio 1.x: 让所有 async 测试共享 session 级 event loop

@@ -389,6 +389,54 @@
       ],
       "dimension": "skill",
       "reference_answer": "目的：量化推理系统（模型+框架+硬件）的性能，指导选型、容量规划、优化。\n测试维度：\n1) 延迟：TTFT、TPOT、端到端延迟，分 p50/p99；\n2) 吞吐：每秒 token（input/output）、每秒请求数；\n3) 并发：不同并发下的延迟-吞吐曲线；\n4) 显存：峰值显存、KV cache 容量、最大并发序列；\n5) 质量：量化/压缩后的输出质量（在评估集对比）。\n测试方法：\n1) 固定负载：模拟真实流量分布（prompt 长度、输出长度、QPS），用压测工具（vLLM 自带 benchmark、locust、k6、自定义）；\n2) 扫描并发：从低到高扫描并发数，画延迟-吞吐曲线，找饱和点；\n3) 多配置对比：不同模型大小/量化/batch/框架；\n4) 长时间稳定性：内存泄漏、性能衰减。\n关键实践：\n- 真实负载（用真实 query 分布，非固定短文本）；\n- 预热（先跑几轮，避冷启动）；\n- 多次取均值/分位；\n- 记录环境（硬件、版本、配置）；\n- 分别测 prefill 与 decode（瓶颈不同）。\n工具：vLLM benchmark_serving.py、TensorRT-LLM benchmark、llm-perf、自建。\n输出：性能报告（延迟/吞吐/显存/成本 vs 并发/配置），指导 GPU 选型、副本数、参数调优。基准测试是性能工程的基础，避免拍脑袋规划。"
+    },
+    {
+      "question": "多租户 LLM 推理平台如何做租户隔离与配额（quota）？防止大租户挤占资源？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "多租户",
+        "配额",
+        "公平调度"
+      ],
+      "dimension": "skill",
+      "reference_answer": "层次设计：\n1. 认证与配额：API key/团队级 TPM（tokens per minute）/RPM 限额，网关层（如 LLM Gateway）先行拒绝超额请求（429 + Retry-After），不打到推理集群；\n2. 请求隔离：单请求 max_tokens 上限 + prompt 长度限制，防一个巨量请求占满 batch；超时与队列等待上限；\n3. 公平调度：推理侧按租户加权公平队列（weighted fair queuing/DRF），优先级租户更高权重但设上限防饿死；批调度时同租户请求打散；\n4. 独享 vs 共享：大客户独享 replica（deployment 级隔离），小客户共享池 + 弹性伸缩；\n5. 观测与计费：per-team 用量/延迟分维度打点，异常突增告警（可能是死循环 Agent）。\n常见坑：只做并发限制不做 token 限制（长 prompt 绕过）；配额在应用层而不在网关（绕过路径漏防）。"
+    },
+    {
+      "question": "如何诊断 GPU 推理服务的利用率问题？MFU 是什么，常见瓶颈有哪些？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "GPU",
+        "MFU",
+        "性能诊断"
+      ],
+      "dimension": "skill",
+      "reference_answer": "MFU（Model FLOPs Utilization）：实际每秒 FLOPs / GPU 理论峰值 FLOPs。推理场景常看 token 吞吐折算；训练/推理健康值差异大（大模型训练 MFU 40-60% 算好，推理受 memory-bound 影响更低）。\n诊断路径：\n1. 先分层：GPU 利用率（nvidia-smi/DCGM 的 SM 占用）、显存带宽利用率（MBU，推理常先顶到它）、PCIe/NVLink 流量、CPU 预处理；\n2. 推理特有瓶颈：\n- Memory-bound：decode 阶段每 token 都要读全权重，算术强度低——优化靠 batching（摊薄权重读取）、量化（减读取量）；\n- Kernel launch/调度间隙：小 batch 下 GPU 空转——continuous batching 提高 occupancy；\n- KV Cache 显存耗尽：batch 上不去——PagedAttention/量化 KV；\n- 输入输出侧：tokenizer/网络/排队占比高（GPU 看似闲）；\n3. 工具：nsight systems 看时间线找空泡，vLLM 日志的 running/waiting 队列与 preemption 计数。\n结论模板：先确认 bound 类型再对症——利用率低不一定是模型问题，常在排队与调度。"
+    },
+    {
+      "question": "vLLM、SGLang、TensorRT-LLM、llama.cpp 各自的定位与选型？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "推理引擎",
+        "选型",
+        "部署"
+      ],
+      "dimension": "skill",
+      "reference_answer": "定位：\n- vLLM：生态最全的开源推理引擎，PagedAttention + continuous batching 起家，模型支持广（HuggingFace 无缝），多机张量并行；社区最大——默认选择；\n- SGLang：以 RadixAttention（前缀缓存复用）见长，多分支/共享前缀场景（Agent 大量重复 system prompt、Tree search）吞吐优势明显；结构化输出（xgrammar）快；\n- TensorRT-LLM：NVIDIA 官方，极致性能（kernel 融合、FP8/FP4、in-flight batching），但构建流程重（引擎编译、版本耦合 CUDA）、模型支持滞后——延迟/吞吐极限场景用；\n- llama.cpp：CPU/消费级 GPU/边缘设备，GGUF 量化生态，单机本地部署（Mac 也能跑）——个人/离线/端侧首选，吞吐与并发能力弱于服务端引擎。\n选型口诀：生产 GPU 服务默认 vLLM；前缀复用重的 Agent 场景测 SGLang；压榨单卡极限/有 NVIDIA 优化预算上 TRT-LLM；本地/边缘/低成本 llama.cpp。共同前提：用目标负载（真实 prompt 分布 + 并发）压测，而非跑通用 benchmark。"
+    },
+    {
+      "question": "LLM 服务的模型加载与冷启动为什么慢？如何优化？",
+      "points": 5,
+      "difficulty": 3,
+      "tags": [
+        "冷启动",
+        "模型加载",
+        "部署"
+      ],
+      "dimension": "skill",
+      "reference_answer": "慢在哪：\n1. 权重下载：几十 GB 从镜像仓库/对象存储拉取；\n2. 反序列化：safetensors mmap 快，pickle 格式慢且不安全；\n3. 权重转置/量化初始化：加载时做格式转换（如转 TensorRT 引擎编译要分钟级）；\n4. CUDA context 与显存分配、kernel 编译（首次 jit）。\n优化：\n1. 权重本地化：镜像内置（layer 缓存）或节点本地盘/预热 PVC，避免每次拉远端；safetensors + mmap 按需映射；\n2. 引擎预热：TensorRT/量化产物提前离线编译好，部署只加载；\n3. 拉起即预热： readiness 前发 dummy 请求把 kernel/CUDA 图（CUDA Graph capture）预热完，避免首批请求吃冷启动尾延迟；\n4. 弹性策略：HPA 基于「排队长度」提前扩容而非 CPU；缩容保守（保温池 min-replica），冷启动换来的省钱别赔进 SLO；\n5. 多模型场景：模型热切换（权重双 buffer）减少换模型的重启。"
     }
   ]
 }
