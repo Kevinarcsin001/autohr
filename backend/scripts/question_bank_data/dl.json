@@ -1,11 +1,20 @@
 {
-  "category": {"slug": "dl", "name": "深度学习", "target_points": 10, "sort_order": 3},
+  "category": {
+    "slug": "dl",
+    "name": "深度学习",
+    "target_points": 10,
+    "sort_order": 3
+  },
   "items": [
     {
       "question": "常见的激活函数有哪些？ReLU 相比 sigmoid/tanh 的优势？有什么缺陷？",
       "points": 10,
       "difficulty": 3,
-      "tags": ["激活函数", "ReLU", "梯度"],
+      "tags": [
+        "激活函数",
+        "ReLU",
+        "梯度"
+      ],
       "dimension": "skill",
       "reference_answer": "常见激活函数：sigmoid（σ(x)=1/(1+e^-x)，输出(0,1)）、tanh（输出(-1,1)）、ReLU（max(0,x)）、LeakyReLU/PReLU（负区间小斜率）、ELU、GELU、SwiGLU（Transformer FFN）。\nReLU 优势：\n1) 计算简单（无指数）；\n2) 正区间梯度恒为1，缓解梯度消失，允许训练深网络；\n3) 稀疏激活（负区间输出0），有正则效果；\n4) 收敛快。\nReLU 缺陷——「死亡 ReLU」：大梯度更新后神经元输入持续 <0，输出恒0、梯度恒0，永久失活。缓解：小学习率、He 初始化、或用 LeakyReLU/ELU。\nsigmoid/tanh 问题：\n1) 饱和区梯度近0 → 深网梯度消失；\n2) 输出非零均值（sigmoid）→ 下一层输入偏移；\n3) 指数计算贵。\n现代选择：隐藏层默认 ReLU/GeLU，输出层按任务（二分类 sigmoid、多分类 softmax、回归线性）。GELU/SwiGLU 在 Transformer 表现好。"
     },
@@ -13,7 +22,11 @@
       "question": "反向传播（Backpropagation）的原理是什么？",
       "points": 10,
       "difficulty": 3,
-      "tags": ["反向传播", "链式法则", "计算图"],
+      "tags": [
+        "反向传播",
+        "链式法则",
+        "计算图"
+      ],
       "dimension": "skill",
       "reference_answer": "反向传播 = 用链式法则在计算图上高效计算损失对各参数的梯度。\n原理：\n1) 前向传播：输入经过网络各层算出预测，与标签算损失 L；构建计算图（每节点记录输入输出与局部导数）；\n2) 反向传播：从 L 出发，按链式法则反向逐节点计算 ∂L/∂(中间变量)。对每个节点，已知 ∂L/∂输出，乘以该节点对输入的局部导数，得 ∂L/∂输入，再传给上游节点；\n3) 累加到参数：∂L/∂w = ∂L/∂(该层输出) × ∂(该层输出)/∂w。\n关键高效点：每节点的局部导数只用前向已存的值即可算，且中间梯度可复用，避免重复计算（动态规划）。复杂度约与前向同阶。\n自动微分（autograd）：现代框架（PyTorch/TensorFlow）自动构建计算图并反向，开发者只写前向。反向传播是「反向模式自动微分」在神经网络上的应用。\n注意：\n- 梯度链长时易消失/爆炸；\n- 分支节点的梯度累加（一个变量被多处用，梯度相加）；\n- detach/stop_gradient 切断梯度流。\n理解反向传播是理解训练、调试梯度、写自定义层的基础。"
     },
@@ -21,7 +34,11 @@
       "question": "梯度消失与梯度爆炸的原因？分别如何缓解？",
       "points": 10,
       "difficulty": 4,
-      "tags": ["梯度消失", "梯度爆炸", "训练"],
+      "tags": [
+        "梯度消失",
+        "梯度爆炸",
+        "训练"
+      ],
       "dimension": "skill",
       "reference_answer": "原因：反向传播中梯度是各层导数的连乘。若多数导数 <1，连乘指数衰减→梯度消失（深网络/RNN 尤甚）；若 >1，连乘指数增长→梯度爆炸。激活函数饱和（sigmoid 饱和区导数~0）、不当初始化、深层链路是主因。\n梯度消失缓解：\n1) 激活函数换 ReLU（正区梯度1）；\n2) 残差连接/跳跃连接（梯度有短路路径）；\n3) 合理初始化（Xavier/He，使各层激活方差稳定）；\n4) 归一化（BatchNorm/LayerNorm 稳定激活范围）；\n5) 门控结构（LSTM/GRU 缓解 RNN 长程依赖）；\n6) Transformers 用自注意力替代长链 RNN。\n梯度爆炸缓解：\n1) 梯度裁剪（gradient clipping，按范数或值截断）；\n2) 合理初始化 + 小学习率；\n3) 归一化；\n4) 残差（同样稳梯度）；\n5) warmup（训练初期小 lr 防震荡）。\n通用：监控梯度范数（各层）诊断；混合精度训练用 gradient scaler 防下溢。\nRNN 因时间步展开链长，梯度消失最严重，LSTM 用常数误差流（CEC）解决；Transformer 用自注意力+残差+LayerNorm 基本消除长程问题。"
     },
@@ -29,7 +46,11 @@
       "question": "权重初始化为什么重要？Xavier 与 He 初始化分别适用于什么？",
       "points": 10,
       "difficulty": 4,
-      "tags": ["初始化", "Xavier", "He"],
+      "tags": [
+        "初始化",
+        "Xavier",
+        "He"
+      ],
       "dimension": "skill",
       "reference_answer": "为什么重要：初始化决定训练起点。全零初始化→同层神经元对称（相同梯度、永远同步），无法学习；过大→激活爆炸、梯度爆炸；过小→激活/梯度消失。好的初始化使各层激活与梯度方差在前向/反向保持稳定，信号既不消失也不爆炸，加速收敛、避免局部差解。\nXavier（Glorot）初始化：权重方差 = 1/fan_in 或 2/(fan_in+fan_out)。假设激活线性/对称（tanh、sigmoid 的非饱和区），使前向激活方差与反向梯度方差都稳定。适合 tanh/sigmoid 等。\nHe（Kaiming）初始化：方差 = 2/fan_in。针对 ReLU（负半轴输出0，使一半信号丢失，方差需放大2倍补偿）。适合 ReLU/LeakyReLU。\n现代：BN/LN 后对初始化敏感度下降，但仍是训练稳定的起点；Transformer 多用修正版（如 μP、特定 std）。\n其他：正交初始化（RNN 防梯度消失）、截断正态、预训练权重（迁移学习最佳起点）。\n经验：默认用框架对应初始化（PyTorch Linear 默认 Kaiming uniform），配合归一化层通常足够；训练不稳先检查初始化与 lr。"
     },
@@ -37,7 +58,11 @@
       "question": "Dropout 的原理是什么？训练和推理时如何不同？",
       "points": 10,
       "difficulty": 3,
-      "tags": ["dropout", "正则化", "推理"],
+      "tags": [
+        "dropout",
+        "正则化",
+        "推理"
+      ],
       "dimension": "skill",
       "reference_answer": "原理：训练时每个 batch 以概率 p 随机「丢弃」神经元（输出置0），其余神经元缩放 1/(1-p)（inverted dropout，使推理时无需缩放）。相当于每次用不同子网络训练，测试时用「全部神经元的平均」。\n作用：\n1) 防止神经元共适应（co-adaptation）：迫使每个神经元学到鲁棒特征，不依赖特定其他神经元；\n2) 近似集成大量子网络（每 batch 一个），等价于模型平均；\n3) 正则效果，抑制过拟合。\n训练 vs 推理：\n- 训练：随机丢弃 + 缩放；\n- 推理：不丢弃，用全部神经元（因训练已缩放，推理直接用即可）。\n模型.train()/.eval() 切换。p 通常 0.1-0.5，全连接层常用，卷积层少用（卷积参数少、空间相关，用 Spatial Dropout 丢整个通道）。Transformer 中 attention dropout + residual dropout + embedding dropout 组合。\n变体：DropConnect（丢权重）、Spatial Dropout（丢通道）、DropPath（丢分支，大模型）。MC Dropout：推理时也开 dropout 多次采样估计不确定性。\n注意：BN 与 Dropout 同时用可能冲突；过大 dropout 欠拟合；现代大模型更依赖数据 + 架构，dropout 用得减少但仍有效。"
     },
@@ -45,7 +70,11 @@
       "question": "ResNet 的残差连接（Residual Connection）为什么能让网络训得非常深？",
       "points": 10,
       "difficulty": 4,
-      "tags": ["ResNet", "残差连接", "退化"],
+      "tags": [
+        "ResNet",
+        "残差连接",
+        "退化"
+      ],
       "dimension": "skill",
       "reference_answer": "残差连接：把输入直接加到输出 y=F(x)+x，即让网络学习「残差 F(x)=y−x」而非直接学 y。\n解决的问题——网络加深后的「退化」（degradation）：超过某深度后，训练误差反而上升（不是过拟合，是优化困难：深网络难学恒等映射，层数增加梯度信号变差）。\n为什么有效：\n1) 梯度短路：反向传播时，∂(F(x)+x)/∂x = ∂F/∂x + 1，恒有「+1」直通项，梯度可直接回传，缓解消失，允许训上百上千层；\n2) 恒等映射易学：若某层最优是恒等（不改变信息），只需把 F 学到0（F=x−x），比从随机初始化学恒等容易得多；\n3) 残差通常更易学（微小修正 vs 全新映射）；\n4) 提供信息的高速通路。\n效果：ResNet 训到 152 层仍提升，成为 ImageNet 里程碑；残差连接成为现代架构标配（Transformer 每个子层、DenseNet、各种大模型）。\n其他改进：DenseNet（跨层密集连接、特征复用）、Highway（门控残差）。本质都是改善深层信息/梯度流动。Transformer 的「Add & Norm」即残差+归一化。"
     },
@@ -53,7 +82,11 @@
       "question": "卷积神经网络（CNN）中卷积运算的本质是什么？为什么用卷积而非全连接处理图像？",
       "points": 10,
       "difficulty": 3,
-      "tags": ["CNN", "卷积", "参数共享"],
+      "tags": [
+        "CNN",
+        "卷积",
+        "参数共享"
+      ],
       "dimension": "skill",
       "reference_answer": "卷积运算：一个小的卷积核（如 3×3 权重）在输入特征图上滑动，每位置做元素乘加，输出一个特征图。多个核生成多个通道。本质是「局部连接 + 权重共享 + 平移等变」的线性运算。\n相比全连接处理图像的优势：\n1) 参数共享：同一核在整图复用，参数量 = 核大小×通道数（如 3×3×C），远小于全连接的 H×W×C×输出；\n2) 局部连接：每输出只依赖输入局部邻域，符合「图像像素局部相关」先验，高效且有效；\n3) 平移等变性：物体平移后特征等价平移（同一核到处适用），适合检测任意位置的目标；\n4) 层次特征：浅层学边缘/纹理，深层学语义部件/物体（感受野逐层增大）。\n超参：核大小（3×3 主流，stack 多层扩感受野）、步长（stride）、padding（same/valid）、通道数（逐层倍增）。\n扩展：1×1 卷积（跨通道组合、降/升维、廉价计算）、空洞卷积（dilation，扩大感受野不增参数/计算）、深度可分离卷积（MobileNet，参数/计算大降）、转置卷积（上采样）。\nVision Transformer 兴起后 CNN 不再绝对主流，但局部性归纳偏置在小数据/效率场景仍强。"
     },
@@ -61,7 +94,11 @@
       "question": "什么是感受野（Receptive Field）？为什么它很重要？如何增大它？",
       "points": 10,
       "difficulty": 4,
-      "tags": ["感受野", "CNN", "架构"],
+      "tags": [
+        "感受野",
+        "CNN",
+        "架构"
+      ],
       "dimension": "skill",
       "reference_answer": "感受野：某一层的一个输出像素，由输入图像中多大区域（像素）计算而来——即它「看到」的输入范围。浅层小（如 3×3），深层经多卷积累积变大。\n重要性：\n- 感受野决定神经元能捕获的上下文尺度，需 ≥ 待识别物体大小才能有效检测；\n- 分类任务最终层感受野应覆盖整图（全局语义）；\n- 检测/分割需多尺度（小感受野看小物体、大感受野看大物体），FPN 等设计围绕此。\n计算：逐层累加，RF_l = RF_{l-1} + (k_l−1)·Π stride（前层 stride 的乘积放大）。stride>1 显著扩大下层感受野。\n增大感受野方式：\n1) 堆叠更多 3×3 卷积（参数高效，VGG 思路）；\n2) 用大核（7×7，但参数/计算多，现用堆叠 3×3 替代）；\n3) stride>1 下采样（池化或 stride卷积，大幅扩 RF）；\n4) 空洞卷积（dilation，不增参数/计算扩大 RF，DeepLab 语义分割用）；\n5) 全局池化/注意力（全局上下文，无需大 RF）。\n理论与实践感受野：理论 RF 可能很大，但有效 RF（实际起作用的中心高斯分布）通常更小。现代架构用注意力（ViT 的全局自注意力）直接获得全局感受野，绕过 CNN 的逐层累积。"
     },
@@ -69,7 +106,11 @@
       "question": "1×1 卷积有什么作用？",
       "points": 5,
       "difficulty": 3,
-      "tags": ["1x1卷积", "通道", "架构"],
+      "tags": [
+        "1x1卷积",
+        "通道",
+        "架构"
+      ],
       "dimension": "skill",
       "reference_answer": "1×1 卷积（逐点卷积 pointwise）：核大小 1×1，在每个空间位置对全部输入通道做线性组合，输出指定通道数。作用：\n1) 升/降维（通道数控制）：把 C_in 通道映射到 C_out，参数 = C_in×C_out，远小于空间卷积。Inception/ResNet 用它压缩瓶颈（bottleneck）降计算；\n2) 跨通道信息融合：纯通道维的线性变换，等价于在每个像素位置做一次全连接；\n3) 增加非线性：1×1 卷积 + 激活 = 通道维的 MLP，在不改变空间尺寸下增加模型容量；\n4) 替代全连接：全图共享的 1×1 卷积 = 对每个位置的相同全连接，保留空间结构；\n5) 深度可分离卷积组件：先 depthwise（每通道独立空间卷积）+ pointwise 1×1，MobileNet/EfficientNet 用此大幅降参数与计算。\n应用：ResNet bottleneck（1×1降维→3×3→1×1升维）、Inception 的通道压缩、SE/CBAM 注意力的通道注意力（全局池化后 1×1 等价 MLP）。\n看似平凡却是现代 CNN 控制通道维度、计算量、模型容量的关键工具。"
     },
@@ -77,7 +118,11 @@
       "question": "RNN 为什么会有梯度消失问题？LSTM 是如何缓解的？",
       "points": 10,
       "difficulty": 4,
-      "tags": ["RNN", "LSTM", "长程依赖"],
+      "tags": [
+        "RNN",
+        "LSTM",
+        "长程依赖"
+      ],
       "dimension": "skill",
       "reference_answer": "RNN 梯度消失：处理序列时，RNN 沿时间展开成深链（链长=序列长度），反向传播梯度是各时间步导数的连乘。隐藏状态 h_t=f(W·h_{t-1}+...)，若雅可比范数 <1，连乘指数衰减，远距离依赖的梯度几乎为0，无法学习长程依赖。\nLSTM 缓解：引入「细胞状态 c_t」作为信息高速公路，配合三个门：\n- 遗忘门 f_t：控制保留多少旧 c_{t-1}（sigmoid，0-1）；\n- 输入门 i_t：控制写入多少新候选信息 c̃_t；\n- 细胞更新：c_t = f_t⊙c_{t-1} + i_t⊙c̃_t；\n- 输出门 o_t：控制输出 h_t=o_t⊙tanh(c_t)。\n关键：c_t 到 c_{t-1} 的路径是乘以遗忘门 f_t（可接近1），梯度 ∂c_t/∂c_{t-1}=f_t 可保持≈1，形成「常数误差流（CEC）」，长程梯度不衰减。门控让网络自适应决定记什么、忘什么、何时输出。\nGRU 简化：合并细胞与隐藏、把遗忘门和输入门合成更新门，参数少、效果接近，很多场景更优。\n局限：LSTM/GRU 缓解但未完全解决超长依赖，且串行计算慢。Transformer 用自注意力让任意两位置直接交互（路径长 O(1)），并行高效，在序列建模上基本取代 RNN。但 RNN/LSTM 在资源受限、流式、小数据场景仍有用。"
     },
@@ -85,7 +130,11 @@
       "question": "Seq2Seq 模型是什么？注意力机制解决了它的什么问题？",
       "points": 10,
       "difficulty": 4,
-      "tags": ["Seq2Seq", "注意力", "编码器解码器"],
+      "tags": [
+        "Seq2Seq",
+        "注意力",
+        "编码器解码器"
+      ],
       "dimension": "skill",
       "reference_answer": "Seq2Seq（Encoder-Decoder）：一个编码器把输入序列编码成一个固定长度的上下文向量 c，解码器从 c 逐步生成输出序列。经典用于机器翻译（输入英文句→输出中文句），编码器/解码器早期是 RNN/LSTM。\n问题：整个输入序列被压缩进单个固定长度向量 c，长输入时信息瓶颈严重——早期信息被稀释/遗忘，翻译长句质量差（瓶颈问题）。\n注意力机制（Bahdanau/Luong）解决：解码每一步不再只依赖固定 c，而是「动态关注」编码器所有隐状态——对每个编码位置算一个注意力权重（query 与 key 的相似度），加权求和得到该步的上下文 c_t。这样：\n1) 解码器每步按需检索输入中最相关的部分；\n2) 消除固定瓶颈，可处理长序列；\n3) 提供可解释性（注意力权重≈对齐）。\n这是从「压缩」到「检索」的范式转变。Transformer 把注意力推向极致——纯自注意力，无 RNN，全局并行。\n注意力的本质：给定 query，对一组 key-value 对，按 query-key 相似度加权聚合 value。它是「软性查表」，是现代深度学习的核心算子，衍生出自注意力、交叉注意力、多头注意力等。"
     },
@@ -93,7 +142,11 @@
       "question": "推导并解释 Scaled Dot-Product Attention 中为什么要除以 √d_k？",
       "points": 10,
       "difficulty": 4,
-      "tags": ["attention", "缩放", "点积"],
+      "tags": [
+        "attention",
+        "缩放",
+        "点积"
+      ],
       "dimension": "skill",
       "reference_answer": "公式：Attention(Q,K,V)=softmax(QK^T/√d_k)V。QK^T 是 query 与 key 的点积（相似度），softmax 归一为权重，加权 V。\n为什么除以 √d_k：\n假设 Q、K 各分量独立、均值0方差1，则点积 s=Σ_{i=1}^{d_k} q_i·k_i 的方差 = d_k（每项方差1，d_k 项相加）。维度 d_k 越大，点积绝对值越大。\n问题：softmax 对大的输入值极度敏感——当点积值很大时，softmax 输出趋于 one-hot（最大项≈1，其余≈0），梯度近乎为0（饱和区），训练困难（梯度消失，更新停滞）。\n除以 √d_k：把点积标准差缩回 ≈1（Var(s/√d_k)=1），与维度无关，softmax 保持在非饱和区，梯度健康。\n直观：维度高时点积天然变大，需按维度「标准化」。\n补充：加性注意力（小网络算相似度）在低维时与点积相当，高维时点积不缩放会劣化——缩放点积在所有维度都稳且计算高效（矩阵乘），成为 Transformer 默认。\n这是 Attention 论文（Vaswani 2017）的关键工程细节之一。理解它有助于调试注意力分布（看 softmax 熵：过低=过度集中=可能需调温度/检查）。"
     },
@@ -101,7 +154,11 @@
       "question": "多头注意力（Multi-Head Attention）的意义是什么？头数怎么选？",
       "points": 10,
       "difficulty": 4,
-      "tags": ["多头注意力", "MHA", "表征"],
+      "tags": [
+        "多头注意力",
+        "MHA",
+        "表征"
+      ],
       "dimension": "skill",
       "reference_answer": "多头注意力：把 Q/K/V 先线性投影到 h 个较低维子空间（每头 d_model/h 维），各自做 attention，拼接后线性变换输出。\n意义：\n1) 多视角建模：不同头可关注不同关系（如语法依赖、语义相似、位置模式、长程/短程），类似卷积的多通道，学习更丰富的表示；\n2) 容量与计算平衡：总维度仍 d_model，计算量与单头相当，但表达力更强；\n3) 集成效果：h 个头近似 h 个并行注意力模型的集成。\n经验：头数 h 常用 8/16/32，每头维度 64/128（如 d_model=512, h=8→每头64）。头太多而 d_model 不变 → 每头维度过小，表达力反降，且研究显示部分头冗余/可剪。\n头数选择权衡：\n- 多头：更丰富的子空间模式，但每头容量小、计算略增、参数略增；\n- 少头：每头强，但模式少。\n变体/优化：\n- Multi-Query Attention（MQA）：所有头共享 K、V，只 Q 多头，降 KV 内存/带宽（推理快）；\n- Grouped-Query Attention（GQA）：折中，分组共享 KV，质量近 MHA、速度近 MQA，大模型（Llama 2/3）标配；\n- 头剪枝：去除冗余头。\n现代 LLM 倾向 GQA 平衡质量与推理效率。头的行为可解释（探针分析各头关注什么）。"
     },
@@ -109,7 +166,11 @@
       "question": "Transformer 的位置编码有哪些方案？RoPE 的原理与优势？",
       "points": 10,
       "difficulty": 4,
-      "tags": ["位置编码", "RoPE", "Transformer"],
+      "tags": [
+        "位置编码",
+        "RoPE",
+        "Transformer"
+      ],
       "dimension": "skill",
       "reference_answer": "背景：自注意力对位置置换不变（把输入打乱结果同），需注入位置信息。\n方案：\n1) 绝对正弦编码（原 Transformer）：固定不同频率的正余弦，加到 embedding；简单、不可学；\n2) 可学习位置编码（BERT/GPT）：每个位置一个可学向量；灵活但上限固定（超过训练长度无法外推）；\n3) 相对位置编码（T5/Transformer-XL）：基于 query-key 的相对距离，泛化更好；\n4) ALiBi：在 attention 分数加随距离线性衰减偏置，简单且支持外推；\n5) RoPE（Rotary Position Embedding）：主流（Llama/Qwen 等）。\nRoPE 原理：在 query/key 向量上施加「旋转」，旋转角度与位置成正比。两向量的点积只依赖它们的相对角度差，从而自然编码相对位置。数学上对每对维度做 2D 旋转矩阵。\nRoPE 优势：\n1) 相对位置，泛化好；\n2) 与注意力无缝结合（旋转后点积），不增参数；\n3) 支持长度外推（配合 NTK-aware/ YaRN 等缩放可扩展到远超训练长度）；\n4) 对称衰减（距离越远注意力衰减）符合直觉。\n长上下文关键：很多模型靠 RoPE + 缩放技术把上下文从 4K 扩到 128K+。选 RoPE 是当前 LLM 位置编码的事实标准。"
     },
@@ -117,7 +178,11 @@
       "question": "Transformer 为什么能取代 RNN 在序列建模上的地位？",
       "points": 10,
       "difficulty": 4,
-      "tags": ["Transformer", "RNN", "并行"],
+      "tags": [
+        "Transformer",
+        "RNN",
+        "并行"
+      ],
       "dimension": "skill",
       "reference_answer": "核心优势：\n1) 并行计算：RNN 必须按时间步串行（h_t 依赖 h_{t-1}），训练时无法利用 GPU 并行，慢；Transformer 自注意力一次算出所有位置间关系，全序列并行，GPU 利用率高，训练快数倍到数十倍。\n2) 长程依赖：RNN 梯度沿长链连乘衰减，远距离关系难学；Transformer 任意两位置直接交互（路径 O(1)），长程建模强。\n3) 可扩展性：结构适合堆叠与扩大（更多层、更宽、更多数据），符合 scaling law，性能随规模持续提升；RNN 难以高效扩展到超大。\n4) 全局视野：每层即可看到全序列，上下文利用充分。\n5) 灵活通用：同一架构做翻译、生成、理解、代码、图像（ViT）、语音、多模态。\n代价：\n- 计算量 O(n²)（序列长 n，自注意力两两比较），长序列成本大；\n- 无递归归纳偏置，小数据上不如 CNN/RNN，需大数据。\n改进：稀疏注意力、线性注意力、Flash Attention 等降低 O(n²) 代价。\n地位：Transformer 是当前深度学习的通用架构（NLP/CV/语音/科学），催生了大模型时代。RNN/LSTM 退居资源受限、流式、超低延迟等特定场景。"
     },
@@ -125,7 +190,11 @@
       "question": "Transformer 中用 LayerNorm 还是 BatchNorm？Pre-LN 与 Post-LN 有何区别？",
       "points": 10,
       "difficulty": 4,
-      "tags": ["LayerNorm", "Pre-LN", "Transformer"],
+      "tags": [
+        "LayerNorm",
+        "Pre-LN",
+        "Transformer"
+      ],
       "dimension": "skill",
       "reference_answer": "为什么 LayerNorm 而非 BatchNorm：\n- BN 依赖 batch 统计，序列/文本任务 batch 小、序列变长，统计不稳；\n- BN 训练/推理需切换（滑动均值方差），RNN/Transformer 的时序/变长不友好；\n- LN 对每个样本按特征维归一（不依赖 batch），对 batch 大小、变长鲁棒，是 Transformer/RNN 标配。\nPre-LN vs Post-LN：\n- Post-LN（原 Transformer）：残差后再归一化，x_out=LayerNorm(x+Sublayer(x))。归一化在残差外，深层训练不稳，需 warmup 调度，否则早期梯度爆炸/消失。\n- Pre-LN：归一化在子层前，x_out=x+Sublayer(LayerNorm(x))。残差主路无归一化，梯度有干净短路，训练稳定、对超参不敏感，无需复杂 warmup，易扩展到深层。\n区别影响：\n- Post-LN 效果略好但训练难、需 warmup；\n- Pre-LN 训练稳、易扩展，多数大模型（GPT-2 起、Llama）用 Pre-LN 或变体。\n现代变体：RMSNorm（去均值中心化与偏置，只缩放，比 LN 计算少、效果近，Llama 用）、Sandwich LN、DeepNorm（超深稳定）。\n归一化与残差的位置是 Transformer 训练稳定性的关键设计点，选错会导致无法训练深层。"
     },
@@ -133,7 +202,11 @@
       "question": "KV Cache 是什么？为什么对 LLM 推理加速至关重要？",
       "points": 10,
       "difficulty": 4,
-      "tags": ["KV Cache", "推理加速", "自回归"],
+      "tags": [
+        "KV Cache",
+        "推理加速",
+        "自回归"
+      ],
       "dimension": "skill",
       "reference_answer": "背景：自回归生成（GPT 类）每生成一个 token 都要对「整段 prompt + 已生成部分」做自注意力，若每步重算所有历史 token 的 K、V 会重复计算，随生成长度线性浪费。\nKV Cache：推理时把已计算的每个位置的 Key、Value 向量缓存下来。生成下一个 token 时：\n1) 只需计算新 token 的 Q、K、V；\n2) 新 K、V 追加到 cache；\n3) 用新 Q 对「cached K + 新 K」做注意力，得新输出。\n收益：每步从 O(n²) 总计算降为 O(n)（只算新 Q 与历史 K），生成加速数十倍。\n代价/挑战：\n1) 显存：cache 随序列长度与层数×头数×维度线性增长，长上下文/大 batch 显存压力大；\n2) 内存带宽：每步需读取全部 KV cache，decode 阶段是「内存带宽瓶颈」（算力空闲）；\n3) 这正是 MQA/GQA 的动机——共享 K、V 降 cache 大小与读取量。\n优化：\n- PagedAttention（vLLM）：分页管理 KV cache，减少碎片，提升显存利用率与吞吐；\n- 量化 KV cache（INT8/FP8）省显存；\n- 投机解码/前向并行降低延迟；\n- 长上下文需管理 cache 淘汰/压缩。\nKV cache 是 LLM 推理系统（服务、批处理、显存调度）的核心数据结构，理解它对优化部署至关重要。"
     },
@@ -141,7 +214,11 @@
       "question": "MHA、MQA、GQA 三者的区别？为什么大模型转向 GQA？",
       "points": 10,
       "difficulty": 4,
-      "tags": ["MQA", "GQA", "KV Cache"],
+      "tags": [
+        "MQA",
+        "GQA",
+        "KV Cache"
+      ],
       "dimension": "skill",
       "reference_answer": "MHA（Multi-Head Attention，标准）：Q、K、V 都有 h 个头，KV cache = h × layers × seq × head_dim，最大。\nMQA（Multi-Query Attention）：Q 仍 h 头，但所有头共享 1 组 K、V。KV cache 降到 1/h。推理显存与带宽大降、速度大幅提升。缺点：质量略降（表达力减少）。\nGQA（Grouped-Query Attention）：折中——把 h 个 Q 头分成 g 组，每组共享 1 组 K、V（g 个 KV 头）。g=1 即 MQA，g=h 即 MHA。KV cache = g 份。\n为什么转向 GQA：\n1) 质量近 MHA：实测 g 适中（如 8）时质量接近 MHA，远好于纯 MQA；\n2) 推理高效：KV cache 与带宽按 g/h 比例下降，decode 吞吐显著提升（LLM 推理瓶颈在内存带宽）；\n3) 显存占用降，支持更大 batch/更长上下文；\n4) 训练成本几乎不变（Q 仍多头）。\n应用：Llama 2-70B、Llama 3、Qwen2、Mistral 等主流大模型都用 GQA（通常 g=8 左右）。\n选型：追求极致质量、推理资源充足 → MHA；追求推理效率与显存（生产部署） → GQA；极端低资源 → MQA。GQA 已成为中等以上规模 LLM 的事实标准，是「质量-效率」权衡的最优点。"
     },
@@ -149,7 +226,11 @@
       "question": "Flash Attention 解决了什么问题？核心思想是什么？",
       "points": 10,
       "difficulty": 4,
-      "tags": ["Flash Attention", "IO", "优化"],
+      "tags": [
+        "Flash Attention",
+        "IO",
+        "优化"
+      ],
       "dimension": "skill",
       "reference_answer": "解决的问题：标准 attention 的 softmax(QK^T)V 需把 n×n 的注意力矩阵实例化到 HBM（显存），计算时要反复在 SRAM（快但小）与 HBM（大但慢）间搬运大矩阵——内存读写成为瓶颈，尤其长序列。O(n²) 的存储还限制序列长度。\n核心思想：分块（tiling）+ 在线 softmax，避免物化整个 n×n 矩阵。\n1) 把 Q、K、V 分块加载到 SRAM；\n2) 在 SRAM 内算该块的注意力，用「在线 softmax」（不需要预先知道全局最大值，逐块更新 running max 与归一化因子）正确计算；\n3) 累加结果写回 HBM，只写最终输出而非中间矩阵。\n效果：\n1) IO 复杂度降（HBM 访问大减），虽计算量（FLOPs）不变，但实际快 2-4 倍（因瓶颈在 IO）；\n2) 显存从 O(n²) 降到 O(n)（不存全矩阵），支持更长序列；\n3) 精确计算（不是近似），结果与标准 attention 数值一致。\nFlash Attention 2/3 进一步优化并行度、利用新硬件特性。\n意义：让长上下文（数十 K 到百万 token）训练与推理变得可行，是大模型长上下文时代的基石之一，几乎所有主流框架/模型都集成。配合 KV cache、PagedAttention 构成现代 LLM 高效推理栈。"
     },
@@ -157,7 +238,11 @@
       "question": "混合精度训练（Mixed Precision）的原理与注意事项？",
       "points": 5,
       "difficulty": 3,
-      "tags": ["混合精度", "FP16", "训练"],
+      "tags": [
+        "混合精度",
+        "FP16",
+        "训练"
+      ],
       "dimension": "skill",
       "reference_answer": "原理：训练时部分计算用低精度（FP16/BF16）以省显存、加速（GPU 低精度算力更高、显存带宽占用少），同时关键部分保留 FP32 保数值稳定。典型：\n1) 权重主副本存 FP32（更新用）；\n2) 前向/反向用 FP16/BF16（快、省）；\n3) 梯度缩放（FP16 防 small gradient 下溢，BF16 不需要）。\nFP16 vs BF16：\n- FP16：动态范围小（指数位少），易溢出，需 gradient scaler；\n- BF16：与 FP32 同动态范围（指数位同）、精度低，无需 scaler，训练更稳，现代 GPU/TPU/AI 加速器支持，是现代大模型首选。\n收益：约 2 倍加速、显存减半（可开更大 batch/模型）。\n注意事项：\n1) 某些对精度敏感的操作（累加、归一化统计、loss 缩放）仍用 FP32；\n2) FP16 需 loss scaling 防 underflow；\n3) 框架自动处理（AMP），但偶有数值不稳定需排查；\n4) 硬件需支持（Volta+ GPU、Ampere BF16）；\n5) 推理也可量化到 INT8/INT4 进一步降本（需校准/感知训练）。\n更激进：FP8 训练（Hopper GPU）、INT8 训练。精度-效率权衡是部署核心议题。"
     },
@@ -165,7 +250,11 @@
       "question": "大模型分布式训练有哪些并行策略？数据并行、模型并行、流水并行、张量并行各是什么？",
       "points": 10,
       "difficulty": 4,
-      "tags": ["分布式训练", "数据并行", "张量并行"],
+      "tags": [
+        "分布式训练",
+        "数据并行",
+        "张量并行"
+      ],
       "dimension": "skill",
       "reference_answer": "数据并行（Data Parallel）：每卡持完整模型副本，各处理不同数据 batch，反向后 all-reduce 同步梯度。模型放得下单卡时最简单。ZeRO（DeepSpeed）进一步把优化器状态/梯度/参数分片到各卡，降显存、支持更大模型。\n模型并行（Model/Tensor Parallel）：模型放不下单卡时分片。张量并行（TP）把单个大矩阵乘（如线性层、attention 投影）按行/列切到多卡，每卡算一部分，需 all-reduce/all-gather 通信。Megatron-LM 是代表，适合超大层。\n流水并行（Pipeline Parallel）：把模型按层切到不同卡，输入分 micro-batch 流水通过各卡，类似工厂流水线。降单卡显存，但有 bubble（流水气泡）开销，需调度（如 1F1B）。\n序列并行（Sequence Parallel）：长上下文时沿序列维切，配合 TP 降激活显存。\n实践组合：大模型用 3D/4D 并行（DP+TP+PP+ZeRO），如 Megatron-DeepSpeed。需要高速互联（NVLink/InfiniBand），通信常是瓶颈。\n选择：\n- 单卡装得下 → DP（+ZeRO 提升显存）；\n- 层太大装不下 → TP；\n- 层数多 → PP；\n- 超大模型 → 组合。\nFSDP（PyTorch）是 ZeRO 的易用实现。分布式训练是大模型规模化的工程核心，涉及通信、显存、容错、checkpoint 等复杂问题。"
     },
@@ -173,7 +262,11 @@
       "question": "什么是 Scaling Law？它对大模型发展有什么指导意义？",
       "points": 10,
       "difficulty": 4,
-      "tags": ["Scaling Law", "规模", "涌现"],
+      "tags": [
+        "Scaling Law",
+        "规模",
+        "涌现"
+      ],
       "dimension": "skill",
       "reference_answer": "Scaling Law（Kaplan 2020 / Chinchilla 2022）：在相当大范围内，模型损失随「参数量 N、数据量 D、计算量 C」呈幂律可预测地下降：L(N,D)≈A/N^α + B/D^β + L∞。即性能是规模（算力、参数、数据）的可预测函数，且跨数量级成立。\n指导意义：\n1) 可预测：给定预算可外推模型性能，指导资源分配与模型选型；\n2) 资源最优配比：Chinchilla 指出给定算力下，数据与参数应按约 20:1（token:参数）同步增长——很多早期模型「参数过大、数据不足」，重训用更平衡配比反超；\n3) 「越大越好」范式：推动投入更大算力与数据，催生 GPT-3+、PaLM、Llama 等；\n4) 算力作为新维度：推理期算力（o1 类思维链）也遵循类似规律——训练 + 推理总算力换能力。\n注意/局限：\n- 幂律有数据/参数上限，终会饱和（需更多高质量数据，2024+ 面临「数据墙」）；\n- 损失下降不完全等同能力提升；\n- 数据质量、多样性、课程关键，垃圾数据不遵循好律。\n演进：现在更强调「数据效率」、合成数据、推理算力扩展、MoE 等突破规模墙。Scaling Law 是理解大模型时代为何「规模即能力」的理论基石，但仍需理性看待其边界。"
     },
@@ -181,7 +274,11 @@
       "question": "什么是涌现能力（Emergent Abilities）？它受到哪些质疑？",
       "points": 5,
       "difficulty": 3,
-      "tags": ["涌现", "能力", "质疑"],
+      "tags": [
+        "涌现",
+        "能力",
+        "质疑"
+      ],
       "dimension": "skill",
       "reference_answer": "涌现能力：某些复杂能力（多步算术、符号操作、复杂推理、特定基准）在小/中模型上几乎为0（随机水平），但当规模（参数/数据/算力）超过某阈值后突然出现并快速提升的现象。「量变引起质变」。\n典型涌现任务：多位算术、词序重排、truthful QA 等。\n意义：支撑「规模换能力」的信念，鼓励投入更大模型。\n质疑（2023+ Schaeffer 等）：\n1) 度量假象：很多「涌现」来自「全或无」的离散评估指标（精确匹配）。若换连续指标（如 token 级 log-likelihood 或部分得分），能力随规模是平滑渐进的，并非突然出现——「涌现」是评估方式造成的；\n2) 选择性报告：研究者倾向报告有戏剧性跳变的任务，存在发表偏倚；\n3) 任务设计：某些任务对随机基线极不友好（如多选词序全对才得分），掩盖了实际渐进进步。\n现状：业界对「涌现是真现象还是度量假象」仍有争论。共识是：很多能力确随规模提升，但「突然出现」部分被评估指标放大。理性做法：用平滑、连续、校准的指标评估，避免被戏剧性跳变误导，同时继续探索规模与架构创新。\n对实践者：不必等模型大到某阈值才看效果，用合适量化指标追踪进展。"
     },
@@ -189,7 +286,11 @@
       "question": "MoE（Mixture of Experts，专家混合）的原理与优劣势？",
       "points": 10,
       "difficulty": 4,
-      "tags": ["MoE", "稀疏激活", "架构"],
+      "tags": [
+        "MoE",
+        "稀疏激活",
+        "架构"
+      ],
       "dimension": "skill",
       "reference_answer": "原理：MoE 把一个大的 FFN 层替换为多个「专家」FFN，加一个门控（router/gate）。每个 token 只由门控选出的 top-k 个专家处理（通常 k=1 或2），其余专家不激活。模型总参数量大，但单次前向只激活一小部分（稀疏激活），实现「大容量、低计算」。\n例：Mixtral 8×7B 总参数 47B，但每 token 激活 13B，推理成本近 14B 模型而能力近 70B 级。\n优势：\n1) 解耦参数与计算：相同算力下，MoE 模型容量更大，效果常优于同计算量的 dense 模型；\n2) 训练效率高：相同效果用更少算力；\n3) 推理可扩展性：激活参数固定，推理可控。\n劣势/挑战：\n1) 显存：总参数大，全部专家都要载入显存，推理时显存占用按总参数（即使只激活部分）——部署门槛高；\n2) 负载均衡：门控可能偏向少数专家（路由坍缩），需辅助 loss/容量因子约束均衡使用；\n3) 训练不稳定：稀疏路由增加优化难度；\n4) 通信开销：分布式下专家分片跨卡，token 路由带来 all-to-all 通信；\n5) 数据效率：相同参数需更多数据才训得满。\n趋势：细粒度专家（更多更小专家，DeepSeek）、专家特化、稀疏 MoE 成为大模型扩展主流（GPT-4 传闻 MoE、Mixtral、DeepSeek-V3）。是「突破规模墙、提升效率」的关键架构。"
     },
@@ -197,7 +298,11 @@
       "question": "BERT 与 GPT 的预训练范式有何不同？各自适合什么任务？",
       "points": 10,
       "difficulty": 3,
-      "tags": ["BERT", "GPT", "预训练"],
+      "tags": [
+        "BERT",
+        "GPT",
+        "预训练"
+      ],
       "dimension": "skill",
       "reference_answer": "BERT（自编码 / 双向）：预训练任务 MLM（随机 mask 部分词，用双向上下文预测）+ NSP。编码器结构，能看到上下文两侧。适合理解任务：分类、NER、问答抽取、句对、检索编码。微调为主，少做生成。\nGPT（自回归 / 单向）：预训练任务「下一个 token 预测」（从左到右，只看左侧上下文）。解码器结构。天然适合生成：文本生成、对话、翻译、补全、代码。通过 prompt/指令/微调适配多任务。\n核心区别：\n1) 方向：BERT 双向（全局理解），GPT 单向（自回归生成）；\n2) 目标：MLM 重建 vs 下一词预测；\n3) 任务：理解 vs 生成；\n4) 微调：BERT 任务头+微调，GPT 提示/少样本/指令微调。\n演进：\n- BERT 路线：RoBERTa/DeBERTa，编码器优化，仍是检索（双塔编码）、分类的强选择；\n- GPT 路线：scale 放大 + 指令/RLHF → 通用 LLM，理解任务也由生成模型统一完成（生成式回答分类/抽取）；\n- T5/BART：编码器-解码器，text-to-text 统一范式。\n现状：GPT 路线（decoder-only 自回归 + 规模化 + 对齐）成为主流 LLM 形态，BERT 系退居特定理解/检索场景。两者代表了「理解 vs 生成」「双向 vs 单向」的经典权衡。"
     },
@@ -205,7 +310,11 @@
       "question": "简述扩散模型（Diffusion）的原理。它为什么在图像生成上效果好？",
       "points": 10,
       "difficulty": 4,
-      "tags": ["diffusion", "生成模型", "图像生成"],
+      "tags": [
+        "diffusion",
+        "生成模型",
+        "图像生成"
+      ],
       "dimension": "skill",
       "reference_answer": "原理（DDPM）：\n1) 前向扩散：逐步给真实图像加高斯噪声，经 T 步变成纯噪声——这是一个固定的马尔可夫过程；\n2) 反向去噪：训练一个神经网络学习「给定带噪图，预测/去除一步噪声」，逐步从纯噪声反向还原出清晰图像。训练目标简化为预测噪声 ε。\n数学：前向 q(x_t|x_{t-1}) 有闭式解，反向 p_θ(x_{t-1}|x_t) 用网络参数化，优化 ELBO 等价于噪声预测的 MSE。\n为什么效果好：\n1) 训练稳定：相比 GAN 的对抗训练（难收敛、模式坍缩），扩散是简单的去噪回归，稳定且易扩展；\n2) 样本多样、质量高：覆盖整个数据分布，生成多样性好、FID 低；\n3) 模式覆盖：不像 GAN 易丢模式；\n4) 可控性强：classifier-free guidance、条件控制（文本到图 Stable Diffusion）、图像编辑（img2img、inpainting）。\n发展：\n- 潜空间扩散（Latent Diffusion / Stable Diffusion）：在 VAE 编码的潜空间做扩散，大幅降算力，开启文生图时代；\n- 加速采样：DDIM、一致性模型、流匹配把采样步数从 1000 降到几步；\n- DiT（Diffusion Transformer）：用 Transformer 替代 U-Net，可扩展，Sora 等视频生成基础；\n- 已扩展到视频、3D、音频。\n扩散是当前生成模型主流（图像/视频），GAN 退居实时/特定领域。也启发了 LLM 的离散扩散/流匹配研究。"
     },
@@ -213,7 +322,11 @@
       "question": "VAE 与 GAN 的原理与区别？",
       "points": 10,
       "difficulty": 4,
-      "tags": ["VAE", "GAN", "生成模型"],
+      "tags": [
+        "VAE",
+        "GAN",
+        "生成模型"
+      ],
       "dimension": "skill",
       "reference_answer": "VAE（变分自编码器）：编码器把输入映射为潜变量的分布（均值+方差），从分布采样一个潜变量，解码器重建输入。损失 = 重建损失 + KL 散度（约束潜分布接近标准正态）。变分推断框架下最大化证据下界（ELBO）。\n特点：\n- 显式建模概率分布，可计算似然；\n- 潜空间连续、结构化（可插值、算术）；\n- 生成偏模糊（重建是均方/MSE，倾向平均化）。\nGAN（生成对抗网络）：生成器 G 从噪声生成样本骗过判别器 D，D 区分真假，二者对抗训练（minmax 博弈）。\n特点：\n- 无显式似然，靠对抗驱动；\n- 生成锐利、逼真；\n- 训练不稳定（模式坍缩、难收敛）、不显式建模分布。\n区别：\n1) 训练：VAE 端到端回归，GAN 对抗博弈；\n2) 生成质量：GAN 锐利，VAE 模糊；\n3) 多样性：VAE 模式覆盖好，GAN 易模式坍缩；\n4) 似然：VAE 可算，GAN 不能；\n5) 潜空间：VAE 结构化，GAN 不保证。\n演进：\n- VAE：用于表征学习、半监督、可控生成（VQ-VAE 用于离散 token 化）；\n- GAN：风格迁移、超分、图像编辑（StyleGAN）；\n- Diffusion 取代两者成为主流生成（稳定+高质量+可控）。\n三者代表生成模型三大范式：显式似然（VAE）、对抗（GAN）、迭代去噪（Diffusion）。理解它们有助于把握生成模型演进脉络。"
     },
@@ -221,7 +334,11 @@
       "question": "对比学习（Contrastive Learning）的核心思想？SimCLR / CLIP 的代表做法？",
       "points": 10,
       "difficulty": 4,
-      "tags": ["对比学习", "SimCLR", "CLIP"],
+      "tags": [
+        "对比学习",
+        "SimCLR",
+        "CLIP"
+      ],
       "dimension": "skill",
       "reference_answer": "核心思想：通过「拉近正样本对、推远负样本对」学习表征。让模型学到「什么相似、什么不同」的不变性，无需标签。\nSimCLR（图像自监督）：\n1) 对每图做两次数据增强（裁剪/颜色等）得正对；\n2) 编码器+投影头映射到特征空间；\n3) InfoNCE 损失：正对相似度高、同 batch 其他图（负对）相似度低。\n学到的特征对增强不变、对内容敏感，线性探测/微调效果好。关键：强增强、大 batch（多负样本）、投影头、温度系数。\nMoCo：用动量编码器+队列维持大量负样本，不需大 batch。\nCLIP（图文对比）：\n1) 用「图像-文本对」天然正样本（图与其描述），batch 内其他对为负；\n2) 图像编码器与文本编码器分别编码，对齐到同一空间；\n3) 对比损失拉近匹配的图文对。\n效果：学到强大的图文联合表征，支持零样本分类（用类名作文本查询图像）、检索、作为视觉编码器。\n意义：对比学习是自监督/多模态表征学习的核心范式，让模型从海量无标注/弱标注数据中学通用表征。后续有 ALIGN、SigLIP、EVA-CLIP 等改进。是「自监督预训练」三大路线（对比、生成/MIM、掩码语言）之一。"
     },
@@ -229,7 +346,11 @@
       "question": "标签平滑（Label Smoothing）的作用与原理？",
       "points": 5,
       "difficulty": 3,
-      "tags": ["标签平滑", "正则化", "训练"],
+      "tags": [
+        "标签平滑",
+        "正则化",
+        "训练"
+      ],
       "dimension": "skill",
       "reference_answer": "原理：把硬标签 one-hot（正确类=1，其余=0）替换为软标签——正确类 = 1−ε+ε/K，其余类 = ε/K（K 是类别数，ε 如 0.1）。即把部分概率质量从正确类「均匀分摊」到所有类。\n作用：\n1) 防止过度自信：硬标签下模型易把正确类 logits 推到极大（softmax 趋 1），梯度饱和、过拟合；软标签给上限，限制 logits 增长，提升泛化与校准；\n2) 正则效果：抑制对训练样本的过拟合，提升测试精度；\n3) 鼓励类间相似性建模：软标签隐含「其他类也有一定可能性」，模型学到更平滑的决策边界；\n4) 噪声标签鲁棒：标注有误时，硬标签放大错误，软标签缓和。\n应用：图像分类（Inception 起）、机器翻译（标签平滑是 Transformer 翻译的标准技巧）、语音。轻微但稳定的提升。\n注意：\n- ε 太大会欠拟合、降低峰值置信度，需调（0.05-0.1 常用）；\n- 与知识蒸馏的软标签思想相通（教师软标签也是一种平滑）；\n- 某些需精确概率的场景（如校准）要权衡。\n简单有效，是深度学习训练的常用小技巧。"
     },
@@ -237,7 +358,11 @@
       "question": "梯度裁剪（Gradient Clipping）的作用？按值裁剪与按范数裁剪有何区别？",
       "points": 5,
       "difficulty": 3,
-      "tags": ["梯度裁剪", "训练稳定", "梯度爆炸"],
+      "tags": [
+        "梯度裁剪",
+        "训练稳定",
+        "梯度爆炸"
+      ],
       "dimension": "skill",
       "reference_answer": "作用：反向传播后、参数更新前，把梯度限制在合理范围，防止梯度爆炸导致训练发散（loss 突变、NaN）。常见于 RNN、Transformer、大模型训练。\n按值裁剪（clip by value）：把每个梯度元素限制在 [−c, c]。简单，但改变梯度方向，较少用。\n按范数裁剪（clip by global norm，主流）：若所有梯度的全局 L2 范数 ‖g‖ > 阈值 max_norm，则整体缩放 g = g × max_norm/‖g‖。保持梯度方向不变，只缩放大小，更合理。Transformer 训练标配（如 max_norm=1.0）。\n按单层范数：每层梯度范数单独裁剪。\n使用场景：\n1) 训练不稳定/loss 爆炸时立即加；\n2) RNN 长序列；\n3) 大模型 + 大学习率；\n4) 混合精度训练配合。\n注意：\n- 它治标（限制爆炸）不治本（爆炸可能源于 lr、初始化、数据），应同时排查根因；\n- 阈值需调，过小限制学习、过大无效；\n- 可监控裁剪前后范数比例，频繁裁剪说明训练有问题。\nPyTorch 的 clip_grad_norm_ 是常用 API。与 warmup、归一化、残差共同保障深层训练稳定。"
     },
@@ -245,7 +370,11 @@
       "question": "Warmup 为什么对 Transformer 训练重要？",
       "points": 5,
       "difficulty": 3,
-      "tags": ["warmup", "学习率", "Transformer"],
+      "tags": [
+        "warmup",
+        "学习率",
+        "Transformer"
+      ],
       "dimension": "skill",
       "reference_answer": "Warmup：训练初期用很小的学习率，经若干步线性（或按比例）升到目标 lr，再按常规调度（如 cosine）衰减。\n为什么 Transformer 需要：\n1) 初始不稳定：训练开始时参数随机，早期梯度方向噪声大、注意力分布可能极端（softmax 趋 one-hot）；直接用大 lr 会让参数大幅抖动、loss 爆炸、某些神经元永久失活；\n2) 归一化层统计未稳：BatchNorm/LayerNorm 的统计量初期未收敛，大 lr 放大波动；\n3) 自注意力的早期脆弱：注意力权重早期接近随机，大步长可能破坏它；\n4) 二阶动量未积累（Adam）：Adam 的二阶矩 v 初期为0，大 lr 会使早期更新过大，warmup 给 v 积累时间。\n效果：显著提升训练稳定性与最终性能，是 Transformer 训练的标准组件（原论文用线性 warmup + inverse sqrt）。\n常见配置：warmup 步数占总步数 1-5%（大模型可达 2000-20000 步），配合 cosine 衰减。也有「恒定 + 衰减」「WSD」等调度。\n注意：warmup 步数与 batch size、模型规模相关，大 batch/大模型需更长 warmup。与学习率、裁剪、归一化协同调节。现代有些架构（如 Pre-LN/RMSNorm）降低了对 warmup 的依赖，但大模型仍普遍使用。"
     },
@@ -253,7 +382,11 @@
       "question": "什么是 Vision Transformer（ViT）？它相比 CNN 的优缺点？",
       "points": 5,
       "difficulty": 3,
-      "tags": ["ViT", "视觉", "Transformer"],
+      "tags": [
+        "ViT",
+        "视觉",
+        "Transformer"
+      ],
       "dimension": "skill",
       "reference_answer": "ViT：把 Transformer 用于图像。将图像切成固定大小的 patch（如 16×16），每个 patch 线性投影成一个 token（类似词嵌入），加位置编码，送入标准 Transformer 编码器，用 [CLS] token 做分类。\n相比 CNN：\n优点：\n1) 全局视野：自注意力让任意 patch 直接交互，建模长程依赖，不需 CNN 逐层累积感受野；\n2) 可扩展性：结构统一、易规模化，大数据上随规模持续提升，超越 CNN；\n3) 通用：与 NLP 架构统一，便于多模态融合。\n缺点：\n1) 数据饥渴：无 CNN 的局部性/平移不变性归纳偏置，小数据上不如 CNN（需大规模预训练）；\n2) 计算量：自注意力 O(n²)，patch 数多（高分辨率）时计算/显存大（需 Swin 等窗口注意力改进）；\n3) 效率：推理与训练资源需求高。\n演进：\n- DeiT：数据增强+蒸馏让 ViT 在中等数据可用；\n- Swin Transformer：窗口/层次化注意力降 O(n²)、引入 CNN 多尺度优点；\n- MAE：掩码自监督预训练 ViT，释放数据效率；\n- 与 LLM 结合：多模态大模型（CLIP、GPT-4V、Sora）以 ViT 为视觉编码器。\n现状：ViT 及变体在视觉主流基准超 CNN，与 CNN 在效率/小数据场景互补。视觉进入「Transformer 时代」。"
     },
@@ -261,7 +394,11 @@
       "question": "什么是计算图？静态图与动态图的区别？",
       "points": 5,
       "difficulty": 3,
-      "tags": ["计算图", "静态图", "动态图"],
+      "tags": [
+        "计算图",
+        "静态图",
+        "动态图"
+      ],
       "dimension": "skill",
       "reference_answer": "计算图：把计算表示为有向无环图（DAG），节点=运算，边=数据（张量）依赖。前向传播沿图执行运算并记录，反向传播沿图反向用链式法则算梯度。是自动微分与深度学习框架的核心抽象。\n静态图（define-then-run，TF 1.x）：先构建完整计算图，再编译/优化，最后喂数据执行。\n- 优点：可全局优化（算子融合、内存规划、分布式放置）、部署高效、图序列化便于生产；\n- 缺点：调试难（图与代码分离）、控制流（if/loop）需特殊 API、不灵活。\n动态图（define-by-run，PyTorch）：每次前向即时构建图，代码即图，所见即所得。\n- 优点：易用、易调试（可直接 print/断点）、原生 Python 控制流、灵活（动态结构、变长）；\n- 缺点：每次重建图，优化空间小、部署需额外导出。\n趋势：两者融合。PyTorch 2.x 用 torch.compile/Inductor 在动态图基础上做 JIT 编译优化（torch.export + 图捕获），兼顾灵活与性能；TF 2.x 默认 eager（动态），配合 tf.function 转静态。\n实践：研究/原型用动态图（PyTorch 主流），生产部署用导出的优化图（ONNX/TorchScript/TensorRT）。理解计算图有助于写高效、可微、可部署的代码，以及调试梯度/内存问题。"
     },
@@ -269,7 +406,11 @@
       "question": "什么是梯度检查点（Gradient Checkpointing / 激活重计算）？解决什么问题？",
       "points": 10,
       "difficulty": 4,
-      "tags": ["梯度检查点", "显存优化", "训练"],
+      "tags": [
+        "梯度检查点",
+        "显存优化",
+        "训练"
+      ],
       "dimension": "skill",
       "reference_answer": "解决的问题：反向传播需要前向各层激活值算梯度，默认全部缓存，显存随层数线性增长，大模型/长序列训练时显存不够。\n梯度检查点（激活重计算）：前向时只保存部分层（检查点）的激活，丢弃中间层；反向时在检查点之间重新做前向计算恢复所需激活。\n权衡：用「重算」换「显存」。计算时间增加约 30-50%（多一次前向），显存从 O(n) 降到 O(√n)（均匀检查点策略下），允许训练更大模型/更长序列/更大 batch。\n使用：\n- 大模型训练标配（节省的显存换更大 batch/序列，提升吞吐）；\n- 长上下文训练（激活随序列长 O(n) 增长，重计算关键）；\n- 资源受限（单卡训更大模型）。\n变体：\n- 选择性重计算（Selective Recomputation）：只重计算占用显存大但重算便宜的部分（如 attention 矩阵，而非全部激活），效率更优；\n- CPU/NVMe offload：激活卸到 CPU/磁盘，进一步省显存但更慢。\n与其他显存优化配合：ZeRO（参数/优化器分片）、混合精度、LoRA/PEFT（少训参数）。梯度检查点是「算力-显存」权衡的经典工具，深度学习训练系统（DeepSpeed/Megatron）的核心组件。"
     },
@@ -277,7 +418,11 @@
       "question": "深度学习中如何处理变长序列/变长输入（如批内不同长度的句子）？",
       "points": 5,
       "difficulty": 3,
-      "tags": ["变长序列", "padding", "masking"],
+      "tags": [
+        "变长序列",
+        "padding",
+        "masking"
+      ],
       "dimension": "skill",
       "reference_answer": "核心机制：padding + masking。\n1) Padding：把 batch 内短序列补齐到该 batch 最长（或固定 max_len），用特殊 pad token（如 <pad>），使 batch 成矩形张量可并行。\n2) Attention Mask：padding 位置不应参与计算——构建 mask 矩阵，padding 位置在 softmax 前被设为 −∞（mask 为 0），使注意力权重为0，不污染真实 token。\n3) Causal Mask（因果掩码）：自回归生成时，每个位置只能看左侧（防止看到未来），用下三角 mask 实现。\n实践细节：\n- 按长度分桶（length bucketing）：把相近长度的样本组 batch，减少 padding 浪费；\n- 动态 padding：每 batch 按最长 pad，而非全局固定长度；\n- pack（如 RNN 的 pack_padded_sequence）：紧凑存储，跳过 pad 步骤，加速 RNN；\n- 记录真实长度（lengths），loss 只在真实位置计算（忽略 pad）。\nTransformer 处理变长：自注意力天然支持任意长度（每位置独立），配合 mask 处理 pad 与因果。RNN 用 pack。CNN 用 mask 卷积或限制长度。\n现代 LLM 推理支持变长 batch（continuous batching）动态拼 batch 提升吞吐。理解 padding/mask 是写序列模型的基础。"
     },
@@ -285,7 +430,11 @@
       "question": "模型训练中 loss 出现 NaN，常见原因与排查步骤？",
       "points": 5,
       "difficulty": 3,
-      "tags": ["NaN", "调试", "训练"],
+      "tags": [
+        "NaN",
+        "调试",
+        "训练"
+      ],
       "dimension": "skill",
       "reference_answer": "常见原因：\n1) 学习率过大：梯度爆炸 → 权重 → inf → NaN，最常见；\n2) 数值问题：log(0)、除以0、sqrt(负数)、softmax/交叉熵未稳定实现（大 logits 指数溢出）；\n3) 梯度爆炸：无裁剪 + 深网/RNN；\n4) 数据问题：含 inf/NaN 的输入、异常标签（如未归一化的极大值）、空 batch；\n5) 混合精度：FP16 溢出（缺 gradient scaler）；\n6) 死神经元/激活爆炸（如 ReLU 输出极大）；\n7) 除零（如 BN 在全零输入上方差为0）。\n排查步骤：\n1) 二分定位：从简到繁——先用小 batch/单样本过拟合（排除数据规模）；逐步加深/加宽找首个 NaN 层；\n2) 检查输入：确认无 NaN/inf，标签范围合理，特征已归一化；\n3) 降学习率 10× 重试，加梯度裁剪；\n4) 加 NaN 断言/钩子：torch.autograd.detect_anomaly() 定位产生 NaN 的算子；\n5) 检查损失实现（log 前加 eps、softmax 用 logsumexp 稳定版）；\n6) 关混合精度的 scaler 或换 BF16；\n7) 监控各层激活/梯度范数，找爆炸点；\n8) 检查初始化与数据增强是否产生异常值。\n预防：小 lr warmup、梯度裁剪、稳定损失实现、输入校验、监控 metric。NaN 多是「数值溢出」类问题，系统排查比盲目试错高效。"
     },
@@ -293,7 +442,11 @@
       "question": "什么是端到端学习（End-to-End Learning）？它的优缺点？",
       "points": 5,
       "difficulty": 2,
-      "tags": ["端到端", "范式", "深度学习"],
+      "tags": [
+        "端到端",
+        "范式",
+        "深度学习"
+      ],
       "dimension": "skill",
       "reference_answer": "端到端学习：用一个模型直接从原始输入学到最终输出，不手动设计中间阶段/特征工程。与之相对的是流水线/分阶段方法（每阶段独立模块+人工特征）。\n例：语音识别从「手工声学特征→GMM-HMM→语言模型」分阶段，变为「波形→神经网络→文本」端到端（Deep Speech）；目标检测从「特征→候选区→分类」变为单网络直接输出框；自动驾驶从「感知→规划→控制」分模块到端到端（输入图像/雷达→输出转向/油门）。\n优点：\n1) 联合优化：所有参数为最终目标共同优化，避免各阶段误差累积、目标不一致；\n2) 自动学特征：免去人工特征工程，能学到人类未设计的表示；\n3) 简化系统：模块少、部署简单；\n4) 数据驱动：随数据/算力扩展持续提升。\n缺点/挑战：\n1) 数据需求大：需大量标注覆盖输入到输出，小数据效果差；\n2) 可解释性差：黑盒，难定位错误、难保证安全；\n3) 难引入先验：丢掉领域知识（分阶段可注入专家规则）；\n4) 训练难：目标稀疏（如强化学习的奖励）、易不稳定；\n5) 不易模块化复用。\n实践常折中：核心端到端 + 关键安全/可解释环节保留模块与约束（如自动驾驶保留安全规则层、可解释感知）。理解端到端的权衡有助于根据数据、安全、可解释需求选架构。"
     }

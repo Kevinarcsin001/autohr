@@ -20,8 +20,11 @@ from uuid import UUID
 from fastapi import APIRouter, status
 
 from app.core.deps import CurrentUser, DbSession
-from app.core.middleware.error_handler import ForbiddenError
+from app.core.middleware.error_handler import ForbiddenError, NotFoundError
+from app.models.candidate import Candidate
+from app.models.interview import InterviewSession
 from app.schemas.question_bank import (
+    AssemblePlan,
     AssembleRequest,
     AssembleResponse,
     CategoryCreate,
@@ -141,19 +144,55 @@ async def delete_item(user: CurrentUser, db: DbSession, item_id: UUID) -> None:
 async def assemble(
     user: CurrentUser, db: DbSession, payload: AssembleRequest
 ) -> AssembleResponse:
-    """按分类配额凑 100 分。返回选中题 + 实际总分 + 各分类缺口。"""
+    """按分类配额凑分组卷（不落库）。返回选中题 + 实际总分 + 各分类缺口 + 配额计划。
+
+    - ``dynamic=true``（需 ``session_id``）：按候选人简历 + JD 动态匹配配额
+    - 否则用各分类 target_points（或调用方显式 quotas）
+    """
     team_id = _require_team(user)
-    items, total, deficits = await QuestionBankService(db).assemble(
-        team_id=team_id,
-        quotas=payload.quotas,
-        tolerance=payload.tolerance,
-        exclude_question_ids=payload.exclude_question_ids,
-    )
+    svc = QuestionBankService(db)
+    plan: AssemblePlan | None = None
+
+    if payload.dynamic:
+        if payload.session_id is None:
+            raise NotFoundError("dynamic 组卷需要 session_id", resource="interview_session")
+        session = await db.get(InterviewSession, payload.session_id)
+        if session is None:
+            raise NotFoundError(
+                f"interview session {payload.session_id} not found",
+                resource="interview_session",
+            )
+        candidate = await db.get(Candidate, session.candidate_id)
+        if candidate is None or candidate.team_id != team_id:
+            raise NotFoundError(
+                f"interview session {payload.session_id} not found",
+                resource="interview_session",
+            )
+        signals = await svc.build_candidate_signals(
+            team_id=team_id,
+            candidate_id=session.candidate_id,
+            job_id=session.job_id,
+        )
+        items, total, deficits, raw_plan = await svc.plan_and_assemble(
+            team_id=team_id,
+            signals=signals,
+            quotas=payload.quotas,
+            tolerance=payload.tolerance,
+            exclude_question_ids=payload.exclude_question_ids,
+        )
+        plan = AssemblePlan.model_validate(raw_plan)
+    else:
+        items, total, deficits = await svc.assemble(
+            team_id=team_id,
+            quotas=payload.quotas,
+            tolerance=payload.tolerance,
+            exclude_question_ids=payload.exclude_question_ids,
+        )
+
     return AssembleResponse(
         items=[ItemOut.model_validate(it) for it in items],
         actual_total=total,
-        target_total=sum(d["target"] for d in deficits) + total
-        if deficits
-        else total,
+        target_total=total + sum(d["target"] for d in deficits),
         deficits=[CategoryDeficit(**d) for d in deficits],
+        plan=plan,
     )

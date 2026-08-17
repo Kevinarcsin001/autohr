@@ -19,6 +19,7 @@ export const DIMENSION_LABEL: Record<InterviewDimension, string> = {
   project: "项目经历",
   weakness: "短板验证",
   culture: "文化匹配",
+  communication: "沟通表达",
 };
 
 export const DIMENSION_VARIANT: Record<InterviewDimension, BadgeVariant> = {
@@ -26,6 +27,7 @@ export const DIMENSION_VARIANT: Record<InterviewDimension, BadgeVariant> = {
   project: "secondary",
   weakness: "warning",
   culture: "outline",
+  communication: "success",
 };
 
 export const SESSION_STATUS_LABEL: Record<InterviewSessionStatus, string> = {

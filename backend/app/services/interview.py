@@ -121,7 +121,7 @@ _SYSTEM_PROMPT = """\
 }
 ```
 
-3. ``dimension`` 取值限定：``skill`` / ``project`` / ``weakness`` / ``culture``。
+3. ``dimension`` 取值限定：``skill`` / ``project`` / ``weakness`` / ``culture`` / ``communication``。
 4. 问题数量 5-8 题。
 5. **必须至少 1 条 ``weakness`` 维度**（针对候选人短板追问）。
 6. 每题 4-500 字；不要啰嗦；要让候选人能展开回答。
@@ -133,6 +133,7 @@ _SYSTEM_PROMPT = """\
 - ``project``：项目经历追问（角色 / 难点 / 量化结果）
 - ``weakness``：潜在短板验证（针对 confidence 低 / 简历不充分的能力）
 - ``culture``：文化匹配（团队协作 / 抗压 / 学习方式）
+- ``communication``：沟通表达（表达逻辑 / 跨方沟通 / 冲突处理；仅在简历或项目体现沟通亮点时使用）
 
 请记住：**短板维度至少 1 题，必须基于简历可观察的事实**。"""
 

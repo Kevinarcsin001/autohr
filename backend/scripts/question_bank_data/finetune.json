@@ -2,7 +2,7 @@
   "category": {
     "slug": "finetune",
     "name": "模型微调",
-    "target_points": 5,
+    "target_points": 10,
     "sort_order": 6
   },
   "items": [
@@ -317,6 +317,66 @@
       ],
       "dimension": "skill",
       "reference_answer": "QLoRA = 4bit 量化基座 + LoRA 微调（见专题总览）。NF4（NormalFloat 4-bit）是其核心量化格式。\nNF4 原理：\n- 观察到预训练权重近似正态分布；\n- NF4 用「针对正态分布优化的 16 个 4-bit 量化电平」（信息论最优），比均匀量化的 INT4 信息损失更小；\n- 量化误差最小化，4bit 下接近 FP16 精度。\n为什么适合微调不影响训练：\n1) 基座冻结、4bit 存储：原权重 NF4 量化（0.5 byte/参数），显存大幅省（7B 仅 ~3.5GB）；\n2) 计算时反量化：前向/反向用到权重时，按需反量化成 BF16 计算（计算精度不变，只是存储压缩）；\n3) LoRA 参数保 BF16/FP16：可训练参数（A、B）高精度，梯度数值稳定；\n4) 反量化开销小：权重读取时即时反量化，开销远小于节省的显存/带来的可行性。\n配套技术：\n- Double Quantization：量化常数本身再量化，再省显存；\n- Paged Optimizer：用 CUDA unified memory，显存峰值时 offload 到 CPU 防 OOM；\n- 计算dtype BF16：计算用 BF16 稳定。\n效果：\n- 7B 模型 QLoRA 单卡 6-10GB 可训（vs 全参 100GB+）；\n- 效果接近 LoRA + FP16（差距很小），是资源受限微调的最佳选择；\n- 让消费级 GPU（24GB 4090）微调 7B-13B 成可能。\nNF4 的「为权重分布优化的量化格式 + 冻结不更新」使其在微调中几乎无损，是 QLoRA 能在单卡训大模型的关键。理解 NF4 有助于理解量化与微调的结合。"
+    },
+    {
+      "question": "RLHF 的完整三阶段流程是什么？PPO 阶段为什么必须加 KL 惩罚？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "RLHF",
+        "PPO",
+        "对齐"
+      ],
+      "dimension": "skill",
+      "reference_answer": "三阶段：\n1. SFT：指令数据监督微调，教会模型「会对话」；\n2. RM 训练：同一 prompt 的多个回答由人工排序 → 训练奖励模型（Bradley-Terry 损伤，输出标量分）；\n3. PPO：以 RM 为奖励信号强化学习优化策略模型。\nKL 惩罚原因：RM 只在人类标注分布附近可靠，若不加约束，策略会找到 RM 的高分漏洞（reward hacking，如复读格式讨好 RM）且漂离 SFT 分布后语言质量崩坏（模式坍缩）。KL(poliy‖SFT) 把更新限制在信任域内，本质是把 RL 变成「带先验的受限优化」。\n工程细节：reward = RM 分 − β·KL；需要同时载 4 个模型（policy/reference/RM/value），显存与算力开销大——这也是 DPO 后来流行的原因（去掉 RM 与 RL，直接从偏好对学策略偏移）。"
+    },
+    {
+      "question": "LoRA 的缩放系数 alpha 是怎么起作用的？alpha 与 r 的比值（scaling factor）如何影响效果？",
+      "points": 5,
+      "difficulty": 3,
+      "tags": [
+        "LoRA",
+        "超参",
+        "微调"
+      ],
+      "dimension": "skill",
+      "reference_answer": "作用：LoRA 前向为 h = W₀x + (α/r)·BAx，输出增量 BA 乘以 scaling = α/r。\n- r 固定时，alpha 越大 → LoRA 分支输出幅度越大 → 有效学习率越高。增大 alpha 等价于放大 LoRA 权重对主干的影响；\n- 常见经验：α 取 r 的 1-2 倍（如 r=8, α=16；r=16, α=32）。α 过大：训练不稳（输出被 BA 主导、loss 震荡）；α 过小：LoRA 学到的改动被压得太小，学不动或欠拟合；\n- 调参实践：先定 r（8/16 起步），α 按 2r 设；若 loss 不降优先调学习率与 α，而不是盲目加 r——很多场景 r=8 已够，加 r 收益远小于加训练数据。\n面试加分点：能指出 α 与初始化（B=0, A 高斯）配合保证训练起点等价于原模型。"
+    },
+    {
+      "question": "微调时如何判断模型过拟合？有哪些实用的早停与正则手段？",
+      "points": 5,
+      "difficulty": 3,
+      "tags": [
+        "微调",
+        "过拟合",
+        "评估"
+      ],
+      "dimension": "skill",
+      "reference_answer": "判断：\n1. 训练 loss 持续下降而验证 loss 上升/不再下降（经典分叉）；\n2. 更重要：定期在验证集上跑任务指标（准确率/BLEU/人工抽检或 LLM-judge），微调场景 loss 与任务效果不完全相关，指令微调 1-3 epoch 常已最优；\n3. 生成退化信号：输出多样性骤降（重复率升、distinct-n 降）、格式僵化。\n手段：\n- 早停：按验证任务指标存 best checkpoint，patience 2-3 次评估不升则停；\n- 正则：weight decay、dropout（LoRA dropout 0.05-0.1）、NEFTune 噪声；\n- 数据侧：清洗低质样本、控制 epoch（宁少勿多）、数据配比保留通用指令防能力退化；\n- KL/混合：与 base 模型输出做 KL 约束（如 continual learning 中的 EWC/LIFE 策略）保住通用能力。"
+    },
+    {
+      "question": "微调后的模型如何做上线前验证与线上效果回归？不能只看评测集分数的原因是什么？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "微调",
+        "上线",
+        "评估"
+      ],
+      "dimension": "skill",
+      "reference_answer": "不能只看离线分数的原因：评测集分布窄（与真实流量分布偏移），可能过拟合评测风格；微调常带来「能力漂移」——目标任务涨但通用能力（闲聊/指令遵循/格式）暗降，离线指标不覆盖。\n上线前验证清单：\n1. 目标任务评测（自建集 + 公开基准）；\n2. 通用能力回归：MMLU/GSM8K 或内部通用集抽查，确认无显著退化；\n3. 安全与拒答抽检（越狱/敏感 prompt）；\n4. 输出格式与解码稳定性（长输入/边界输入）；\n5. 推理性能基准（吞吐/首token）。\n线上验证：\n1. 影子流量/小比例灰度（5%→25%→100%）；\n2. A/B：核心业务指标（采纳率/人工纠错率/用户反馈）而非模型侧自嗨指标；\n3. 线上抽检 + badcase 回流评测集；\n4. 回滚预案：checkpoint 与 prompt 版本化，指标劣化一键切回。"
+    },
+    {
+      "question": "想把基座的有效上下文从 4k 扩到 32k+，微调侧怎么做（RoPE scaling / 位置编码调整）？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "长上下文",
+        "RoPE",
+        "微调"
+      ],
+      "dimension": "skill",
+      "reference_answer": "思路：位置编码外推 + 长数据微调。\n1. RoPE base 调整（θ 缩放）：扩大 RoPE 基频（如 LLaMA 系把 base 从 10000 提到 500k/1M，即 YaRN/Code Llama 式做法），让高频分量在更长序列仍可区分；\n2. 插值类：线性位置插值（PI，位置除以缩放因子）、NTK-aware 缩放（改 base 而非插值，无需训练即可外推一段）、YaRN（分频段差异化处理 attention 温度与插值，效果更好）；\n3. 长数据微调：调整编码后必须用长文档数据继续预训练/微调（哪怕是少量 8k-32k 文档），否则模型没见过长程依赖 pattern，外推只是「不崩」而非「能用」；\n4. 数据构造：长文档拼接、书籍/代码（天然长程）、指令形式的长文 QA/摘要；\n5. 评估：needle-in-haystack + 长文 QA，看不同长度/位置检索准确率，而非只看短任务不掉分。\n工程提醒：长上下文训练显存/序列并行（flash-attn、序列并行）配套；上下文长度与 lost-in-middle 问题并存，长度上去还要做位置鲁棒评测。"
     }
   ]
 }

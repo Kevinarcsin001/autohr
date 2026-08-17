@@ -104,21 +104,54 @@ class ItemOut(ItemBase):
 # ============================================================================
 
 
-class AssembleRequest(BaseModel):
-    """按分类配额凑 100 分组卷请求。
+class SignalInfo(BaseModel):
+    """动态匹配信号（简历/JD 提取的技能词）。"""
 
-    ``quotas`` 省略时用各 category.target_points 之和作为目标。
+    signal: str
+    weight: float
+
+
+class QuotaPlanItem(BaseModel):
+    """某分类的动态配额计划项。"""
+
+    category_id: uuid.UUID
+    category_name: str
+    base_points: int
+    quota_points: int
+    score: float
+    matched: bool
+
+
+class AssemblePlan(BaseModel):
+    """动态组卷计划：信号 + 各分类配额调整（静态组卷时为 None）。"""
+
+    total_target: int
+    signals: list[SignalInfo]
+    quotas: list[QuotaPlanItem]
+
+
+class AssembleRequest(BaseModel):
+    """按分类配额凑分组卷请求。
+
+    ``quotas`` 省略时：动态模式用简历/JD 匹配后的动态配额；否则用各 category.target_points。
     ``tolerance`` 允许的分数容差（默认 ±5）。
+    ``dynamic=true`` 需携带 ``session_id``（从中解析候选人/职位提取信号）。
     """
 
     model_config = ConfigDict(extra="forbid")
 
     quotas: dict[uuid.UUID, int] | None = Field(
-        default=None, description="category_id → 目标分；省略则用各分类 target_points"
+        default=None, description="category_id → 目标分；省略则动态计算或用各分类 target_points"
     )
     tolerance: int = Field(default=5, ge=0, le=20)
     exclude_question_ids: list[uuid.UUID] | None = Field(
         default=None, description="组卷时排除的题目 id（避免对同一候选人重复出题）"
+    )
+    dynamic: bool = Field(
+        default=False, description="按候选人简历 + JD 动态匹配配额（需 session_id）"
+    )
+    session_id: uuid.UUID | None = Field(
+        default=None, description="面试会话 id（dynamic=true 时必填，用于提取信号）"
     )
 
 
@@ -133,12 +166,13 @@ class CategoryDeficit(BaseModel):
 
 
 class AssembleResponse(BaseModel):
-    """组卷结果：选中题目 + 实际总分 + 各分类缺口。"""
+    """组卷结果：选中题目 + 实际总分 + 各分类缺口 + 动态配额计划。"""
 
     items: list[ItemOut]
     actual_total: int
     target_total: int
     deficits: list[CategoryDeficit]
+    plan: AssemblePlan | None = None
 
 
 # ============================================================================
@@ -151,16 +185,19 @@ ComposeSource = Literal["bank", "ai_fallback"]
 
 
 __all__ = [
+    "AssemblePlan",
+    "AssembleRequest",
+    "AssembleResponse",
     "CategoryBase",
     "CategoryCreate",
+    "CategoryDeficit",
     "CategoryUpdate",
     "CategoryOut",
     "ItemBase",
     "ItemCreate",
     "ItemUpdate",
     "ItemOut",
-    "AssembleRequest",
-    "CategoryDeficit",
-    "AssembleResponse",
+    "QuotaPlanItem",
+    "SignalInfo",
     "ComposeSource",
 ]

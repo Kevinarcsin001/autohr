@@ -163,7 +163,9 @@ stores/authStore.ts        # Zustand：accessToken 仅存内存，refresh 走 ht
 
 **面试会话数据模型**：`models/interview.py` 三层聚合 —— `InterviewSession`（一次面试的会话单位，评分+面试题生成后自动创建，`status=scheduled`）→ `InterviewQuestion`（AI 生成的题，按 `batch_id` 分批，regenerate 产生新 batch）→ `InterviewFeedback`（按 `question_id + reviewer_id` upsert，rating 1-5）。`question.session_id` / `feedback.session_id` 可空且 `ondelete=SET NULL`，是为兼容 session 引入前的旧数据；新代码路径均应关联 session。
 
-**题库（question_bank）**：独立功能域 —— `models/question_bank.py`（`QuestionCategory` 分类 + `QuestionBankItem` 题目），由管理后台 `(app)/admin/question-bank/` 维护；面试出题时可从题库选题/组卷。对应迁移 `0008_question_bank`。跨前后端一致：`api/question_bank.py` + `services/question_bank.py` + 前端 `lib/api/questionBank.ts` + `hooks/useQuestionBank.ts` + 组件 `QuestionComposeButton.tsx`。
+**题库（question_bank）**：独立功能域 —— `models/question_bank.py`（`QuestionCategory` 分类 + `QuestionBankItem` 题目），由管理后台 `(app)/admin/question-bank/` 维护；面试出题时可从题库选题/组卷。对应迁移 `0008_question_bank` + `0009_interview_dimension_communication`（enum 增补 `communication` 维度 + 题库 dimension 列 VARCHAR(8)→(16)）。跨前后端一致：`api/question_bank.py` + `services/question_bank.py` + 前端 `lib/api/questionBank.ts` + `hooks/useQuestionBank.ts` + 组件 `QuestionComposeButton.tsx`。
+
+**动态组卷（约 30 题/组）**：`services/question_bank.py` 的 `plan_and_assemble` + `build_candidate_signals` + 纯函数 `compute_dynamic_quotas` —— 信号源：JD 硬性 `required_skills`（w=2.0）> JD 正文命中分类名（w=1.5）> 候选人简历 skills（w=1.0）；按信号在分类 tags/名称上的命中率算亲和度，配额在基准上放大（上限 2×）、5 分步长、夹 [5,30]，归一到 150 分（约 30 题）。`subset_sum_dp` 同分组合优先**题目更多**（如 15 分选 5+5+5 而非 10+5）。静态配额基准见 `scripts/question_bank_data/_categories.json`（合计 155）；种子脚本幂等 upsert，现庋 536 题/15 分类。compose 端点（`POST /api/interview/sessions/{id}/compose`）默认 `dynamic=true`；assemble 预览端点支持 `dynamic+session_id`，响应携带 `plan`（信号 + 配额调整）。
 
 **LLM Router**：`adapters/llm/router.py` 按 scope（resume/extraction/scoring/interview/hiring）路由到不同适配器，`_json.py` 提供结构化 JSON 输出封装，`circuit_breaker` 内置熔断逻辑。
 

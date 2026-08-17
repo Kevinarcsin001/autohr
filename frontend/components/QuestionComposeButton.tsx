@@ -15,8 +15,8 @@ import {
 /**
  * 「从题库凑分」按钮 + 确认面板。
  *
- * 流程：点开 → 预览（assemble 用各分类 target_points，展示选中题 + 缺口）→
- * 确认 → compose 写入 session（新 batch）。
+ * 流程：点开 → 预览（dynamic 模式：按候选人简历 + JD 动态匹配配额，展示
+ * 匹配信号 + 配额调整 + 选中题 + 缺口）→ 确认 → compose 写入 session（新 batch）。
  */
 
 interface Props {
@@ -33,12 +33,12 @@ export function QuestionComposeButton({ sessionId }: Props) {
   const totalTarget = activeCats.reduce((s, c) => s + c.target_points, 0);
 
   const onPreview = () => {
-    assemble.mutate({});
+    assemble.mutate({ session_id: sessionId, dynamic: true });
   };
 
   const onConfirm = async () => {
     try {
-      await compose.mutateAsync({});
+      await compose.mutateAsync({ dynamic: true });
       setOpen(false);
       assemble.reset();
     } catch {
@@ -67,7 +67,7 @@ export function QuestionComposeButton({ sessionId }: Props) {
           assemble.reset();
         }}
         title="从题库凑分组卷"
-        description={`按各分类目标分配额组卷，目标合计 ${totalTarget} 分`}
+        description="按候选人简历与 JD 动态匹配配额，目标约 30 题"
         maxWidth="max-w-2xl"
         footer={
           <>
@@ -96,9 +96,31 @@ export function QuestionComposeButton({ sessionId }: Props) {
           </>
         }
       >
-        {/* 分类配额概览 */}
+        {/* 动态匹配信号 */}
+        {preview?.plan && (
+          <div className="space-y-1">
+            <p className="text-sm font-medium">匹配信号（来自简历与 JD）：</p>
+            {preview.plan.signals.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                未提取到简历/JD 技能信号，退化为静态配额。
+              </p>
+            ) : (
+              <div className="flex flex-wrap gap-1">
+                {preview.plan.signals.slice(0, 12).map((s) => (
+                  <Badge key={s.signal} variant={s.weight >= 2 ? "default" : "secondary"}>
+                    {s.signal}
+                  </Badge>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 配额调整（动态模式：基准 → 实际） */}
         <div className="space-y-1">
-          <p className="text-sm font-medium">分类配额：</p>
+          <p className="text-sm font-medium">
+            {preview?.plan ? "配额调整（基准 → 匹配后）" : "分类配额"}：
+          </p>
           {catLoading ? (
             <p className="text-xs text-muted-foreground">加载分类中…</p>
           ) : activeCats.length === 0 ? (
@@ -107,6 +129,18 @@ export function QuestionComposeButton({ sessionId }: Props) {
                 暂无已启用且目标分大于 0 的分类。请先在「题库管理」配置分类与目标分。
               </AlertDescription>
             </Alert>
+          ) : preview?.plan ? (
+            <div className="flex flex-wrap gap-1">
+              {preview.plan.quotas.map((q) => (
+                <Badge
+                  key={q.category_id}
+                  variant={q.quota_points > q.base_points ? "success" : "secondary"}
+                >
+                  {q.category_name} {q.base_points}→{q.quota_points}
+                </Badge>
+              ))}
+              <Badge variant="outline">合计 {preview.plan.total_target}</Badge>
+            </div>
           ) : (
             <div className="flex flex-wrap gap-1">
               {activeCats.map((c) => (
@@ -114,9 +148,7 @@ export function QuestionComposeButton({ sessionId }: Props) {
                   {c.name} {c.target_points}
                 </Badge>
               ))}
-              <Badge variant={totalTarget === 100 ? "success" : "warning"}>
-                合计 {totalTarget}
-              </Badge>
+              <Badge variant="outline">合计 {totalTarget}</Badge>
             </div>
           )}
         </div>

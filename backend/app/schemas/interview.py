@@ -18,12 +18,13 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 # ============================================================================
 
 
-InterviewDimensionLiteral = Literal["skill", "project", "weakness", "culture"]
-"""4 个问题维度：
+InterviewDimensionLiteral = Literal["skill", "project", "weakness", "culture", "communication"]
+"""5 个问题维度：
 - ``skill``：技能深挖
 - ``project``：项目经历追问
 - ``weakness``：潜在短板验证
 - ``culture``：文化匹配
+- ``communication``：沟通表达（题库行为面/沟通类题目）
 """
 
 

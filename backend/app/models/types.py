@@ -80,7 +80,9 @@ EducationLevel = enum_compat("education_level", "high_school", "bachelor", "mast
 SourceType = enum_compat("source_type", "upload", "platform", "email")
 ParseStatus = enum_compat("parse_status", "pending", "success", "failed", "low_text")
 ScoreReasonType = enum_compat("score_reason_type", "recommend", "disqualify")
-InterviewDimension = enum_compat("interview_dimension", "skill", "project", "weakness", "culture")
+InterviewDimension = enum_compat(
+    "interview_dimension", "skill", "project", "weakness", "culture", "communication"
+)
 DedupMatchStatus = enum_compat("dedup_match_status", "pending", "merged", "rejected")
 LLMScope = enum_compat("llm_scope", "extractor", "scorer", "reasoning", "interview")
 AsyncJobType = enum_compat(

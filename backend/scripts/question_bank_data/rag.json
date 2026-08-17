@@ -2,7 +2,7 @@
   "category": {
     "slug": "rag",
     "name": "RAG 检索增强",
-    "target_points": 10,
+    "target_points": 15,
     "sort_order": 4
   },
   "items": [
@@ -257,6 +257,126 @@
       ],
       "dimension": "skill",
       "reference_answer": "典型架构（离线索引 + 在线检索生成）：\n离线（建库）：\n1) 数据源：文档/数据库/API/网页；\n2) 解析：提取文本+图表+结构（MinerU/pdfplumber/Unstructured）；\n3) Chunking：按策略切分；\n4) Embedding：编码 chunk；\n5) 入库：向量库（HNSW/IVF）+ 元数据 + 原文存储。\n在线（查询）：\n1) 接收 query；\n2) Query 处理：改写/扩展/路由（LLM 或规则）；\n3) 检索：向量（+BM25 Hybrid）+ 元数据过滤，取 Top-K'；\n4) Rerank：Cross-Encoder 精排 Top-K；\n5) 后处理：相关度过滤、去重、压缩、上下文拼装；\n6) 生成：LLM 据 query + 上下文生成答案 + 引用；\n7) （可选）流式输出、缓存、护栏。\n横切：\n- 评估：评估集 + 自动指标（recall/faithfulness）+ 人工评审；\n- 监控：各环节指标、链路追踪、bad case；\n- 安全：输入/输出过滤、注入防御；\n- 缓存：query/embedding/答案缓存；\n- 更新：知识库增量同步。\n组件选型：\n- 解析：MinerU（高质量）/Unstructured；\n- Embedding：BGE/E5/OpenAI；\n- 向量库：PGVector（中小）/Milvus/Qdrant（大）；\n- Rerank：BGE-reranker/Cohere；\n- LLM：按任务/成本选（路由）；\n- 框架：LangChain/LlamaIndex/自建。\n设计要点：\n- 各组件解耦、可独立升级替换；\n- 评估驱动（每环节可量化）；\n- 可观测（端到端追踪）；\n- 渐进优化（先打通 MVP，再逐环节调）。\nRAG 是系统工程，不是单一模型调用，架构清晰、组件可插拔、评估可量化是生产级 RAG 的关键。"
+    },
+    {
+      "question": "什么是「Lost in the Middle」现象？对 RAG 的上下文拼装有什么影响，如何缓解？",
+      "points": 5,
+      "difficulty": 4,
+      "tags": [
+        "RAG",
+        "上下文",
+        "位置偏置"
+      ],
+      "dimension": "skill",
+      "reference_answer": "现象：LLM 对长上下文中间位置的信息利用率显著低于开头与结尾（Liu et al. 2023 实验：相关信息放中间时准确率明显下降）。\n影响：RAG 把多个 chunk 顺序拼接时，排在中间的检索结果容易被忽略，导致引用不全或答非所问。\n缓解：\n1. 重排（rerank）后按相关度降序排布，把最强证据放开头；\n2. 控制上下文长度，只送 top-k（k 通常 3-8）而非全部召回；\n3. 把关键指令与问题放首尾，中间放证据；\n4. 使用长上下文优化过的模型（如 claim 数百 k 窗口的 newer 模型），但仍建议做位置鲁棒性测试；\n5. 对每个证据独立生成后融合（map-reduce 式），从结构上规避位置依赖。"
+    },
+    {
+      "question": "什么是父子分块（Parent-Child Chunking / Small-to-Big）？它解决什么矛盾？如何实现？",
+      "points": 5,
+      "difficulty": 4,
+      "tags": [
+        "RAG",
+        "chunking",
+        "检索"
+      ],
+      "dimension": "skill",
+      "reference_answer": "矛盾：检索要小 chunk（向量语义集中、召回准），生成要大上下文（信息完整、不碎片化）。单一粒度无法同时满足。\n方案：两层索引——子块（如 200 token）用于 embedding 检索；命中后返回其父块（如 1000 token 或整节）送入 LLM。\n实现要点：\n1. 父块存原文或 KV 存储，子块索引中记录 parent_id；\n2. 命中多个子块属同一父时去重合并；\n3. 也可用摘要索引做第三层（RAPTOR 式层级摘要检索）。\n收益：召回率与答案完整度同时提升，代价是存储翻倍与索引维护复杂度。"
+    },
+    {
+      "question": "Self-RAG 与 CRAG 这类「自适应/自反思 RAG」的思路是什么？相比朴素 RAG 改进在哪？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "RAG",
+        "agentic",
+        "自反思"
+      ],
+      "dimension": "skill",
+      "reference_answer": "朴素 RAG 固定「检索→生成」，不看检索质量，检索差也硬生成。\nSelf-RAG：训练模型输出反思 token——是否需要检索(ISM)、证据是否相关、生成是否有支撑、总体有用度，按需触发检索并自我评估，无支撑时拒绝或重检索。\nCRAG（Corrective RAG）：检索后先用轻量评估器（可微 T5 或规则）给文档打相关分——正确→精炼使用；模糊→补一轮 web 搜索；错误→丢弃，并做去噪与知识细化后生成。\n改进点：\n1. 检索按需触发，省成本；\n2. 检索质量差时有纠错路径而非硬生成；\n3. 生成带自我评估，幻觉率更低。\n工程代价：需要训练评估器/反思能力（或用 LLM prompt 模拟），链路更长、延迟更高。"
+    },
+    {
+      "question": "如何在 RAG 生成结果中实现引用溯源？无引用标注的 RAG 在企业落地时有什么问题？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "RAG",
+        "可信",
+        "引用"
+      ],
+      "dimension": "skill",
+      "reference_answer": "问题：企业场景（法务/合规/知识库问答）要求答案可验证，无法溯源的回答不可信、不可审计，出了错无法定位是检索问题还是生成问题。\n实现方案：\n1. 结构化生成：prompt 要求每句话后附 [n] 引用标记，n 对应送入的证据编号；输出后解析并校验引用存在性；\n2. 句级归因：生成后用 NLI/entailment 模型或 embedding 相似度把每句对回证据（后验归因，模型不配合标注时用）；\n3. 前端把 [n] 渲染成可点击跳转原文 chunk（高亮）；\n4. 校验层：引用的证据必须真实存在于本次检索结果（防编造引用），无支撑句触发重生成或降级为「不确定」。\n评测：faithfulness/Attributed QA 类指标衡量引用覆盖率与正确率。"
+    },
+    {
+      "question": "企业知识库 RAG 如何实现文档级权限隔离（不同员工只能检索到自己有权限的文档）？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "RAG",
+        "权限",
+        "安全"
+      ],
+      "dimension": "skill",
+      "reference_answer": "核心原则：权限过滤必须在检索层生效，而不是生成后再遮蔽（迟了，内容已进 prompt）。\n方案：\n1. 索引期：为每个 chunk 写入 ACL 元数据（可读用户/组列表，来自 SSO 同步）；\n2. 查询期 pre-filter：向量库带 metadata 过滤（Milvus/Qdrant/Weaviate 均支持 expression filter），只在本人的可见集合内做 ANN；注意 pre-filter 与 ANN 的兼容（过滤后候选太少时要回退暴力检索或放宽）；\n3. 多租户更强隔离：按租户分 collection/分库，物理隔离优于逻辑过滤；\n4. 权限变更同步：文档权限变化要实时更新索引 ACL（或查询时联查权限服务二次过滤兜底）；\n5. 审计：记录每次检索命中的 doc id，出问题可回溯。\n常见坑：只按部门过滤漏掉交叉授权；权限快照过期导致越权检索。"
+    },
+    {
+      "question": "什么是语义缓存？在 RAG/LLM 应用中如何用，需要注意什么风险？",
+      "points": 5,
+      "difficulty": 3,
+      "tags": [
+        "RAG",
+        "缓存",
+        "成本"
+      ],
+      "dimension": "skill",
+      "reference_answer": "定义：以 embedding 相似度而非字符串完全匹配为 key 的缓存——新 query 与历史 query 向量相似度超过阈值（如 0.95）即复用历史答案。\n收益：热点问题（客服 FAQ 类 60-80% 重复）大幅降本提速；LLM 调用与检索都可省。\n实现：query embedding → ANN 检索缓存库 → 相似度 ≥ 阈值返回缓存；否则走完整链路并写缓存（TTL 控制）。\n风险：\n1. 语义近似 ≠ 意图相同（「怎么退款」vs「退款被拒了怎么办」相似但答案不同）→ 阈值要高 + 缓存粒度按意图；\n2. 知识库更新后缓存失效问题 → 文档变更时主动清相关缓存；\n3. 个性化上下文（用户身份/权限）必须进 cache key，否则串答案；\n4. 可观测：缓存命中率、错误复用率要监控。"
+    },
+    {
+      "question": "超长文档（几百页报告/合同）做 RAG 时，层级检索怎么设计？为什么朴素平铺 chunking 效果差？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "RAG",
+        "长文档",
+        "层级"
+      ],
+      "dimension": "skill",
+      "reference_answer": "朴素平铺差在：几百页切成上千 chunk 后，问题常是章节级的（「第三章的结论是什么」），向量检索命中一堆碎片而缺全局结构；且摘要类问题（全文讲什么）没有单 chunk 能答。\n层级设计：\n1. 结构感知切分：按目录/标题层级切（章→节→段），保留标题路径作为 metadata 与 embedding 上下文前缀；\n2. 多级索引：段级 chunk 做精检索 + 章级摘要（LLM 生成）做粗检索/总览问题；RAPTOR 式递归摘要树，按问题粒度路由到不同层；\n3. 检索策略：先命中段 → 向上取整节/整章作为上下文（父子分块思想）；总览类问题直接检索摘要层；\n4. metadata 过滤：支持「只在第三章内检索」的定向问题。\n收益：章节级与全局级问题都能答，上下文更完整；代价：构建期要做摘要生成（成本）与结构解析（PDF 目录提取质量是关键）。"
+    },
+    {
+      "question": "RAG 系统端到端 P99 延迟高（如 >5s），从工程角度怎么系统性优化？",
+      "points": 10,
+      "difficulty": 4,
+      "tags": [
+        "RAG",
+        "性能",
+        "延迟"
+      ],
+      "dimension": "skill",
+      "reference_answer": "先测量拆解：埋点各阶段耗时（query 理解 / embedding / 向量检索 / rerank / LLM 首token / 生成全程），P99 高通常由长尾阶段贡献。\n优化手段：\n1. 检索侧：embedding 用小而快的模型或降维（MRL）；ANN 参数调优（efSearch）；rerank 只对 top-20 而非全量；多路召回并行发；\n2. 生成侧：流式输出（首 token 延迟感知降一半以上）；上下文裁剪（只送必要证据）；小模型路由（简单问题走小模型）； speculative decoding；\n3. 缓存：语义缓存 + embedding 缓存（同 query 直接复用）；\n4. 架构：预热连接（向量库/LLM 连接池）、同区域部署、异步预取（用户输入过程中预 embedding）；\n5. 长尾治理：超时熔断 + 降级（跳过 rerank 直接生成），保证 P99 可控。\n关键：延迟与质量是权衡（跳过 rerank 掉精度），要带质量回归指标一起调。"
+    },
+    {
+      "question": "中文场景下 BM25/关键词检索的分词质量如何影响混合检索效果？有哪些优化实践？",
+      "points": 5,
+      "difficulty": 3,
+      "tags": [
+        "RAG",
+        "中文",
+        "BM25"
+      ],
+      "dimension": "skill",
+      "reference_answer": "影响：BM25 基于词项匹配，中文若用默认单字切分或质量差的分词器，专有名词（「知识图谱」切成「知识/图谱」）、型号代码（GPT-4o）、领域术语会被切碎，关键词路召回大幅下降，进而拖垮混合检索（向量补不回精确匹配类问题）。\n优化：\n1. 用成熟分词器（jieba/jieba+自定义词典、HanLP、THULAC），导入领域词典（产品名、内部术语）；\n2. 混合粒度：字级 n-gram + 词级双路索引（ES 的 icu/max_shingle 类思路），召回兜底；\n3. 专业 token 保护：正则预提取型号/版本号/英文术语整词保留；\n4. 查询侧同样处理（query 与文档分词器必须一致）；\n5. 评测驱动：用包含专有名词的 query 集验证关键词路 recall@k，再决定词典扩充。"
+    },
+    {
+      "question": "新领域 RAG 系统冷启动，没有人工标注的评测集，如何快速构建可信的评测数据？",
+      "points": 5,
+      "difficulty": 3,
+      "tags": [
+        "RAG",
+        "评测",
+        "冷启动"
+      ],
+      "dimension": "skill",
+      "reference_answer": "思路：合成数据 + 分层验收。\n1. 合成 query：从知识库 chunk 反向生成问题（LLM 根据 chunk 写 2-3 个「该 chunk 能回答的问题」+ 标准答案 + 干扰项），天然带 grounding 标签；\n2. 多样性控制：按文档/主题分层采样，覆盖事实型/对比型/摘要型/不可回答型（负例很重要：知识库没有答案的问题，期望系统答「不知道」）；\n3. 人工抽检：抽样 10-20% 校正合成质量（问题是否自然、答案是否唯一）；\n4. 指标分层：检索层（recall@k / MRR，合成标签直接可算）→ 生成层（faithfulness / correctness，需 LLM-as-judge 或人工）；\n5. 持续回归：线上 badcase 沉淀进评测集，形成飞轮。\n注意：合成分布与真实用户分布有偏差，上线后要用真实日志 query 校准评测集构成。"
     }
   ]
 }

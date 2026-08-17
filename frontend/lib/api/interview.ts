@@ -10,7 +10,12 @@ import { apiClient } from "./client";
 // 面试问题
 // ============================================================================
 
-export type InterviewDimension = "skill" | "project" | "weakness" | "culture";
+export type InterviewDimension =
+  | "skill"
+  | "project"
+  | "weakness"
+  | "culture"
+  | "communication";
 
 export interface InterviewQuestionOut {
   id: string;

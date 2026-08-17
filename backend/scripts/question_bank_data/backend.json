@@ -1,11 +1,20 @@
 {
-  "category": {"slug": "backend", "name": "后端工程", "target_points": 5, "sort_order": 14},
+  "category": {
+    "slug": "backend",
+    "name": "后端工程",
+    "target_points": 10,
+    "sort_order": 14
+  },
   "items": [
     {
       "question": "HTTP 方法的语义与幂等性？GET/POST/PUT/PATCH/DELETE 各是什么？",
       "points": 10,
       "difficulty": 3,
-      "tags": ["HTTP", "REST", "幂等"],
+      "tags": [
+        "HTTP",
+        "REST",
+        "幂等"
+      ],
       "dimension": "skill",
       "reference_answer": "方法语义：\n- GET：获取资源，安全（不改状态）、幂等、可缓存；\n- POST：创建资源/触发动作，非幂等（重复提交产生多个资源）；\n- PUT：整体替换/创建（指定 URI），幂等（同请求多次结果同）；\n- PATCH：部分更新，幂等性取决于实现（严格 patch 幂等，部分实现非幂等）；\n- DELETE：删除，幂等（删除已删除的仍是一致状态）。\n幂等性：同一请求执行一次与多次效果相同。GET/PUT/DELETE 幂等，POST 不幂等。设计 API 时：创建若客户端指定 ID 用 PUT（幂等），服务端生成 ID 用 POST。\n安全（safe）：不改变服务器状态。GET/HEAD/OPTIONS 安全。\n语义化设计：用方法表达意图（GET 不改数据、PUT 整体替换、PATCH 局部更新、DELETE 删除），而非全用 POST。配合状态码（201 创建、200 成功、204 无内容、400/404/409/422/500）。\n常见误用：用 GET 修改数据（违反语义、被爬虫/CDN/预读触发）；用 POST 做本该幂等的操作（重复请求出错）。\nHTTP/2/3 在语义层与 1.1 一致，主要是传输优化。理解方法语义与幂等性是 RESTful 设计与可靠 API 的基础。"
     },
@@ -13,7 +22,11 @@
       "question": "HTTP 状态码的分类？常见的有哪些？",
       "points": 5,
       "difficulty": 2,
-      "tags": ["HTTP", "状态码", "REST"],
+      "tags": [
+        "HTTP",
+        "状态码",
+        "REST"
+      ],
       "dimension": "skill",
       "reference_answer": "分类（首位数字）：\n- 1xx 信息：请求已接收，继续处理（少见，如 101 切换协议/WebSocket）；\n- 2xx 成功：200 OK、201 Created、202 Accepted（异步已接收）、204 No Content、206 Partial Content（断点续传）；\n- 3xx 重定向：301 永久、302 临时、304 Not Modified（缓存）、307/308 保留方法重定向；\n- 4xx 客户端错误：400 Bad Request、401 Unauthorized（未认证）、403 Forbidden（无权限）、404 Not Found、405 Method Not Allowed、409 Conflict（并发/重复）、422 Unprocessable Entity（语义错）、429 Too Many Requests（限流）；\n- 5xx 服务端错误：500 Internal Server Error、502 Bad Gateway、503 Service Unavailable、504 Gateway Timeout。\n设计要点：\n- 用准确状态码而非全 200（语义化利于客户端处理、监控、调试）；\n- 区分 401（没登录/无效凭证）与 403（登录了但无权限）；\n- 400（格式错）vs 422（格式对但语义错，如字段值非法）vs 409（冲突，如唯一约束）；\n- 错误响应 body 含错误码、消息、详情（便于客户端处理）；\n- 5xx 是服务端 bug/故障，应告警；4xx 是客户端问题。\n例外：部分实践（如某些网关）统一用 200 + body 内错误码，便于网关/代理透传，但牺牲了 HTTP 语义。多数情况遵循标准状态码更通用。"
     },
@@ -21,7 +34,11 @@
       "question": "RESTful API 的设计原则是什么？",
       "points": 10,
       "difficulty": 3,
-      "tags": ["REST", "API设计", "原则"],
+      "tags": [
+        "REST",
+        "API设计",
+        "原则"
+      ],
       "dimension": "skill",
       "reference_answer": "REST（Representational State Transfer）核心原则：\n1) 资源导向：URL 标识资源（名词），如 /users/123/orders，而非动作（避免 /getUser）；\n2) 用 HTTP 方法表达动作：GET/POST/PUT/PATCH/DELETE 对资源做 CRUD；\n3) 无状态（Stateless）：每个请求自包含所有信息（认证 token、参数），服务器不存会话状态（可水平扩展、可缓存）；\n4) 统一接口：一致的资源 URI、方法语义、状态码、内容协商；\n5) 分层：客户端不感知中间层（可加代理/网关/负载均衡）；\n6) 可缓存：响应声明可否缓存（Cache-Control），提升性能；\n7) HATEOAS（超媒体作为应用状态引擎）：响应含相关资源链接（实际很少完全实现）。\nURL 设计：\n- 复数名词：/users、/users/{id}；\n- 层级表达关系：/users/{id}/orders；\n- 查询参数做筛选/分页/排序：?status=active&page=2&sort=-created；\n- 动作类操作（非 CRUD）用动词或子资源：/orders/{id}/cancel 或 POST /cancel。\n版本化：/v1/users 或 Header（Accept: application/vnd.x.v1+json）。\n内容格式：JSON 为主，内容协商（Accept/Content-Type）。\n实践权衡：纯 REST 对复杂业务（聚合、事务、嵌套操作）有时别扭，常 pragmatically 放宽（如 RPC 风格端点）。GraphQL/gRPC 在某些场景更合适。理解 REST 原则后，按场景灵活应用，而非教条。"
     },
@@ -29,7 +46,11 @@
       "question": "REST、GraphQL、gRPC 如何选择？",
       "points": 10,
       "difficulty": 4,
-      "tags": ["REST", "GraphQL", "gRPC"],
+      "tags": [
+        "REST",
+        "GraphQL",
+        "gRPC"
+      ],
       "dimension": "skill",
       "reference_answer": "三者对比：\nREST：\n- 资源导向、HTTP、JSON、通用、易缓存、生态广；\n- 问题：过度获取（返回多余字段）/不足获取（需多次请求聚合）；固定端点不灵活；\n- 适合：CRUD、公开 API、简单资源、外部对接。\nGraphQL：\n- 客户端精确指定要哪些字段（按需获取），单端点查询；\n- 强类型 Schema、自省、前端驱动数据需求；\n- 问题：N+1、缓存难（单 POST 端点）、复杂查询可能压垮服务端（需限流/复杂度控制）、学习曲线；\n- 适合：前端需求多变、聚合多源数据、移动端（省流量）。\ngRPC：\n- 基于 HTTP/2 + Protobuf（二进制、强类型），高性能、双向流；\n- 内置代码生成、契约清晰、适合微服务间通信；\n- 问题：浏览器不友好（需 gRPC-Web 网关）、不可读（二进制）、调试难；\n- 适合：微服务内部 RPC、高性能低延迟、流式场景。\n选择：\n- 对外公开 API、简单资源、第三方集成 → REST；\n- 复杂前端查询、多端差异化需求 → GraphQL；\n- 微服务内部、高性能 → gRPC；\n- 混合：内部 gRPC、对外 REST/GraphQL 网关（常见架构）。\n其他：tRPC（TS 全栈类型安全）、WebSockets（实时双向）、SSE（服务端推送）。\n原则：没有银弹，按消费方、性能需求、团队、生态选。REST 仍是默认，GraphQL/gRPC 解决特定痛点。"
     },
@@ -37,7 +58,11 @@
       "question": "API 分页有哪些方式？offset 与 cursor 的区别？",
       "points": 10,
       "difficulty": 4,
-      "tags": ["分页", "cursor", "API"],
+      "tags": [
+        "分页",
+        "cursor",
+        "API"
+      ],
       "dimension": "skill",
       "reference_answer": "方式：\n1) Offset/Limit（传统）：?page=3&page_size=20，SQL 用 LIMIT/OFFSET。\n- 优点：简单、可跳页、支持总页数；\n- 缺点：深分页慢（OFFSET 10000 需扫描前 10000 行）、数据漂移（新增数据时翻页看到重复/跳过）。\n2) Cursor（游标/键集）：用某字段值作游标，?cursor=eyJpZCI6MTAwfQ（编码 last seen id），查 WHERE id > cursor LIMIT 20。\n- 优点：稳定（不受新增数据影响，基于位置）、深分页快（索引范围扫描，不 OFFSET）；\n- 缺点：不能跳页（只能上/下一页）、实现复杂、游标需编码。\n3) Seek/Keyset：WHERE (created_at, id) < (last_created, last_id)，复合游标保证顺序稳定，最稳。\n4) 无限滚动：前端滚到底加载下一页（基于 cursor）。\n选择：\n- 数据少、需跳页 → offset；\n- 大数据、移动端/无限滚动、实时数据 → cursor；\n- 关键稳定与性能 → keyset。\n深分页问题：OFFSET 100000 LIMIT 10 仍扫描 100010 行，慢。cursor 用索引范围扫描只读 10 行。\n排序与 cursor：cursor 依赖排序字段稳定唯一（通常 id 或 created_at+id 复合），否则翻页可能漏/重。\n总计数：count(*) 大表慢，可估算（如显示「100+」）或缓存计数。\nAPI 设计：返回 next_cursor/has_more，cursor 编码（base64）对客户端不透明，便于改后端实现而不破坏 API。\n分页是列表 API 的核心设计点，理解 offset vs cursor 的权衡对高性能列表 API 关键。"
     },
@@ -45,7 +70,11 @@
       "question": "API 认证方式有哪些？Session、JWT、OAuth、API Key 各适合什么？",
       "points": 10,
       "difficulty": 4,
-      "tags": ["认证", "JWT", "OAuth"],
+      "tags": [
+        "认证",
+        "JWT",
+        "OAuth"
+      ],
       "dimension": "skill",
       "reference_answer": "1) Session（Cookie + 服务端会话）：登录后服务端存会话（Redis/DB），Set-Cookie 返回 session_id（httpOnly），后续请求自动带 Cookie。\n- 优点：易撤销（删服务端会话）、成熟、浏览器自动管理；\n- 缺点：服务端有状态（扩展需共享会话存储）、CSRF 风险、跨域难、移动端不友好。\n2) JWT（JSON Web Token）：无状态 token，含 header.payload.signature，签名保证完整。客户端存 token（localStorage/内存），请求带 Authorization: Bearer。\n- 优点：无状态（服务端不存，易扩展）、自包含（可放用户信息）、跨域/移动端友好；\n- 缺点：难主动撤销（未过期前一直有效，需黑名单/短时效+refresh）、token 泄露风险大、payload 不加密（勿放敏感）、续期复杂。\n- 实践：access token 短（30min，内存）+ refresh token 长（7d，httpOnly cookie）。\n3) API Key：固定密钥标识客户端，请求头/参数携带。简单，适合服务间/机器对机器、公开 API。需 HTTPS、轮换、权限控制。\n4) OAuth 2.0 / OIDC：授权框架——第三方应用代表用户访问资源，用 access token。流程：授权码、客户端凭证、密码、隐式等。OIDC 在 OAuth 上加身份层（id_token）。适合：SSO、第三方登录（用 Google 登录）、开放平台。\n5) mTLS/证书：双向 TLS，高安全，服务间。\n选择：\n- 浏览器 Web → Session 或 JWT+refresh；\n- SPA/移动端 → JWT；\n- 开放 API/服务间 → API Key/mTLS；\n- 第三方登录/SSO → OAuth/OIDC。\n安全共性：HTTPS、token 存储（防 XSS/CSRF）、过期与刷新、撤销机制、最小权限、审计。\nautohr 用 JWT RS256（access 30min 内存 + refresh 7d httpOnly cookie）。"
     },
@@ -53,7 +82,11 @@
       "question": "什么是 CORS？后端如何正确处理跨域？",
       "points": 10,
       "difficulty": 4,
-      "tags": ["CORS", "跨域", "安全"],
+      "tags": [
+        "CORS",
+        "跨域",
+        "安全"
+      ],
       "dimension": "skill",
       "reference_answer": "CORS（Cross-Origin Resource Sharing）：浏览器同源策略（协议+域名+端口相同）限制跨域请求读响应。CORS 是服务端通过响应头声明「允许哪些源跨域访问」的机制，让浏览器放行。\n触发场景：前端 a.com 调 API b.com，浏览器发请求，若 b.com 未返回允许 a.com 的 CORS 头，浏览器拦截响应（请求其实到了服务端，只是前端拿不到）。\n简单请求 vs 预检：\n- 简单请求（GET/POST + 简单 header）：直接发，服务端响应带 CORS 头即可；\n- 预检（OPTIONS）：非简单请求（PUT/DELETE、自定义 header、JSON content-type）触发，浏览器先发 OPTIONS，服务端返回允许的方法/header/源/凭证，通过后才发真实请求。\n关键响应头：\n- Access-Control-Allow-Origin：允许的源（* 或具体域名；与凭证不能同时用 *）；\n- Access-Control-Allow-Methods/Headers：允许的方法/header；\n- Access-Control-Allow-Credentials：是否允许带 Cookie（true 时 Origin 不能用 *）；\n- Access-Control-Max-Age：预检缓存时间。\n后端处理：\n- 用框架中间件（FastAPI/CORSMiddleware、Django corsheaders）配置允许源；\n- 允许凭证时 Origin 必须具体白名单；\n- 不要无脑 Origin:* + Credentials:true（浏览器拒绝，且不安全）；\n- 生产环境严格白名单，不用 *。\n常见坑：\n- 以为 CORS 是「阻止请求」（其实请求已发，是阻止读响应，CSRF 仍需另防）；\n- 凭证 + 通配源冲突；\n- 预检 OPTIONS 需正确响应（否则真实请求不发）；\n- 非浏览器客户端（curl/移动端）无同源策略，CORS 不影响它们。\nCORS 是浏览器安全机制（保护用户），服务端正确配置白名单即可。代理（同源反向代理）也可绕过跨域。"
     },
@@ -61,7 +94,11 @@
       "question": "WebSocket 与 Server-Sent Events（SSE）的区别？各适合什么？",
       "points": 10,
       "difficulty": 4,
-      "tags": ["WebSocket", "SSE", "实时"],
+      "tags": [
+        "WebSocket",
+        "SSE",
+        "实时"
+      ],
       "dimension": "skill",
       "reference_answer": "WebSocket：全双工（双向实时）长连接，基于 HTTP 升级握手后转为 TCP 帧。客户端与服务端可随时互发消息。\nSSE（Server-Sent Events）：单向（服务端→客户端）长连接，基于 HTTP，服务端用 text/event-stream 持续推送事件。客户端只能通过普通 HTTP 请求上行。\n区别：\n- 方向：WebSocket 双向，SSE 单向（服务端推）；\n- 协议：WebSocket 自定义二进制/文本帧，SSE 标准 HTTP + text/event-stream；\n- 重连：SSE 浏览器自动重连，WebSocket 需手动实现；\n- 代理/防火墙：SSE 走 HTTP 友好穿透，WebSocket 需升级支持；\n- 数据：WebSocket 二进制/文本灵活，SSE 仅文本（UTF-8）；\n- 复杂度：WebSocket 更复杂（协议、状态、重连、心跳），SSE 简单。\n选择：\n- 仅需服务端推送（通知、行情、进度、流式输出）→ SSE（简单、HTTP 友好、自动重连）；\n- 需双向实时（聊天、游戏、协同编辑、实时交互）→ WebSocket；\n- 流式 LLM 输出 → SSE 主流（单向推 token，简单，兼容性好），如 OpenAI 流式响应、autohr 筛选流水线进度推送。\n其他：HTTP 长轮询（兼容性后备）、WebRTC（P2P 音视频）、gRPC 流（微服务）。\nSSE 优势：基于标准 HTTP，无需特殊协议/中间件，穿过代理/CDN 友好，浏览器 EventSource API 简单，自动重连。代价：单向、连接数限制（HTTP/1.1 每域名 6 连接，HTTP/2 改善）。\nWebSocket 优势：全双工、低延迟、二进制。代价：复杂、基础设施支持（负载均衡/代理需支持 ws）、状态管理。\n按需求选：单向推送用 SSE，双向交互用 WebSocket。autohr 用 SSE 推送筛选进度是合理选择。"
     },
@@ -69,7 +106,11 @@
       "question": "什么是异步 I/O？同步、异步、多线程在服务端如何选择？",
       "points": 10,
       "difficulty": 4,
-      "tags": ["异步IO", "asyncio", "并发"],
+      "tags": [
+        "异步IO",
+        "asyncio",
+        "并发"
+      ],
       "dimension": "skill",
       "reference_answer": "异步 I/O：单线程内，发起 I/O 操作（网络/磁盘）后不阻塞等待，而是去做别的，I/O 完成后事件循环通知继续处理。用极少的线程处理大量并发 I/O（事件循环 + 协程/回调）。\n同步阻塞：调 I/O 时线程挂起等结果，一个连接占一个线程，并发高时线程数爆炸（线程开销大、上下文切换慢）。\n多线程：每请求一线程，I/O 阻塞时线程睡眠，其他线程跑。适合 CPU 密集（多核并行）或 I/O 不极端高的场景。但线程有开销、竞争、GIL（Python）限制。\n异步（事件循环 + 协程）：单线程（或少线程）+ 协程，I/O 不阻塞而是 await 让出，事件循环调度其他就绪协程。I/O 密集高并发首选（万级连接/请求），线程开销低。前提：I/O 库需支持异步（async）、CPU 密集会阻塞事件循环（需 offload 到线程池/进程）。\n选择：\n- CPU 密集 → 多进程/多线程（并行）；\n- I/O 密集 + 高并发 → 异步（asyncio/Node.js/Go goroutine）；\n- I/O 密集 + 中低并发 + 依赖同步库 → 多线程；\n- 混合：异步事件循环 + CPU 任务 offload 线程池。\nPython asyncio：单线程协程，async/await。注意：\n- 同步阻塞调用会卡住整个事件循环（需 run_in_executor 转线程池）；\n- GIL 限制 CPU 并行（异步不解决 CPU）；\n- 库生态分 sync/async（asyncpg/aiohttp 等）；\n- 框架：FastAPI/Starlette（ASGI）、Sanic、Tornado。\nASGI/uvicorn：异步 Python Web 服务器，支持 WebSocket/长连接/流式。\n理解同步/异步/多线程的区别与适用场景，才能为服务端选对并发模型。高并发 I/O 服务（API 网关、聊天、爬虫）异步优势巨大。"
     },
@@ -77,7 +118,11 @@
       "question": "为什么在异步代码里调用同步阻塞函数会有问题？如何处理？",
       "points": 10,
       "difficulty": 4,
-      "tags": ["asyncio", "阻塞", "事件循环"],
+      "tags": [
+        "asyncio",
+        "阻塞",
+        "事件循环"
+      ],
       "dimension": "skill",
       "reference_answer": "问题：asyncio 事件循环单线程运行，协程在 await 处让出，循环调度其他协程。若一个协程调用同步阻塞函数（time.sleep、requests.get、同步 DB 驱动、CPU 密集计算），该函数不会让出控制权，整个事件循环被卡住——所有其他协程（其他请求）都被阻塞，服务吞吐崩溃。\n表现：一个慢的同步调用让整个服务所有请求变慢/超时，而非只影响那一个请求。\n常见阻塞点：\n- 同步 HTTP 客户端（requests）→ 用 aiohttp/httpx async；\n- 同步 DB 驱动（psycopg2）→ 用 asyncpg/aiosqlite；\n- time.sleep → asyncio.sleep；\n- 文件 I/O（部分）→ aiofiles；\n- CPU 密集（加密、解析、计算）→ offload。\n处理方法：\n1) 用异步等价库替代（首选）；\n2) run_in_executor：把同步阻塞调用丢到线程池/进程池执行，await 等结果不阻塞循环。\n   await loop.run_in_executor(None, blocking_func, args)\n3) CPU 密集用进程池（避免 GIL）。\n诊断：\n- 用 py-spy/austin profile 找阻塞点；\n- 监控事件循环延迟（loop.slow_callback_duration）；\n- 用 ASGI 中间件测每请求耗时定位。\nFastAPI：\n- 路由声明 async def 则跑在事件循环，阻塞调用要 offload；\n- 声明 def（同步）则 FastAPI 自动放线程池跑（安全但不如 async 高效）；\n- 混用：I/O 用 async，遗留同步库用 run_in_executor。\n原则：异步代码里绝不在事件循环线程直接跑阻塞或 CPU 密集操作，要么换异步库，要么 offload。这是 asyncio 性能的关键，违反则异步优势全无甚至更差。"
     },
@@ -85,7 +130,11 @@
       "question": "数据库连接池的原理？为什么需要它？如何配置？",
       "points": 10,
       "difficulty": 4,
-      "tags": ["连接池", "数据库", "配置"],
+      "tags": [
+        "连接池",
+        "数据库",
+        "配置"
+      ],
       "dimension": "skill",
       "reference_answer": "原理：预先建立一批数据库连接放在池中，请求用时从池借一个、用完归还，避免每次请求都建/断连接（TCP+认证+SSL 握手开销大）。\n为什么需要：\n1) 建连接昂贵（TCP 三次握手 + 认证 + 可能 SSL），每次请求建/断会成瓶颈；\n2) 复用连接减开销；\n3) 控制连接数（DB 连接数有限，过多连崩溃 DB）；\n4) 限流保护（池满时排队/拒绝，防压垮 DB）。\n核心参数：\n- min_size（最小保持连接数，预热）；\n- max_size（最大连接数，上限保护）；\n- max_idle_time（空闲连接超时回收）；\n- max_lifetime（连接最大寿命，防老旧连接/DB 端超时）；\n- acquire_timeout（借连接等待超时）；\n- 健康检查（ping 掉线的连接）。\n配置权衡：\n- 太小：高并发时不够用，请求排队等连接；\n- 太大：耗 DB 连接数、内存、上下文切换；\n- 经验：单服务实例 max_size 据并发与 DB 容量定，总连接数（实例数×pool）≤ DB max_connections 的 60-70%（留余量）；\n- 微服务多实例时尤其注意总连接数。\n异步连接池：asyncpg.create_pool、SQLAlchemy async engine，配合事件循环。\n常见问题：\n- 连接泄露（借了没归还，如异常未释放）→ 用 context manager（async with pool.acquire()）；\n- DB 重启后池里连接全失效 → 健康检查/重连；\n- 长事务占连接 → 控制事务时长；\n- 连接数配置不当致「too many connections」。\nORM 的连接池：SQLAlchemy QueuePool、Django CONNECTION_PERSISTS、Hibernate。\n连接池是后端性能与稳定性的基础，正确配置与防泄露关键。autohr 用 SQLAlchemy async + asyncpg 连接池（Celery 用 NullPool 避免跨事件循环）。"
     },
@@ -93,7 +142,11 @@
       "question": "数据库事务的隔离级别有哪些？各自解决什么问题？",
       "points": 10,
       "difficulty": 4,
-      "tags": ["事务", "隔离级别", "数据库"],
+      "tags": [
+        "事务",
+        "隔离级别",
+        "数据库"
+      ],
       "dimension": "skill",
       "reference_answer": "事务 ACID 中 I（隔离）。并发事务互相干扰产生的异常：脏读（读未提交）、不可重复读（同查询两次结果不同）、幻读（范围查询出现新行）。\nSQL 标准四级隔离（隔离强度↑，并发↓）：\n1) Read Uncommitted：最低，可读未提交（脏读），几乎不用；\n2) Read Committed（PG/SQL Server 默认）：只读已提交，防脏读，但不可重复读、幻读仍可能；\n3) Repeatable Read（MySQL 默认）：同事务内同查询结果一致，防脏读+不可重复读，MySQL InnoDB 还防幻读（Next-Key Lock），但标准定义下幻读仍可能；\n4) Serializable：最高，事务完全串行执行效果，防所有异常，但并发性最差（性能低、锁/冲突多）。\n各 DB 实现差异：\n- MySQL InnoDB 默认 Repeatable Read，用 MVCC + Next-Key Lock；\n- PostgreSQL 默认 Read Committed，Serializable 用 SSI（谓词锁）实现真正串行化；\n- Oracle 默认 Read Committed。\nMVCC（多版本并发控制）：读不阻塞写、写不阻塞读，每事务看到数据快照，大幅提并发，是现代 DB 主流。\n选择：\n- 默认级别（多数 Read Committed/Repeatable Read）满足多数业务；\n- 强一致需求（金融）用 Serializable 或业务层加锁；\n- 高吞吐接受最终一致用 Read Committed；\n- 避免长事务（锁持有久、并发降）。\n相关：乐观锁（版本号，冲突少时高效）、悲观锁（SELECT FOR UPDATE，冲突多时用）、死锁（注意加锁顺序）。\n理解隔离级别与并发异常，才能在一致性与性能间正确取舍。多数场景默认级别够，关键业务显式控制（锁/版本/重试）。"
     },
@@ -101,7 +154,11 @@
       "question": "ORM 的 N+1 查询问题是什么？如何解决？",
       "points": 10,
       "difficulty": 4,
-      "tags": ["ORM", "N+1", "性能"],
+      "tags": [
+        "ORM",
+        "N+1",
+        "性能"
+      ],
       "dimension": "skill",
       "reference_answer": "N+1 问题：查询 N 条主记录，对每条再查一次关联记录，共 N+1 次查询（应 1-2 次）。例：查 100 个订单并取每个订单的用户名——1 次查订单 + 100 次查用户 = 101 次查询，而正确做法只需 1 次订单 + 1 次用户（JOIN/IN）= 2 次。\n成因：ORM 懒加载关联——访问 order.user 时才发一条 SQL，循环 N 次发 N 条。开发写起来自然（访问属性即查），但隐藏性能炸弹。\n危害：\n- 查询数随数据量线性增长，慢；\n- 网络往返多，延迟累积；\n- DB 连接占用久、压力上升；\n- 难发现（少量数据测试不显）。\n解决：\n1) 预加载（Eager Loading）：一次性把关联查出来。\n   - JOIN（SQLAlchemy joinedload）：一条 SQL JOIN，适合一对一/关联少；\n   - IN/批量（selectinload）：查主记录后用 IN 一次查所有关联，适合一对多/多对多，避免 JOIN 笛卡尔积。\n2) 手动批量查：先查主记录 ID，再用 IN 查关联，代码组装。\n3) 数据库视图/聚合：复杂关联用 SQL 一次查。\nSQLAlchemy：selectinload(Model.rel) 推荐（避免 JOIN 笛卡尔积）；joinedload 适合单值关联；raiseload 防意外懒加载。\nDjango：select_related（JOIN，单值）、prefetch_related（额外查询，多值）。\n诊断：\n- 开发时打印/日志所有 SQL，看是否 N+1；\n- ORM 的 N+1 检测工具/中间件；\n- APM（Datadog/New Relic）发现重复查询模式；\n- 压测暴露。\n原则：涉及关联展示时主动预加载，别依赖懒加载；用 raiseload/strict 模式让意外懒加载报错而非静默。\nN+1 是后端性能最常见坑，理解成因与预加载方案是 ORM 性能优化基础。"
     },
@@ -109,7 +166,11 @@
       "question": "慢查询如何定位与优化？",
       "points": 5,
       "difficulty": 3,
-      "tags": ["慢查询", "SQL优化", "性能"],
+      "tags": [
+        "慢查询",
+        "SQL优化",
+        "性能"
+      ],
       "dimension": "skill",
       "reference_answer": "定位：\n1) 慢查询日志：DB 开启 slow_query_log（如 >100ms 记录）；\n2) APM（Datadog/New Relic/SkyWalking）：按耗时/频率找慢 SQL；\n3) EXPLAIN/EXPLAIN ANALYZE：看执行计划（是否走索引、扫描行数、JOIN 类型、临时表/排序）；\n4) performance_schema/sys（MySQL）、pg_stat_statements（PG）：统计高频/耗时 SQL；\n5) 应用日志记录 SQL 耗时。\n常见原因与优化：\n1) 没索引/索引失效：加合适索引；避免函数包裹列、类型隐式转换、LIKE '%xxx'、!= / NOT IN 导致失效；\n2) 查太多列/行：只查需要的列（避免 SELECT *）、加 WHERE 限制、分页；\n3) JOIN 低效：确保 JOIN 键有索引、小表驱动大表、避免笛卡尔积；\n4) 深分页：OFFSET 大时用游标/延迟关联；\n5) 子查询：改 JOIN 或优化；\n6) 排序/分组：索引覆盖排序字段、限制结果集；\n7) 锁等待：长事务、热点行、隔离级别；\n8) 统计信息过时：ANALYZE 更新统计让优化器选对计划；\n9) 大表：分区、分片、归档冷数据；\n10) 数据类型不当（如 VARCHAR 存数字）。\n索引优化：\n- EXPLAIN 看是否用索引、扫描行数（rows）、Extra（Using filesort/temporary 是警告）；\n- 联合索引遵循最左前缀；\n- 覆盖索引避免回表；\n- 别过度索引（写开销、空间）。\n通用原则：先测量定位（慢日志+EXPLAIN），针对性优化，每次一处复测。\n预防：Code Review 关注 SQL、ORM N+1、压测暴露、生产监控告警。慢查询优化是后端性能核心技能。"
     },
@@ -117,7 +178,11 @@
       "question": "Redis 的常用数据结构与应用场景？",
       "points": 5,
       "difficulty": 3,
-      "tags": ["Redis", "数据结构", "缓存"],
+      "tags": [
+        "Redis",
+        "数据结构",
+        "缓存"
+      ],
       "dimension": "skill",
       "reference_answer": "数据结构与场景：\n1) String：缓存（对象 JSON）、计数（INCR 访问数/点赞）、分布式锁（SET NX PX）、限流（计数）、session。\n2) Hash：对象存储（user:1 → {name,age}），比 String 存 JSON 更省空间、可改单字段。\n3) List：消息队列（LPUSH/BRPOP）、最新列表（最新动态）、栈/队列。\n4) Set：去重（在线用户、标签）、交并差（共同好友、推荐）、抽奖、随机。\n5) Sorted Set（ZSET）：排行榜（积分排名）、延时队列（score=时间）、带权重的有序集合（TopN）。Redis 最强大的结构之一。\n6) Bitmap：位操作，签到（每天1位）、在线状态、统计（去重计数，HyperLogLog）。\n7) HyperLogLog：基数估算（UV），极省空间（12KB 估千万），有误差。\n8) Geo：地理位置（附近的人/店）。\n9) Stream：消息流（5.0+），支持消费组、持久化，类 Kafka。\n10) Pub/Sub：发布订阅（实时广播，消息不持久）。\n典型应用：\n- 缓存（热点数据，降低 DB 压力）；\n- 会话存储（分布式 session）；\n- 分布式锁；\n- 限流计数器；\n- 排行榜（ZSET）；\n- 消息队列（List/Stream）；\n- 延时任务（ZSET score=执行时间）；\n- 计数器/统计（INCR/HyperLogLog）。\n注意：\n- 内存数据库，成本高，缓存有价值数据；\n- 持久化（RDB 快照/AOF 日志），但主要定位不是持久存储；\n- 单线程（命令串行），避免慢命令（KEYS → SCAN、复杂 ZSET/Lua）；\n- 过期策略与淘汰策略（LRU/LFU）；\n- 高可用（主从/哨兵/集群）。\nRedis 是后端最常用中间件之一，理解各结构特性与场景才能用好。"
     },
@@ -125,7 +190,11 @@
       "question": "多级缓存是什么？如何设计？",
       "points": 5,
       "difficulty": 4,
-      "tags": ["多级缓存", "缓存架构", "性能"],
+      "tags": [
+        "多级缓存",
+        "缓存架构",
+        "性能"
+      ],
       "dimension": "skill",
       "reference_answer": "多级缓存：从请求到数据，层层缓存，每层速度/容量/成本不同，逐级兜底。\n典型层次：\n1) 浏览器/客户端缓存：HTTP Cache-Control/ETag，最近最快，省网络；\n2) CDN 缓存：边缘节点缓存静态/可缓存内容，就近访问；\n3) 网关缓存：API 网关层缓存响应；\n4) 本地缓存（应用进程内）：如 Caffeine/Guava/Python functools.lru_cache，纳秒级访问，无网络。容量小、每实例独立（不一致）；\n5) 分布式缓存（Redis/Memcached）：跨实例共享，毫秒级，大容量；\n6) 数据库缓存：DB 内部（Buffer Pool）；\n7) 数据库。\n设计原则：\n- 越上层越快越小越便宜，命中率优先在上层；\n- 每层有 TTL/失效策略；\n- 一致性：上层失效后下层兜底，最终一致；\n- 穿透/击穿/雪崩防护（见缓存专题）。\n本地 vs 分布式：\n- 本地：极快、无网络、但每实例独立（更新不一致）、内存受限；\n- 分布式：共享一致、容量大、但网络延迟、单点风险（需高可用）；\n- 组合：本地缓存热点（超快）+ 分布式缓存兜底（一致大容量）。\n更新策略：\n- Cache Aside（主流）；\n- 监听变更失效各级缓存（消息广播/订阅 binlog）；\n- TTL 兜底最终一致。\n监控：各层命中率、延迟、大小，调优。\n权衡：层越多越快但一致性越难、复杂度越高。按场景选层数——简单用一层 Redis，极致性能才加本地。\n原则：热点数据放最快层（本地），通用数据放分布式层，冷数据落 DB。\n多级缓存是高并发读优化的极致，理解各层特性与一致性权衡才能正确设计。autohr 规模用单层 Redis（或 PG 内查询）即可，无需过早多级。"
     },
@@ -133,7 +202,11 @@
       "question": "异步任务（Celery 等）的作用与典型场景？",
       "points": 5,
       "difficulty": 3,
-      "tags": ["异步任务", "Celery", "架构"],
+      "tags": [
+        "异步任务",
+        "Celery",
+        "架构"
+      ],
       "dimension": "skill",
       "reference_answer": "作用：把耗时操作从请求主流程剥离，丢到后台异步执行，主流程快速返回。解决：响应慢、长任务阻塞、重试、定时、削峰。\n典型场景：\n1) 耗时操作：发邮件/短信/推送、生成报表、导出文件、图像/视频处理；\n2) 第三方调用：调外部 API（慢/不稳）、webhook；\n3) CPU 密集：模型推理、文档解析、压缩；\n4) 批处理：数据同步、清洗、统计、定时任务；\n5) 流式/流水线：多步骤异步（autohr 的简历解析→提取→评分流水线）；\n6) 定时任务：日报、清理、轮询（Celery beat）。\n架构：\n- 生产者：业务代码创建任务（如 celery_task.delay(args)）；\n- Broker（消息中间件）：Redis/RabbitMQ 暂存任务；\n- Worker：后台进程消费任务执行；\n- 结果后端（可选）：存任务结果/状态；\n- Beat：定时调度。\n好处：\n- 请求快速返回（用户体验）；\n- 削峰（突发任务排队，按 worker 速率消费）；\n- 解耦（生产消费分离）；\n- 可重试/可监控/可扩展（加减 worker）；\n- 不阻塞主服务。\n注意：\n- 任务幂等（可能重试）；\n- 失败处理（重试策略、死信、告警）；\n- 监控（积压、失败、耗时）；\n- 资源隔离（CPU 任务别拖垮 worker）；\n- 并发模型（进程/线程/协程，Python GIL 影响）；\n- DB 连接（worker 独立连接池，如 autohr 用 NullPool）；\n- 长任务分片/进度上报。\nCelery（Python 主流）、RQ、Dramatiq；Go/Java 各有等价。\n异步任务是后端架构核心组件，识别「可异步」的操作剥离出去，大幅提升响应与吞吐。autohr 用 Celery（solo pool）做简历解析/评分异步、beat 做邮件轮询。"
     },
@@ -141,7 +214,11 @@
       "question": "JWT 的原理？如何安全使用？有哪些坑？",
       "points": 5,
       "difficulty": 4,
-      "tags": ["JWT", "认证", "安全"],
+      "tags": [
+        "JWT",
+        "认证",
+        "安全"
+      ],
       "dimension": "skill",
       "reference_answer": "原理：JWT = header（算法）.payload（声明：user_id/exp/role 等）.signature（签名）。签名用密钥（HMAC）或私钥（RS256/ES256）对 header+payload 签名，保证完整性（防篡改）。服务端签发，客户端携带，服务端验签后信任 payload。\n特点：\n- 无状态：服务端不存 session，验签即信任，易扩展；\n- 自包含：payload 可放用户信息，减查询；\n- 签名不加密：payload 是 base64，勿放敏感（密码/密钥）；\n- 过期：exp 声明控制有效期。\n安全使用：\n1) 算法：用 RS256/ES256（非对称，公钥验签）或强 HMAC（HS256，密钥保密），禁用 none 算法（漏洞）；\n2) 密钥管理：HMAC 密钥强随机、安全存储、轮换；RS256 私钥保密、公钥可分发；\n3) 有效期：access token 短（15-30min），refresh token 长（7d+），refresh 转 access；\n4) 存储：access token 内存（防 XSS），refresh token httpOnly + Secure + SameSite cookie（防 XSS 读 + 防 CSRF）；\n5) 撤销：JWT 难主动撤销（未过期前有效）——用黑名单（Redis 记撤销的 jti）、短有效期、refresh token 轮换检测盗用；\n6) HTTPS：防中间人截获；\n7) 声明最小化：payload 只放必要信息，别放权限全集（权限实时查更安全）；\n8) audience/issuer 校验：防跨服务 token 滥用。\n常见坑：\n- 把 JWT 当加密用（payload 可读）；\n- 长有效期 access token（泄露风险大）；\n- localStorage 存（XSS 可读）；\n- 不验 alg（alg=none 攻击）；\n- 密钥硬编码/泄露；\n- 无撤销机制（登出无效）；\n- payload 过大（每请求携带）。\nautohr：RS256（backend/keys 私钥/公钥），access 30min 内存 + refresh 7d httpOnly cookie。理解 JWT 原理与安全实践是现代认证基础。"
     },
@@ -149,7 +226,11 @@
       "question": "Session 认证与 JWT 认证的区别？如何选择？",
       "points": 5,
       "difficulty": 3,
-      "tags": ["Session", "JWT", "认证"],
+      "tags": [
+        "Session",
+        "JWT",
+        "认证"
+      ],
       "dimension": "skill",
       "reference_answer": "Session 认证：\n- 登录后服务端创建会话（存 Redis/DB），返回 session_id（Cookie，httpOnly）；\n- 后续请求带 Cookie，服务端按 session_id 查会话得用户；\n- 有状态（服务端存会话）。\nJWT 认证：\n- 登录后签发 JWT（含用户信息+签名），客户端存（内存/cookie/localStorage）；\n- 后续请求带 Authorization: Bearer，服务端验签即信任；\n- 无状态（服务端不存）。\n区别：\n1) 状态：Session 有状态（服务端存），JWT 无状态；\n2) 扩展：Session 需共享会话存储（多实例），JWT 天然可扩展；\n3) 撤销：Session 易撤销（删会话），JWT 难（需黑名单）；\n4) 存储：Session 自动 Cookie，JWT 需手动管理存储；\n5) 大小：Session id 小，JWT 较大（含 payload）；\n6) 跨域：Session Cookie 跨域难（需 SameSite/CORS），JWT 跨域友好；\n7) 移动端：JWT 友好，Session Cookie 移动端不便；\n8) 安全：Session 防 CSRF（Cookie 自动带）需 SameSite/CSRF token，JWT 防 XSS（token 存 localStorage 易被读）；\n9) 信息：JWT 自包含，Session 需查服务端。\n选择：\n- 浏览器 Web、需即时撤销、单域名 → Session（简单成熟）；\n- SPA/移动端、多端、微服务、SSO、无状态扩展 → JWT；\n- 混合：JWT 携带身份 + 服务端查权限（关键操作实时校验）；\n- 现代：access JWT（短，无状态快速验）+ refresh（有状态或 JWT，可撤销）。\n常见最佳实践（autohr 即此）：\n- access token：JWT，短（30min），存内存（防 XSS），无状态快速验签；\n- refresh token：httpOnly cookie，长（7d），可服务端撤销；\n- access 过期用 refresh 换新；refresh 泄露可撤销。\n两者非互斥，按场景组合。理解区别才能选对认证方案。"
     },
@@ -157,7 +238,11 @@
       "question": "OAuth 2.0 的授权码流程是什么？为什么推荐它？",
       "points": 10,
       "difficulty": 4,
-      "tags": ["OAuth2", "授权码", "安全"],
+      "tags": [
+        "OAuth2",
+        "授权码",
+        "安全"
+      ],
       "dimension": "skill",
       "reference_answer": "OAuth 2.0：授权框架，让用户授权第三方应用访问其在另一服务的资源，而不交出密码。角色：资源拥有者（用户）、客户端（第三方应用）、授权服务器、资源服务器。\n授权码流程（Authorization Code，最常用、最安全）：\n1) 用户点「用 Google 登录」，客户端跳转到 Google 授权页（带 client_id、redirect_uri、scope、state）；\n2) 用户登录 Google 并同意授权；\n3) Google 重定向回 redirect_uri，带授权码 code；\n4) 客户端后端用 code + client_secret 向 Google 换 access_token（服务端到服务端，密钥不暴露给浏览器）；\n5) 客户端用 access_token 调 Google API 获取资源（用户信息）。\n为什么推荐：\n1) 安全：access_token 不经过浏览器（只换 code 经浏览器），client_secret 只在后端用；\n2) 防截获：code 短时效、一次性、绑定 redirect_uri；\n3) state 防 CSRF（随机 state 校验）；\n4) PKCE（扩展）：移动端/SPA 无后端密钥时，用 code_verifier/challenge 替代 secret，公共客户端必用。\n其他流程（各有适用，但授权码+PKCE 逐渐统一）：\n- 隐式（implicit）：浏览器直接拿 token，已不推荐（不安全）；\n- 密码（password）：客户端直接拿用户密码，仅信任客户端用，已弃用；\n- 客户端凭证（client_credentials）：机器对机器（服务间），无用户参与。\nOIDC（OpenID Connect）：OAuth 之上加身份层，id_token（JWT 含用户身份），用于单点登录（SSO）。\n安全要点：HTTPS、state 防 CSRF、redirect_uri 白名单（防 open redirect）、scope 最小化、token 存储、过期与刷新、PKCE。\nOAuth 是第三方登录/开放平台/SSO 的标准，授权码+PKCE 是现代推荐。理解流程与安全要点才能正确集成登录。"
     },
@@ -165,7 +250,11 @@
       "question": "XSS 与 CSRF 攻击的原理与防御？",
       "points": 10,
       "difficulty": 4,
-      "tags": ["XSS", "CSRF", "Web安全"],
+      "tags": [
+        "XSS",
+        "CSRF",
+        "Web安全"
+      ],
       "dimension": "skill",
       "reference_answer": "XSS（跨站脚本）：攻击者把恶意脚本注入到页面，其他用户浏览时执行（窃取 Cookie/token、篡改页面、钓鱼）。\n类型：\n- 存储型：恶意脚本存 DB（如评论），所有访问者中招；\n- 反射型：脚本在 URL 参数，诱导点击后服务端反射回页面执行；\n- DOM 型：纯前端 JS 拼接执行。\n防御：\n1) 输出转义：把用户内容当数据非代码，HTML 转义（< → &lt;），按上下文（HTML/JS/URL/CSS）转义；\n2) CSP（Content Security Policy）：限制脚本来源，禁内联；\n3) HttpOnly Cookie：JS 读不到 Cookie（防窃取）；\n4) 框架自动转义（React/Vue 默认转义，别用 dangerouslySetInnerHTML）；\n5) 输入校验（辅助，主要靠输出转义）。\nCSRF（跨站请求伪造）：用户已登录站点 A，访问恶意站点 B，B 用用户对 A 的凭证（Cookie 自动带）发请求（转账/改密），A 误以为是用户操作。\n原理：Cookie 在同域请求自动发送，B 站构造对 A 的请求，浏览器带上 A 的 Cookie。\n防御：\n1) CSRF Token：服务端发一次性 token，表单/请求头带，B 站拿不到 token；\n2) SameSite Cookie：SameSite=Lax/Strict 限制跨站带 Cookie（现代浏览器默认 Lax，大幅缓解）；\n3) 双重 Cookie 校验；\n4) 敏感操作二次确认（密码/验证码）；\n5) 检查 Referer/Origin 头。\n区别：\n- XSS：注入脚本在受害者浏览器执行（偷数据/操作）；\n- CSRF：借用受害者身份发请求（冒充）；\n- XSS 能偷 token，CSRF 借 Cookie 身份。\n联系：XSS 可绕过 CSRF 防御（偷 token）。\nAPI 场景（前后端分离 + JWT）：\n- JWT 存内存而非 Cookie → 天然防 CSRF（请求头手动带 token，不自动带）；\n- 但 JWT 存 localStorage 易被 XSS 偷 → 防 XSS（CSP、转义、HttpOnly refresh）；\n- 若 JWT 放 Cookie，仍需 CSRF 防护。\n两者是 Web 安全基础，理解原理与防御才能设计安全应用。纵深防御（转义+CSP+Token+SameSite+HTTPS）。"
     },
@@ -173,7 +262,11 @@
       "question": "密码应该如何安全存储？",
       "points": 5,
       "difficulty": 3,
-      "tags": ["密码存储", "bcrypt", "安全"],
+      "tags": [
+        "密码存储",
+        "bcrypt",
+        "安全"
+      ],
       "dimension": "skill",
       "reference_answer": "绝对禁止：明文存储、可逆加密存储（能解密=泄露风险）。\n正确做法：哈希（单向不可逆）+ 盐（防彩虹表）+ 慢哈希（防暴力破解）。\n方案：\n1) bcrypt（主流）：自适应成本因子（cost），可随硬件升级提高，内建盐，专为密码设计；\n2) Argon2（现代推荐，密码哈希竞赛冠军）：抗 GPU/ASIC、内存硬，参数可调（时间/内存/并行）；\n3) PBKDF2：迭代 HMAC，旧但标准；\n4) scrypt：内存硬。\n为什么不用 MD5/SHA256：\n- 太快（GPU 暴力破解每秒数十亿次）；\n- 无盐易被彩虹表；\n- 专为速度/校验设计，不适合密码。\n盐（salt）：每个密码随机盐，防彩虹表（相同密码哈希不同）。bcrypt/Argon2 内建盐（哈希结果含盐）。\n慢哈希：故意慢（cost 调到约 100-250ms/次），暴力破解成本高，但单次登录可接受。\n流程：\n- 注册：hash = bcrypt(password, cost)，存 hash；\n- 登录：bcrypt_verify(password, hash) 比对。\n其他安全：\n- 密码强度策略（长度/复杂度，但长度优先）；\n- 限制尝试次数（防暴力，锁定/IP 限流）；\n- 不返回「密码错」vs「用户不存在」区别（防用户枚举），统一「凭证无效」；\n- 密码重置用一次性 token（短时效、用后失效），不发送原密码；\n- 强制 HTTPS（防截获）；\n- 支持多因素认证（MFA/2FA）；\n- 检查密码是否在已知泄露库（Have I Been Pwned API）。\n升级旧哈希：用户登录时用新算法重哈希（透明升级）。\n密码存储是安全底线，任何泄露（哈希被拖库）都应保证不可逆+难暴力。bcrypt/Argon2 是现代标准。autohr 用 bcrypt 存密码。"
     },
@@ -181,7 +274,11 @@
       "question": "微服务与单体架构的区别？如何选择？",
       "points": 5,
       "difficulty": 3,
-      "tags": ["微服务", "单体", "架构"],
+      "tags": [
+        "微服务",
+        "单体",
+        "架构"
+      ],
       "dimension": "skill",
       "reference_answer": "单体：所有功能（UI/业务/数据访问）打包成一个应用部署。\n优点：简单、开发调试易、部署简单、调用本地快、事务易；\n缺点：代码膨胀难维护、改一处全量部署、技术栈统一难、扩展只能整体、团队协作冲突、单点故障全挂。\n微服务：按业务边界拆成多个独立服务，各自部署、独立技术栈、通过 API/消息通信。\n优点：\n- 独立部署/扩展（按需扩关键服务）；\n- 故障隔离（一服务挂不影响全部）；\n- 团队自治、技术栈灵活；\n- 清晰边界、易理解维护单个服务；\n- 可独立演进/重构。\n缺点（分布式复杂性）：\n- 网络通信开销与延迟；\n- 数据一致性（分布式事务难）；\n- 服务发现/注册/网关/配置/链路追踪等基础设施复杂；\n- 部署运维复杂（多服务、CI/CD、监控）；\n- 跨服务调试难；\n- 接口契约管理；\n- 团队/组织配合（康威定律）。\n选择：\n- 小项目/早期/MVP/团队小 → 单体（快速迭代，YAGNI）；\n- 大型/复杂/多团队/需独立扩展 → 微服务；\n- 中间：模块化单体（清晰模块边界，未来易拆）；\n- 不要盲目追微服务（分布式复杂性常超收益）。\n演进：通常单体起步 → 随规模痛点出现 → 逐步拆微服务（按业务边界、优先拆高频变更/需独立扩展的）。先单体后拆比一开始微服务更稳。\n关键：拆分边界按业务能力（领域驱动设计 DDD），非按技术层。\n服务间通信：REST/gRPC（同步）、消息队列（异步）。\n基础设施：服务注册发现（Consul/Nacos）、API 网关、配置中心、链路追踪（Jaeger/Zipkin）、容器编排（K8s）。\n原则：架构服务于业务，按规模与痛点选，避免过度工程。理解两者权衡才能在正确阶段做正确选择。"
     },
@@ -189,7 +286,11 @@
       "question": "服务发现与注册中心的作用？常见实现？",
       "points": 5,
       "difficulty": 4,
-      "tags": ["服务发现", "注册中心", "微服务"],
+      "tags": [
+        "服务发现",
+        "注册中心",
+        "微服务"
+      ],
       "dimension": "skill",
       "reference_answer": "问题：微服务多实例动态变化（扩缩容、故障、滚动更新），调用方如何知道目标服务在哪个 IP:端口？硬编码不可行。\n服务发现：自动让服务提供者注册地址、服务消费者查询地址的机制。\n两种模式：\n1) 客户端发现：消费者直接查注册中心拿实例列表，自己负载均衡（如 Ribbon、gRPC 客户端负载均衡）；\n2) 服务端发现：消费者请求经过负载均衡器/网关，由它查注册中心转发（如 Nginx + Consul template、K8s Service + kube-proxy）。\n注册中心：存「服务名 → 实例列表（IP:port, 健康状态, 元数据）」的中心化组件。\n核心功能：\n- 服务注册：实例启动时注册；\n- 健康检查：定期探活，故障实例摘除；\n- 服务发现：消费者查询；\n- 变更通知：实例变化通知订阅者（watch）；\n- 元数据：版本、权重、区域。\n常见实现：\n- Consul（HashiCorp）：服务发现+配置+健康检查，多数据中心；\n- Nacos（阿里）：注册+配置，国内主流；\n- Eureka（Netflix，停更）：AP，服务发现；\n- etcd/ZooKeeper：CP，通用一致性 KV，可做注册中心（K8s 用 etcd）；\n- K8s Service：内置服务发现（DNS + kube-proxy），云原生默认。\nCAP 取舍：\n- AP（可用优先）：Eureka/Nacos AP 模式，注册中心分区仍可用，可能返回旧实例；\n- CP（一致优先）：ZooKeeper/etcd，强一致，分区时部分不可用。\n服务发现场景多选 AP（可用性 > 强一致，旧实例调用失败重试即可）。\n实践：\n- 健康检查（TCP/HTTP/自定义）；\n- 优雅上下线（注册延迟、摘除缓冲，避免流量打到刚启动/将关闭实例）；\n- 负载均衡策略（轮询/随机/最少连接/权重/一致性哈希）；\n- 跨区域/多数据中心。\n云原生时代 K8s Service + DNS 是事实标准（应用无感知，K8s 管服务发现与负载均衡）。理解服务发现是微服务基础，但 K8s 已抽象掉大部分复杂度。"
     },
@@ -197,7 +298,11 @@
       "question": "API 网关的作用？应该把哪些功能放在网关？",
       "points": 5,
       "difficulty": 4,
-      "tags": ["API网关", "微服务", "架构"],
+      "tags": [
+        "API网关",
+        "微服务",
+        "架构"
+      ],
       "dimension": "skill",
       "reference_answer": "API 网关：微服务对外的统一入口，所有外部请求经网关路由到后端服务。类似前门/门面。\n核心作用：\n1) 路由：按路径/Host/Header 路由到对应服务（/api/users → 用户服务）；\n2) 认证鉴权：统一校验 token/权限，后端服务不再各自实现；\n3) 限流熔断：保护后端，全局/API 级限流；\n4) 负载均衡：分发到服务多实例；\n5) 协议转换：HTTP ↔ gRPC、WebSocket 支持；\n6) 日志监控：统一访问日志、指标、链路追踪起点；\n7) 缓存：缓存响应减后端压力；\n8) 灰度/A-B：按规则分流（版本/用户）；\n9) 请求/响应改写：加 Header、改路径、聚合多个服务响应（BFF）；\n10) 安全：WAF、防 DDoS、IP 黑白名单、CORS；\n11) SSL 卸载：HTTPS 在网关终止，后端 HTTP；\n12) API 管理：文档、版本、配额、计费。\n什么放网关（横切关注点）：认证、限流、日志、监控、路由、SSL、CORS——所有服务共享的、与业务逻辑无关的。\n什么不放网关：业务逻辑（订单状态机、价格计算）、复杂业务校验、数据聚合涉及业务规则——这些放各服务，网关只做转发，避免网关变成「胖网关」难维护。\n网关类型：\n- 反向代理增强（Nginx/OpenResty/Kong）：基于 Nginx + Lua/插件；\n- 专门网关（Kong/APISIX/Tyk）：插件化、管理界面；\n- 云原生（Envoy/Istio ingress、AWS API Gateway、Spring Cloud Gateway）：与服务网格集成；\n- 自建轻量。\n选型：Kong/APISIX（功能全、插件）、Nginx（轻量稳定）、云厂商（托管省事）、Envoy（云原生、服务网格）。\n注意：\n- 网关是单点/瓶颈，需高可用（多副本）；\n- 网关逻辑保持简单，复杂业务下沉；\n- 网关故障影响全局，需降级/兜底；\n- 性能（网关转发延迟叠加）。\nBFF（Backend for Frontend）：为不同前端（Web/移动）定制的网关/聚合层，做数据聚合与裁剪。autohr 规模小，Next.js 直连 backend，无需独立网关。"
     },
@@ -205,7 +310,11 @@
       "question": "重试、超时、熔断如何设计？三者关系？",
       "points": 5,
       "difficulty": 4,
-      "tags": ["重试", "超时", "熔断"],
+      "tags": [
+        "重试",
+        "超时",
+        "熔断"
+      ],
       "dimension": "skill",
       "reference_answer": "三者是分布式系统稳定性的基础机制，配合使用。\n超时（Timeout）：调用外部（DB/API/下游服务）设超时，避免无限等待耗尽资源（连接/线程/协程）。\n- 连接超时（connect）、读取超时（read）、总超时；\n- 设合理值（据 SLA 与历史 p99），宁可快速失败也别挂死；\n- 多层超时（网关→服务→DB）需上层 > 下层，避免下层已超上层还在等。\n重试（Retry）：瞬时故障（网络抖动、短暂过载）重试可恢复。\n- 幂等的才重试（GET/PUT/DELETE 安全；POST 需幂等设计）；\n- 限制次数（如 3 次）与退避（指数退避+抖动，避免重试风暴）；\n- 设重试超时（总时长有上限）；\n- 区分可重试错误（超时/5xx/限流）与不可重试（4xx 业务错）；\n- 重试可能加重下游压力（重试风暴），配合熔断。\n熔断（Circuit Breaker）：下游持续故障时停止调用，快速失败，保护自己与下游。\n- 统计错误率/慢调用，超阈值「打开」熔断，请求快速失败（不走下游）；\n- 一段时间后「半开」放少量请求探测，成功则「关闭」恢复正常，失败则继续熔断；\n- 防故障扩散、给下游恢复时间、释放资源。\n关系（配合）：\n- 超时：单次调用上限；\n- 重试：处理瞬时故障；\n- 熔断：处理持续故障，避免无意义重试压垮下游；\n- 顺序：先超时（快速失败）→ 偶尔重试（瞬时恢复）→ 频繁失败触发熔断（停止调用）。\n降级（配合）：熔断/失败后返回兜底（默认值/缓存/简化），保证核心可用。\n设计要点：\n- 全链路设超时（默认值兜底）；\n- 重试有限+退避+幂等；\n- 熔断阈值合理（错误率/慢调用比例）；\n- 监控三者指标（超时率、重试率、熔断状态）；\n- 限流（入口保护）+ 超时/重试/熔断（链路保护）+ 降级（兜底）= 高可用三板斧。\n工具：Resilience4j、Hystrix（停更）、Sentinel、Istio（网格级）。autohr 的 LLM 适配器有熔断器（3 次失败/5 分钟→5 分钟冷却切 fallback）。"
     },
@@ -213,7 +322,11 @@
       "question": "分布式链路追踪（Distributed Tracing）解决什么问题？",
       "points": 5,
       "difficulty": 4,
-      "tags": ["链路追踪", "可观测性", "微服务"],
+      "tags": [
+        "链路追踪",
+        "可观测性",
+        "微服务"
+      ],
       "dimension": "skill",
       "reference_answer": "问题：微服务下一个用户请求可能经过多个服务（网关→用户→订单→库存→支付...），出问题时难定位是哪个服务慢/错。日志分散在各服务，无关联。\n链路追踪：给每个请求一个唯一 trace_id，跨服务传递（HTTP Header/上下文），每段（span）记录服务、操作、耗时、状态，串联成调用树（trace）。\n核心概念：\n- Trace：一次完整请求链路；\n- Span：链路中的一段（一个服务/操作），有父子关系；\n- trace_id/span_id/parent_span_id：关联；\n- 上下文传播：trace 头跨进程传递（W3C Trace Context、B3）。\n价值：\n1) 定位瓶颈：看哪段最慢（耗时分布）；\n2) 定位错误：哪个服务失败、错误堆栈；\n3) 理解调用关系：服务拓扑、依赖；\n4) 性能分析：p99 在哪段、串行/并行；\n5) 与日志/指标关联：用 trace_id 串日志、指标。\n实现：\n- 自动埋点（SDK/agent 拦截 HTTP/RPC/DB）：OpenTelemetry（标准，主流）、Jaeger、Zipkin、SkyWalking；\n- 手动埋点：关键业务 span；\n- 采样：高流量采样（头采样/尾采样），全量太贵；\n- 后端：收集+存储+UI（Jaeger/Tempo/SkyWalking/云厂商 APM）。\n与日志、指标关系（可观测性三支柱）：\n- 指标（Metrics）：聚合数值（QPS/延迟/错误率），告警；\n- 日志（Logs）：离散事件详情，调试；\n- 追踪（Traces）：请求级链路，定位。\n三者通过 trace_id/标签关联，互补。出问题：告警（指标）→ 看链路（追踪定位段）→ 看日志（详情）。\n实践：\n- 接入 OpenTelemetry 标准；\n- 关键路径自动埋点（HTTP/DB/MQ）；\n- 业务关键 span 手动；\n- 合理采样；\n- 与日志统一 trace_id；\n- 监控 dashboard 与告警。\n链路追踪是微服务可观测性的核心，没有它，跨服务问题排查如盲人摸象。理解它对运维复杂分布式系统关键。单体/小服务可暂不需要（日志够）。"
     },
@@ -221,7 +334,11 @@
       "question": "配置管理（配置中心）应该怎么做？",
       "points": 5,
       "difficulty": 3,
-      "tags": ["配置管理", "配置中心", "工程"],
+      "tags": [
+        "配置管理",
+        "配置中心",
+        "工程"
+      ],
       "dimension": "skill",
       "reference_answer": "原则：配置与代码分离，配置可动态变更而不重新部署，环境差异通过配置管理。\n配置分层：\n1) 默认配置（代码内，合理默认）；\n2) 环境变量（.env，部署时注入，12-factor app）；\n3) 配置文件（按环境）；\n4) 配置中心（运行时动态配置）。\n什么放配置（会变的）：\n- 环境相关：数据库连接、API 地址、端口、密钥；\n- 业务可调：阈值、开关、限额、超时；\n- 功能开关（Feature Flag）：灰度发布、A-B、降级开关；\n- 第三方凭证。\n什么不放配置（稳定的）：业务逻辑、算法。\n环境变量 + .env（基础）：\n- 开发用 .env 文件，生产注入环境变量；\n- 密钥用 secret manager（不进 git、不进明文配置）；\n- pydantic-settings/dotenv 加载。\n配置中心（动态，大型系统）：\n- 集中存储、版本、审计、动态推送、环境隔离；\n- 运行时改配置不重启；\n- 灰度、功能开关；\n- 实现：Apollo、Nacos、Consul KV、etcd、Spring Cloud Config、云厂商。\n密钥管理（关键）：\n- 密钥/凭证不入 git、不进普通配置；\n- 用 Vault/AWS Secrets Manager/云 KMS；\n- 自动轮换、审计访问；\n- 运行时拉取注入。\n实践：\n- 配置 schema 化（类型、校验、默认、文档）；\n- 环境隔离（dev/staging/prod 不同配置）；\n- 敏感配置加密/secret；\n- 配置变更审计；\n- 功能开关支持灰度与快速回滚；\n- 配置缓存与降级（配置中心挂时用本地缓存）。\n配置管理是工程化基础，好配置系统让运维灵活、变更低风险（功能开关替代部署）、环境可移植。autohr 用 pydantic-settings + .env（50+ 配置项），规模适中无需配置中心。随规模增长（多环境、灰度、动态）再引入配置中心。\n记住：密钥永远不进代码/配置文件/git，用 secret 管理。"
     },
@@ -229,7 +346,11 @@
       "question": "如何设计后端的日志与监控系统？",
       "points": 5,
       "difficulty": 4,
- "tags": ["日志", "监控", "可观测性"],
+      "tags": [
+        "日志",
+        "监控",
+        "可观测性"
+      ],
       "dimension": "skill",
       "reference_answer": "目标：出问题时能快速定位（可观测性），日常能发现异常（告警），长期能分析（趋势/容量）。\n三支柱（可观测性）：日志（Logs）、指标（Metrics）、追踪（Traces），见链路追踪题。加上事件（告警）。\n日志：\n- 结构化（JSON，便于检索解析），非纯文本；\n- 分级（DEBUG/INFO/WARN/ERROR），生产 INFO+；\n- 含上下文（request_id/trace_id/user_id），可串联；\n- 不记敏感（密码/token/PII 需脱敏）；\n- 异步写、不阻塞业务；\n- 集中收集（ELK/Loki/云日志），可检索、保留策略。\n指标（Metrics）：\n- 业务指标：QPS、订单量、转化率、错误率；\n- 性能指标：延迟（p50/p95/p99）、吞吐、队列长度；\n- 资源指标：CPU/内存/磁盘/网络、连接数、GC；\n- 中间件：DB/Redis/MQ 状态；\n- 时序数据库（Prometheus/InfluxDB）+ 可视化（Grafana）；\n- 自动采集（exporter/SDK）。\n告警：\n- 基于指标阈值/异常检测；\n- 分级（信息/警告/严重），按严重通知（邮件/短信/电话/IM）；\n- 避免告警风暴（聚合、抑制、静默）；\n- 可执行（告警含上下文、处置建议）；\n- 定期 review（告警疲劳/漏报）。\n追踪：见链路追踪题。\nDashboard：关键业务/系统大盘，实时可见。\n关键设计原则：\n- request_id/trace_id 贯穿（日志+追踪+指标关联）；\n- RED 方法（服务：Rate/Error/Duration）或 USE（资源：Utilization/Saturation/Errors）；\n- 黄金信号（延迟/流量/错误/饱和度）；\n- SLI/SLO（服务等级目标）驱动；\n- 暗坑快速定位（分层下钻：大盘→服务→链路→日志）。\n工具栈：Prometheus+Grafana（指标）、ELK/Loki（日志）、Jaeger/Tempo（追踪）、OpenTelemetry（标准）、Sentry（错误）、云厂商 APM。\nautohr：结构化日志（RequestId 中间件）+ audit 中间件 + 可加 Prometheus。监控是生产系统的眼睛，投入回报高，是 SRE/后端工程核心。"
     },
@@ -237,7 +358,11 @@
       "question": "什么是 idempotency key（幂等键）？如何实现幂等接口？",
       "points": 10,
       "difficulty": 4,
-      "tags": ["幂等键", "幂等接口", "可靠性"],
+      "tags": [
+        "幂等键",
+        "幂等接口",
+        "可靠性"
+      ],
       "dimension": "skill",
       "reference_answer": "幂等键：客户端为每次「逻辑请求」生成唯一 ID（UUID），随请求发送；服务端用此键识别重复请求，保证多次提交效果与一次相同。\n场景：\n- 支付/下单（网络超时，客户端重试，不应重复扣款/下单）；\n- 表单提交（用户重复点击）；\n- 任何「写」操作且可能重试。\n实现：\n1) 客户端生成幂等键（每次新操作新 UUID，重试用同一 UUID），放 Header（Idempotency-Key）或 body；\n2) 服务端：\n   - 收到请求，先查幂等键是否已处理（DB/Redis 记录键→结果）；\n   - 已处理：直接返回上次结果（而非重新执行）；\n   - 未处理：执行业务，成功后记录键→结果，返回；\n   - 并发同键：用唯一约束/锁，只一个执行，其他等/返回进行中。\n存储：\n- DB 唯一索引（键列唯一）+ 状态/结果；\n- Redis（短期，TTL）适合短时去重；\n- 键 + 业务操作需原子（事务/Lua）。\n细节：\n- 键的生命周期：覆盖可能的超时重试窗口（TTL > 最长重试间隔）；\n- 结果缓存：存完整响应，重试返回相同响应；\n- 进行中状态：处理中收到同键，返回进行中或等待；\n- 失败也记录？一般失败不记（允许重试），但需防并发；\n- 与业务键结合：用订单号等业务键天然幂等。\nAPI 设计：\n- POST 创建支持 Idempotency-Key Header（Stripe 模式）；\n- 文档说明语义（同键同结果）；\n- 键格式与生成（UUID 推荐）。\n与状态机/乐观锁区别：\n- 幂等键：客户端驱动、防重复提交；\n- 状态机：业务状态约束（已支付不能再支付）；\n- 乐观锁：并发更新冲突；\n- 常组合用。\n幂等是可靠 API 的核心（让客户端敢安全重试），幂等键是通用实现。配合 at-least-once 投递（消息/重试）= 业务 exactly-once。理解幂等键是分布式后端基础技能。"
     },
@@ -245,7 +370,11 @@
       "question": "如何做 API 的版本化？有哪些策略？",
       "points": 5,
       "difficulty": 3,
-      "tags": ["API版本", "版本化", "REST"],
+      "tags": [
+        "API版本",
+        "版本化",
+        "REST"
+      ],
       "dimension": "skill",
       "reference_answer": "为什么需要：API 演进（改字段、改行为、破坏性变更）时不破坏现有客户端（已发布的移动端/第三方集成无法强制升级）。\n策略：\n1) URI 版本：/v1/users、/v2/users。最直观、易路由、缓存友好。主流。\n2) Header 版本：Accept: application/vnd.myapp.v1+json 或自定义 X-API-Version。URL 干净，但难测试/调试、缓存按 URL 不友好。\n3) Query 参数：?version=1。简单但易丢失、缓存难。\n4) 不版本化（兼容性演进）：用字段新增（不删改）、功能开关、deprecation，长期保持向后兼容。简单但限制了重构。\n实践：\n- 主流用 URI 版本（/v1）；\n- 语义化版本：大版本（v1/v2）表示破坏性变更，小变更用兼容演进；\n- 新增字段不版本化（向后兼容）；\n- 删除/改语义/改行为才升大版本；\n- 旧版本设废弃期（Deprecation Header + 文档 + 监控使用），给客户端迁移时间，再下线。\n演进技巧（减少版本爆炸）：\n- 字段只加不删（先标 deprecated，很久后才删）；\n- 用可选字段、默认值保持兼容；\n- 新功能用新端点/字段而非改旧的；\n- 枚举只加值不改值；\n- 宽容读取（忽略未知字段）、严格输出；\n- GraphQL 天然版本友好（按需取字段，加字段不破坏）。\n管理多版本：\n- 代码组织（版本路由、共享逻辑）；\n- 维护成本（多版本并行测试、文档、支持）；\n- 鼓励客户端升级（通知、指标、停旧版本）。\n内部 API（自己前端）vs 外部 API（第三方）：内部可频繁迭代（强制前端同步升级），外部需严格版本与兼容。\n原则：版本化是「成本」（多版本维护），优先用兼容演进减少版本数，破坏性变更才升版本。autohr 前后端自研，API 可直接演进（破坏性变更前后端同步），暂无需严格版本化。对外/移动端需谨慎。"
     },
@@ -253,7 +382,11 @@
       "question": "什么是 ASGI / WSGI？uvicorn / gunicorn 的关系？",
       "points": 10,
       "difficulty": 4,
-      "tags": ["ASGI", "WSGI", "部署"],
+      "tags": [
+        "ASGI",
+        "WSGI",
+        "部署"
+      ],
       "dimension": "skill",
       "reference_answer": "WSGI（Web Server Gateway Interface）：Python Web 应用的同步接口标准（PEP 3333）。一个请求一个同步调用，适合同步框架（Flask/Django 传统）。无法处理 WebSocket/长连接/流式/异步（每请求阻塞）。\nASGI（Asynchronous Server Gateway Interface）：WSGI 的异步 successor，支持异步、WebSocket、HTTP/2、长连接、流式。异步框架（FastAPI/Starlette/Sanic/Django 3.0+ async）基于 ASGI。\n关系：\n- WSGI：同步应用接口，如 Flask（同步）；\n- ASGI：异步应用接口，如 FastAPI（异步，基于 Starlette）；\n- FastAPI 既是 ASGI 应用，也能跑同步路由（自动放线程池）。\n服务器：\n- WSGI 服务器：gunicorn、uWSGI——同步，用 worker 进程+线程处理并发；\n- ASGI 服务器：uvicorn、hypercorn、daphne——异步事件循环，单进程处理大量并发 I/O。\nuvicorn vs gunicorn：\n- uvicorn：ASGI 服务器，跑 FastAPI/Starlette，异步事件循环，适合 I/O 密集高并发；\n- gunicorn：WSGI 服务器（同步），但可管理 uvicorn worker（gunicorn -k uvicorn.worker.UvicornWorker），用 gunicorn 做进程管理（master-worker，平滑重启、信号），uvicorn 做实际异步服务；\n- 生产部署 FastAPI 常用：gunicorn（进程管理）+ uvicorn worker（异步），多 worker 利用多核。\n部署模式：\n- 开发：uvicorn --reload；\n- 生产：gunicorn -w N -k uvicorn.worker.UvicornWorker app:app（N=2×CPU+1），或多 uvicorn 实例 + 负载均衡；\n- 反向代理（Nginx）在前：SSL、静态、负载均衡到多 worker。\nworker 数与并发：\n- 异步单 worker 可处理大量 I/O 并发，但 CPU 密集会阻塞（需多 worker 利用多核）；\n- worker 数 ≈ CPU 数（CPU 密集多）或按 I/O 调；\n- 每 worker 独立事件循环，进程隔离。\n理解 ASGI/WSGI 与部署组件关系，才能正确部署与调优 Python Web 服务。autohr 用 uvicorn 跑 FastAPI（容器内 command uvicorn app.main:app）。生产可加 gunicorn 进程管理。"
     },
@@ -261,7 +394,11 @@
       "question": "如何设计一个高并发的计数器（如 点赞 / 浏览量）？",
       "points": 5,
       "difficulty": 4,
-      "tags": ["计数器", "高并发", "Redis"],
+      "tags": [
+        "计数器",
+        "高并发",
+        "Redis"
+      ],
       "dimension": "skill",
       "reference_answer": "挑战：高频更新（每秒数千-数万次点赞/浏览），直接写 DB 会打垮 DB（行锁竞争、写放大）。\n方案：\n1) Redis 原子计数（INCR/HINCRBY）：\n- Redis 单线程原子操作，高并发安全；\n- 计数存 Redis（like:post_id → count），毫秒级；\n- 读直接读 Redis；\n- 适合实时计数，但 Redis 故障丢未持久化数据（需 AOF + 定期落 DB）。\n2) Redis + 异步落 DB（主流）：\n- 实时增减在 Redis（高并发承载）；\n- 定时/批量异步把 Redis 计数同步到 DB（持久化、分析）；\n- DB 只承受批量写，压力小。\n3) 防重复计数：\n- 点赞（一人一次）：用 Set/Bitmap 记录已点赞用户（SISMEMBER 判重），计数 = Set 大小；\n- 浏览量（去重 UV）：HyperLogLog（PFADD/PFCOUNT，极省空间，有误差）或 Set（精确但大）；\n- 设备/用户维度去重。\n4) 写合并（Write Coalescing）：\n- 多次增减在内存/Redis 合并，定期刷一次 DB（减写次数）；\n- 如 1 秒内某文章的多次浏览合并为一次 +N 更新。\n5) 分片计数：\n- 超高并发单 key 热点，分片到多 key（counter:post_id:0/1/2...），读时合并；\n- 减少单 key 竞争（Redis 单线程，单 key 高 QPS 也行，但分片减热点）。\n一致性：\n- 实时显示可接受短暂延迟（最终一致）；\n- 关键计数（金额）需强一致（DB 事务）。\n架构：客户端 → 计数服务 → Redis（实时）→ 异步落 DB。读：Redis。\n扩展：\n- 排行榜（ZSET，见系统设计题）；\n- 分时段统计（按小时/天 key，Hash/Bitmap）；\n- 实时大屏（Redis 聚合 + 推送）。\nkey 设计：counter:{type}:{id}，TTL 管理冷数据。\n关键：把高频写从 DB 卸载到 Redis（内存+原子），异步批量持久化，是高并发计数器核心。防重复用 Set/Bitmap/HyperLogLog。autohr 评分等场景可参考此模式（Celery 异步承载重计算）。"
     }

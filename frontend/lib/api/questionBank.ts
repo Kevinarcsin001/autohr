@@ -136,6 +136,9 @@ export interface AssembleRequest {
   quotas?: Record<string, number> | null;
   tolerance?: number;
   exclude_question_ids?: string[] | null;
+  /** 按候选人简历 + JD 动态匹配配额（需 session_id） */
+  dynamic?: boolean;
+  session_id?: string | null;
 }
 
 export interface CategoryDeficit {
@@ -146,11 +149,32 @@ export interface CategoryDeficit {
   gap: number;
 }
 
+export interface SignalInfo {
+  signal: string;
+  weight: number;
+}
+
+export interface QuotaPlanItem {
+  category_id: string;
+  category_name: string;
+  base_points: number;
+  quota_points: number;
+  score: number;
+  matched: boolean;
+}
+
+export interface AssemblePlan {
+  total_target: number;
+  signals: SignalInfo[];
+  quotas: QuotaPlanItem[];
+}
+
 export interface AssembleResponse {
   items: QuestionBankItem[];
   actual_total: number;
   target_total: number;
   deficits: CategoryDeficit[];
+  plan?: AssemblePlan | null;
 }
 
 /** 预览组卷（不落库）：返回选中题 + 实际总分 + 各分类缺口。 */
@@ -168,6 +192,7 @@ export interface ComposeResponse {
   actual_total: number;
   target_total: number;
   deficits: CategoryDeficit[];
+  plan?: AssemblePlan | null;
 }
 
 /** 组卷并写入指定 session（新 batch_id）。 */

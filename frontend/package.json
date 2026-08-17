@@ -66,5 +66,10 @@
   "packageManager": "pnpm@8.15.4",
   "engines": {
     "node": ">=20.0.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "browserslist": "^4.28.8"
+    }
   }
 }

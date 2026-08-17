@@ -1,11 +1,20 @@
 {
-  "category": {"slug": "mlops", "name": "MLOps / LLM 部署", "target_points": 5, "sort_order": 10},
+  "category": {
+    "slug": "mlops",
+    "name": "MLOps / LLM 部署",
+    "target_points": 10,
+    "sort_order": 10
+  },
   "items": [
     {
       "question": "什么是 MLOps？它解决的核心问题是什么？",
       "points": 5,
       "difficulty": 2,
-      "tags": ["MLOps", "生命周期", "概念"],
+      "tags": [
+        "MLOps",
+        "生命周期",
+        "概念"
+      ],
       "dimension": "skill",
       "reference_answer": "MLOps（Machine Learning Operations）：把 DevOps 的理念（自动化、CI/CD、监控、协作）应用到 ML 系统，管理模型从数据、训练、评估、部署到监控、再训练的完整生命周期。\n解决的核心问题——模型生产化的「最后一公里」：\n1) 从 notebook 到生产：研究原型易，稳定上线难（数据、版本、复现、规模、监控）；\n2) 持续演进：数据/概念漂移使模型衰减，需持续再训练与发布；\n3) 复杂依赖：模型依赖数据、特征、代码、超参、环境，任一变化影响行为，需版本与血缘追踪；\n4) 协作：数据/算法/工程/业务多角色协同；\n5) 可靠性与合规：监控、回滚、审计、可复现。\n核心能力：自动化流水线（训练-评估-部署）、模型注册表、版本与血缘、特征存储、监控（数据漂移/性能）、CI/CD/CT（持续训练）、A/B 与金丝雀、可复现实验。\nLLMOps 是 MLOps 在 LLM 时代的延伸，新增 prompt 版本管理、模型路由、guardrail、token 成本与延迟监控、评测管线等。MLOps 是把 ML 从「实验」变成「可靠工程系统」的实践集合。"
     },
@@ -13,7 +22,11 @@
       "question": "模型推理有哪些优化手段？量化、剪枝、蒸馏各是什么？",
       "points": 10,
       "difficulty": 3,
-      "tags": ["推理优化", "量化", "蒸馏"],
+      "tags": [
+        "推理优化",
+        "量化",
+        "蒸馏"
+      ],
       "dimension": "skill",
       "reference_answer": "三大模型压缩/加速手段：\n1) 量化（Quantization）：降低权重/激活的数值精度（FP16→INT8/INT4），减显存、加速、降功耗。训练后量化（PTQ：GPTQ/AWQ/GGUF）简单；量化感知训练（QAT）精度更好但需训练。LLM 对低比特量化敏感，需好的方法（如 AWQ 保护重要权重、GGUF 系列针对 CPU）。\n2) 剪枝（Pruning）：移除不重要的权重/通道/层（结构化剪枝）或单个权重（非结构化，需稀疏硬件支持）。降参数与计算，但 LLM 剪枝后常需微调恢复精度，工程复杂，LLM 用得少（更多用量化/蒸馏）。\n3) 蒸馏（Knowledge Distillation）：用大教师模型指导小学生模型，小模型接近大模型性能。降部署体积/延迟，是 LLM 轻量化的关键（如用大模型蒸馏小模型上线）。\n其他推理优化：\n- 算子融合/内核优化（Flash Attention）；\n- KV cache、PagedAttention、continuous batching（系统级）；\n- 投机解码、Medusa 等并行生成；\n- 模型并行（TP/PP）适配大模型；\n- 推理框架（vLLM/TGI/TensorRT-LLM）。\n选择：先量化（最高 ROI）+ 推理框架（vLLM）+ 蒸馏小模型；极致延迟再投机解码/稀疏。组合用，按延迟/成本/精度权衡。"
     },
@@ -21,7 +34,11 @@
       "question": "vLLM 的核心优化技术有哪些？为什么它比朴素推理快？",
       "points": 10,
       "difficulty": 4,
-      "tags": ["vLLM", "PagedAttention", "推理"],
+      "tags": [
+        "vLLM",
+        "PagedAttention",
+        "推理"
+      ],
       "dimension": "skill",
       "reference_answer": "vLLM 是高性能 LLM 推理引擎，核心优化：\n1) PagedAttention：借鉴 OS 虚拟内存的分页思想管理 KV cache。把每序列的 KV cache 分成固定大小块（block），按需分配，非连续存储。解决朴素实现中 KV cache 的内存碎片与浪费（按最大长度预分配大量空闲），显存利用率大幅提升，支持更多并发序列。\n2) Continuous Batching（连续批处理）：动态组装 batch——每步可加入新请求、移除已完成请求，不像静态 batching 要等齐或等最慢的。GPU 利用率与吞吐显著提升。\n3) 高效注意力：集成 Flash Attention，减内存与加速。\n4) 量化与稀疏支持、tensor parallel。\n5) 优化的 CUDA 内核。\n为什么快：\n- PagedAttention 让显存几乎不浪费，并发序列数翻倍→吞吐翻倍；\n- Continuous batching 让 GPU 持续满载，消除气泡；\n- 优化的内核降低每 token 延迟。\n效果：相比 HuggingFace Transformers 朴素推理，吞吐提升数倍到数十倍，是当前 LLM 服务部署的主流选择之一（与 TGI、TensorRT-LLM 竞争）。\n适用：高并发在线服务、批量离线推理。局限：某些自定义模型/架构支持滞后、内存换吞吐的权衡。理解 vLLM 的机制有助于调优并发、batch、显存配置。"
     },
@@ -29,7 +46,11 @@
       "question": "Continuous Batching（连续批处理）与静态 Batching 的区别？",
       "points": 10,
       "difficulty": 4,
-      "tags": ["continuous-batching", "批处理", "推理"],
+      "tags": [
+        "continuous-batching",
+        "批处理",
+        "推理"
+      ],
       "dimension": "skill",
       "reference_answer": "静态 Batching：攒一批请求后一起前向，等所有请求生成完（或达 max_tokens）才返回。\n问题：\n1) 等齐：要等 batch 攒满或超时才开跑，增加排队延迟；\n2) 木桶：batch 内各请求长度不同，短的早生成完仍占位空跑（padding 浪费）或要等最长的，GPU 空转；\n3) 不灵活：新请求要等当前 batch 处理完才能加入。\nContinuous Batching（iteration-level scheduling）：每个生成步（iteration）动态调度——\n1) 每步检查：有新请求就加入 batch，有请求生成完（EOS）就移除；\n2) batch 大小随时间变化，无固定边界；\n3) 短请求完成即释放槽位给新请求，GPU 持续满载。\n配合 PagedAttention：不同序列的 KV cache 独立分页管理，加入/移除序列只增删页，不挪动其他数据，高效。\n效果：\n- 吞吐大幅提升（GPU 利用率从低到高）；\n- 延迟降低（无需等齐，请求即来即处理）；\n- 支持高并发变长输出。\n挑战：调度逻辑复杂、需管理 KV cache、注意 padding/对齐开销。\nvLLM/TGI/TensorRT-LLM 都用 continuous batching，是现代 LLM 服务提升吞吐的核心技术。理解它对容量规划（并发数、显存、QPS）关键。"
     },
@@ -37,7 +58,11 @@
       "question": "什么是投机解码（Speculative Decoding）？为什么能加速？",
       "points": 10,
       "difficulty": 4,
-      "tags": ["投机解码", "推理加速", "自回归"],
+      "tags": [
+        "投机解码",
+        "推理加速",
+        "自回归"
+      ],
       "dimension": "skill",
       "reference_answer": "背景：自回归生成每步只产 1 token，且 decode 阶段是内存带宽瓶颈（GPU 算力空闲）。投机解码利用空闲算力加速。\n原理：\n1) 用一个小而快的「草稿模型」（draft）一次投机生成 k 个候选 token（快速、低成本）；\n2) 用大「目标模型」（target）一次前向并行验证这 k 个 token（大模型一次前向本就可算多 token，验证比逐个生成高效）；\n3) 接受大模型也认可的最长前缀，拒绝处用大模型分布重采样一个 token；\n4) 重复。若草稿准确率高，一次循环可产出多个 token，等效加速。\n关键：验证步骤用「拒绝采样」保证最终分布与纯大模型生成完全一致（无损加速）。\n为什么加速：\n- 小模型生成快；\n- 大模型并行验证 k 个 token 与生成 1 个 token 耗时相近（内存带宽主导，多 token 摊薄开销）；\n- 命中率高时（草稿准），每次循环产出多 token，延迟降低。\n变体：\n- 草稿模型可以是更小的同系列模型，或基于 n-gram/上下文检索（无需额外模型）；\n- Medusa：大模型多头同时预测多 token，无需独立草稿模型；\n- 投机解码配合量化草稿。\n适用：输出可预测性强的任务（代码、结构化、对话）加速明显；高创造性任务命中率低收益小。是 LLM 推理加速的重要技术，vLLM/TGI 等已集成。"
     },
@@ -45,7 +70,11 @@
       "question": "LLM 量化中的 GPTQ、AWQ、GGUF 有什么区别？如何选择？",
       "points": 10,
       "difficulty": 4,
-      "tags": ["量化", "GPTQ", "AWQ"],
+      "tags": [
+        "量化",
+        "GPTQ",
+        "AWQ"
+      ],
       "dimension": "skill",
       "reference_answer": "都是 LLM 训练后量化（PTQ）方法，把 FP16 权重量化到 INT4/INT8 降显存/加速：\nGPTQ：基于二阶信息（Hessian）逐层量化，用少量校准数据估计量化误差并补偿。权重-only 量化，INT4 精度好、应用广。适合 GPU 推理。\nAWQ（Activation-aware Weight Quantization）：观察到大模型并非所有权重同等重要——与显著激活相关的权重（salient）精度对效果关键。AWQ 保护这些重要权重（按激活尺度缩放），其余激进量化。INT4 下精度常优于 GPTQ，且更快、更省显存。GPU 推理主流。\nGGUF（前身 GGML）：llama.cpp 的格式/量化体系，支持多种比特（Q4_K_M 等），针对 CPU/混合 CPU-GPU 优化，便于在消费级硬件/Mac/CPU 部署。生态是 llama.cpp/ollama，适合本地、边缘、无 GPU 场景。\n区别：\n- 目标硬件：GPTQ/AWQ 偏 GPU；GGUF 偏 CPU/混合（Mac 友好）；\n- 精度：AWQ 通常略优；\n- 生态：AWQ/GPTQ 配 vLLM/Transformers；GGUF 配 llama.cpp/ollama。\n选择：\n- GPU 服务器部署 → AWQ（推荐）或 GPTQ，配 vLLM；\n- 本地/Mac/CPU/边缘 → GGUF，配 ollama/llama.cpp；\n- 追求精度 → QAT 或更高比特（INT8）。\n注意：低比特量化有精度损失，需在评估集验证；不同量化对长文本/推理能力影响不同。量化是 LLM 落地（降显存门槛）的关键，让消费级硬件跑大模型。"
     },
@@ -53,7 +82,11 @@
       "question": "什么是模型蒸馏在 LLM 部署中的应用？",
       "points": 5,
       "difficulty": 3,
-      "tags": ["蒸馏", "部署", "轻量化"],
+      "tags": [
+        "蒸馏",
+        "部署",
+        "轻量化"
+      ],
       "dimension": "skill",
       "reference_answer": "LLM 部署中蒸馏：用大/强模型（教师）指导训练小/快模型（学生），使学生体积小、推理快，但能力尽量接近教师，适配资源受限或低延迟场景。\n应用形式：\n1) 软标签蒸馏：学生学教师输出的 logits 分布（含类间相似度的暗知识），不仅是硬标签；\n2) 输出模仿：用大模型生成大量高质量 (指令,回答) 数据，SFT 小模型（Alpaca/Vicuna 路线，广义蒸馏）；\n3) 推理能力蒸馏：用强推理模型（o1 类）的 CoT 轨迹蒸馏到小模型，让小模型获得推理能力；\n4) 跨架构：把大 dense 模型蒸馏到 MoE 或更高效架构。\n优势：\n- 部署友好：小模型显存/延迟低，可在消费级硬件/边缘跑；\n- 成本低：推理便宜，适合高并发；\n- 能力迁移：继承大模型的部分能力与对齐。\n局限：\n- 上限受教师限制（学生难超教师）；\n- 复杂推理/长尾能力难完全迁移；\n- 需大量蒸馏数据与训练成本。\n实践：服务端用蒸馏小模型处理简单 query，复杂 query 路由到大模型（模型路由）；端侧部署蒸馏小模型；蒸馏是「能力-成本」权衡的核心工具。配合量化进一步压缩。"
     },
@@ -61,7 +94,11 @@
       "question": "LLM 服务的延迟由哪些部分组成？如何优化首 token 延迟（TTFT）？",
       "points": 10,
       "difficulty": 4,
-      "tags": ["延迟", "TTFT", "性能"],
+      "tags": [
+        "延迟",
+        "TTFT",
+        "性能"
+      ],
       "dimension": "skill",
       "reference_answer": "延迟组成：\n1) 排队/调度：请求等 GPU/批次槽位；\n2) TTFT（Time To First Token，首 token 延迟）：处理 prompt（prefill）的时间——prompt 越长、prefill 计算越大，TTFT 越高；\n3) TPOT（Time Per Output Token，生成每个 token 的延迟）：decode 阶段，受 KV cache 读取与算力影响；\n4) 总生成时间 = TTFT + (输出 token 数 × TPOT)。\n优化 TTFT：\n1) 缩短 prompt：精简 system/上下文（用消融删冗余）、RAG 压缩、历史摘要；\n2) prompt 缓存：缓存稳定前缀（system、长文档）的 KV，命中跳过 prefill（Anthropic/OpenAI prompt caching）；\n3) 减 prefill 计算：Flash Attention、分块 prefill（chunked prefill）让 prefill 与 decode 交错、不阻塞；\n4) 模型/量化：更小模型或量化降每 token 计算；\n5) 并行：TP 降单步延迟；\n6) 调度：优先级、避免长 prompt 阻塞。\n优化 TPOT：连续批处理、投机解码、KV cache 优化（PagedAttention）、量化、GQA 降 KV 读取。\n监控：分别测 TTFT/TPOT/总延迟/吞吐，定位瓶颈（prefill vs decode vs 排队）。不同场景侧重不同（对话重 TTFT，长生成重 TPOT）。SLA 需明确定义。"
     },
@@ -69,7 +106,11 @@
       "question": "什么是数据漂移（Data Drift）与概念漂移（Concept Drift）？如何检测？",
       "points": 10,
       "difficulty": 4,
-      "tags": ["数据漂移", "概念漂移", "监控"],
+      "tags": [
+        "数据漂移",
+        "概念漂移",
+        "监控"
+      ],
       "dimension": "skill",
       "reference_answer": "数据漂移：输入特征/数据的分布变了，但 X→Y 的关系（概念）可能没变。例：训练时用户画像偏年轻，上线后老年用户增多；商品品类扩展。特征分布 p(X) 变。\n概念漂移：X→Y 的映射关系变了。例：疫情后「口罩」需求与购买模式剧变；欺诈手法更新；推荐偏好转移。p(Y|X) 变。\n区别：数据漂移是输入分布变，概念漂移是规则变。两者都导致模型性能衰减，但应对不同。\n检测：\n1) 性能监控：最直接——跟踪线上真实标签的准确率/业务指标下降。但标签常延迟（转化、回头率）。\n2) 数据漂移检测：用统计检验（KS、PSI、卡方）或距离（Wasserstein、KL）比较线上输入分布与训练/参考分布；特征级与整体级；可用模型预测分布/置信度做代理（无标签时）。\n3) 概念漂移检测：需标签，看残差/错误率随时间上升；ADWIN/Page-Hinckley 等变点检测算法；对比滑动窗口性能。\n4) 不确定性监控：模型预测置信度/熵的分布变化。\n5) 影子模型/冠军-挑战者：用新数据评估，对比基线。\n应对：定期再训练、增量学习、在线学习、特征/模型更新、漂移告警触发人工审查。LLM 时代漂移表现为：用户 query 模式变、新知识/事件（模型知识过时）、prompt/工具变更。监控漂移是模型上线后保持质量的关键，否则「静默衰减」。"
     },
@@ -77,7 +118,11 @@
       "question": "LLM 应用如何做 A/B 测试？与传统软件 A/B 有何不同？",
       "points": 10,
       "difficulty": 4,
-      "tags": ["AB测试", "实验", "LLMOps"],
+      "tags": [
+        "AB测试",
+        "实验",
+        "LLMOps"
+      ],
       "dimension": "skill",
       "reference_answer": "传统 A/B：随机分流，对比两组指标，统计显著性判断。\nLLM A/B 的不同与挑战：\n1) 输出随机性：同输入多次输出不同，需多次采样/聚合降低噪声；\n2) 质量主观：正确/好坏难自动判，需 LLM-Judge 或人工或业务代理指标（点击/满意度/留存）；\n3) 长尾多样：用户 query 无穷，细分人群效应差异大，需分层分析；\n4) 延迟/成本：模型 A/B 影响延迟与 token 成本，是业务指标之一；\n5) 组合复杂：prompt/模型/参数/工具多变量，需正交实验；\n6) 网络效应/学习：用户会适应模型输出，短期 A/B 未必反映长期。\n做法：\n1) 明确假设与主指标（如任务完成率、满意度、延迟）；\n2) 随机分流（用户/session 级，避免污染）；\n3) 离线评估预筛（不直接全量 A/B）；\n4) 影子/金丝雀：先小流量验证安全与基本表现；\n5) 统计设计：样本量、显著性、置信区间；\n6) 在线 LLM-Judge + 人工抽检 + 业务指标三角验证；\n7) 长期跟踪（ novelty effect、学习效应）。\n常见：对比不同 prompt 版本、不同模型（路由）、不同参数（temperature）、有无 RAG/rerank。LLM 的 A/B 比 off-policy 离线评估更可信，但更贵更慢，需离线-在线结合。"
     },
@@ -85,7 +130,11 @@
       "question": "模型注册表（Model Registry）的作用？它管理什么？",
       "points": 5,
       "difficulty": 3,
-      "tags": ["model-registry", "版本", "MLOps"],
+      "tags": [
+        "model-registry",
+        "版本",
+        "MLOps"
+      ],
       "dimension": "skill",
       "reference_answer": "模型注册表：集中管理模型生命周期的「事实来源」（source of truth），类似代码的 git，但面向模型工件。\n管理内容：\n1) 模型工件：权重文件、配置、tokenizer；\n2) 版本：每次训练产出唯一版本，可追溯；\n3) 元数据：训练数据版本、超参、代码 commit、评估指标、训练环境；\n4) 状态/阶段：staging/production/archived，标记模型在生命周期位置；\n5) 血缘：模型↔数据↔实验↔代码的关联；\n6) 审批与审计：谁何时部署/回滚。\n作用：\n1) 可复现：凭版本号能还原训练全条件；\n2) 可追溯：线上问题定位到具体模型版本及其训练数据/代码；\n3) 治理：审批流程、合规审计；\n4) 协作：团队共享、避免混乱；\n5) 部署自动化：CI/CD 从 registry 拉取指定版本部署；\n6) 回滚：快速回退到历史版本。\n工具：MLflow Model Registry、Weights & Biases、Vertex AI Model Registry、HuggingFace Hub（LLM 工件托管）。\nLLM 时代：大模型工件大（GB-TB）、需配合 LoRA adapter 版本管理、prompt 也需版本化。Registry 是 MLOps 的核心组件，缺乏它则模型管理混乱、不可追溯。"
     },
@@ -93,7 +142,11 @@
       "question": "什么是金丝雀发布（Canary）与影子发布（Shadow）？",
       "points": 5,
       "difficulty": 3,
-      "tags": ["金丝雀", "影子发布", "部署策略"],
+      "tags": [
+        "金丝雀",
+        "影子发布",
+        "部署策略"
+      ],
       "dimension": "skill",
       "reference_answer": "降低新模型上线风险的渐进策略：\n金丝雀发布（Canary）：先让新模型处理小比例（如 1%-5%）真实流量，观察指标正常后逐步扩大（10%-50%-100%）。异常则快速回滚。降低新模型全量上线的爆炸半径。\n影子发布（Shadow）：新模型与现有模型并行处理相同真实流量（复制请求），但新模型的输出不返回用户、只记录。在真实分布上验证新模型表现，零用户风险。\n区别：\n- 金丝雀：部分用户实际用新模型，有风险但真实反馈；\n- 影子：无用户受影响，纯观察，但无真实用户交互反馈（如用户对新输出的反应）。\n还有蓝绿部署（Blue-Green）：新旧两套环境，一键切换流量，快速回滚。\nLLM 场景应用：\n1) 新模型/新 prompt 先影子跑，评估质量/延迟/成本；\n2) 金丝雀小流量验证安全（无有害输出）、体验、业务指标；\n3) 监控异常（延迟飙升、错误率、用户负反馈、安全事件）触发回滚；\n4) 对比 off-policy（影子）与 on-policy（金丝雀）表现差异。\n实践：自动化金丝雀（指标门槛自动推进/回滚）、保留快速回滚能力、监控多元指标。LLM 上线风险高（不可预测输出），渐进发布 + 监控是工程标配。"
     },
@@ -101,7 +154,11 @@
       "question": "LLM 应用的可观测性（Observability）应该监控什么？",
       "points": 10,
       "difficulty": 4,
-      "tags": ["可观测性", "监控", "LLMOps"],
+      "tags": [
+        "可观测性",
+        "监控",
+        "LLMOps"
+      ],
       "dimension": "skill",
       "reference_answer": "分层监控：\n1) 基础设施：GPU 利用率、显存、CPU、内存、网络、磁盘；节点健康。\n2) 模型服务性能：QPS、延迟（TTFT/TPOT/p99）、错误率、超时、并发数、批利用率。\n3) 成本：token 用量（输入/输出）、API 费用、GPU 成本、每请求成本。\n4) 模型行为质量：\n   - 输出质量（LLM-Judge/人工抽检/用户反馈）；\n   - 幻觉率、faithfulness；\n   - 格式合规率（JSON 解析成功率）；\n   - 拒答率（过度拒答预警）；\n   - 安全事件（有害/越狱输出比例）。\n5) Prompt/链路：完整 prompt 记录（脱敏）、prompt 版本、检索召回质量、工具调用成功率。\n6) 业务：任务完成率、用户满意度、留存、转化。\n7) 漂移：输入 query 分布变化、输出分布变化。\n工具：LangSmith/Langfuse/Phoenix（LLM 链路追踪）、Prometheus+Grafana（指标）、ELK（日志）、分布式追踪。\n关键实践：\n- 记录完整请求/响应/prompt 便于调试与回归；\n- 采样人工评审 pipeline；\n- bad case 收集与告警；\n- 关联 prompt 版本/模型版本/用户反馈，便于归因。\nLLM 可观测性比传统软件复杂（输出非结构化、质量主观、成本随 token），是保障线上质量与持续优化的基础。"
     },
@@ -109,7 +166,11 @@
       "question": "什么是模型路由（Model Routing）？它如何降本提效？",
       "points": 10,
       "difficulty": 4,
-      "tags": ["模型路由", "降本", "LLMOps"],
+      "tags": [
+        "模型路由",
+        "降本",
+        "LLMOps"
+      ],
       "dimension": "skill",
       "reference_answer": "模型路由：根据请求特征（难度、类型、长度、预算）动态选择不同模型/配置处理，而非所有请求都用最强（最贵）模型。\n形式：\n1) 级联（cascade）：先用便宜小模型处理，置信度低/失败再升级到大模型；\n2) 分类路由：用小分类器判断请求类型/难度，路由到对应模型（简单→小模型，复杂→大模型）；\n3) 特征路由：按长度、领域、用户层级、延迟要求路由；\n4) 混合：多模型并行/投票，或 RAG 用小模型、推理用大模型。\n降本提效原理：\n- 大部分请求简单（FAQ、简单抽取、分类），小模型足够；\n- 只把少数复杂请求交给昂贵大模型；\n- 平均成本与延迟大降，同时关键请求质量有保障。\n实现：\n1) 路由器（小模型/规则）判断；\n2) 多模型服务（不同尺寸/量化）；\n3) 兜底（小模型失败→大模型）；\n4) 监控各路由质量与成本。\n挑战：\n- 路由准确度：误判把复杂请求给小模型=质量降；\n- 级联延迟（失败再升级）；\n- 多模型运维复杂；\n- 一致性（不同模型风格/能力差异）。\n实践：用蒸馏小模型+开源中模型+顶级 API 组合，按业务 ROI 路由。模型路由是 LLM 成本优化的核心策略，尤其高 QPS 场景。"
     },
@@ -117,7 +178,11 @@
       "question": "Prompt 版本管理应该怎么做？为什么重要？",
       "points": 10,
       "difficulty": 3,
-      "tags": ["prompt版本", "LLMOps", "管理"],
+      "tags": [
+        "prompt版本",
+        "LLMOps",
+        "管理"
+      ],
       "dimension": "skill",
       "reference_answer": "重要性：prompt 改一词影响所有用户输出；模型/数据变更也会改变 prompt 效果。无版本管理则「盲改」、不可追溯、不可回滚、无法 A/B。\n做法：\n1) prompt 作为代码：纳入 git，PR review，变更可追溯可回滚；\n2) 模板化：分离稳定骨架与动态变量，用模板引擎渲染；\n3) 版本与元数据：每个 prompt 版本关联模型版本、参数（temperature）、评估指标、变更说明；\n4) 评估绑定：每次变更跑回归评估集，对比新旧，不达标阻断；\n5) 在线灰度/A-B：版本灰度发布，真实流量验证；\n6) 可观测：记录线上用的 prompt 版本，便于归因 bad case；\n7) 模块化复用：system/few-shot/格式约束拆片段，团队共享。\n工具：Langfuse/LangSmith/Promptfoo（prompt 实验+评估+版本）、自建平台。\nLLM 应用中 prompt 是核心逻辑（类似代码），其工程化（版本/测试/CI/监控）决定可靠性。把 prompt 当一等公民管理，而非散落的字符串。配合模型版本、评估集，构成 LLMOps 的质量保证闭环。"
     },
@@ -125,7 +190,11 @@
       "question": "什么是特征存储（Feature Store）？它在 MLOps 中的作用？",
       "points": 5,
       "difficulty": 3,
-      "tags": ["feature-store", "特征", "MLOps"],
+      "tags": [
+        "feature-store",
+        "特征",
+        "MLOps"
+      ],
       "dimension": "skill",
       "reference_answer": "特征存储：集中管理 ML 特征的「定义、计算、存储、服务」的平台，让特征在训练与推理间一致复用。\n解决的问题：\n1) 训练-服务偏差：训练用离线批算的特征，线上用实时算的特征，逻辑不一致致模型失效；feature store 统一定义，训练读离线、服务读在线，保证一致；\n2) 重复造轮子：不同团队/模型重复算相同特征；feature store 共享复用；\n3) 实时性：在线服务需毫秒级取特征，feature store 提供低延迟在线服务；\n4) 时间旅行：训练时取「历史某时刻」的特征值（避免特征泄漏），point-in-time correctness。\n组成：\n- 离线存储（训练，批，如 Spark/数据仓库）；\n- 在线存储（服务，低延迟，如 Redis/DynamoDB）；\n- 特征定义与注册（transform 逻辑）；\n- 服务 API。\n作用：\n1) 一致性：训练与服务特征同源；\n2) 复用：特征共享，加速开发；\n3) 治理：特征版本、血缘、发现；\n4) 实时 ML：支撑实时推荐/风控。\n工具：Feast、Tecton、Vertex AI Feature Store、自建。\nLLM 时代：传统结构化特征 store 用得少（LLM 端到端），但 RAG 的「知识库」类似特征 store 的角色（检索注入），向量库即「embedding 特征」的在线服务。理念（一致、复用、实时）仍适用。"
     },
@@ -133,7 +202,11 @@
       "question": "如何保证 ML 实验的可复现性（Reproducibility）？",
       "points": 10,
       "difficulty": 3,
-      "tags": ["可复现", "实验", "MLOps"],
+      "tags": [
+        "可复现",
+        "实验",
+        "MLOps"
+      ],
       "dimension": "skill",
       "reference_answer": "可复现：相同输入（数据+代码+环境+随机性）能重现相同结果，是科学性与可信度的基石，也是调试/迭代/审计的前提。\n需固定的要素：\n1) 代码：版本控制（git commit），含模型代码、训练脚本、配置；\n2) 数据：数据版本（DVC/数据 registry），数据清洗/预处理 pipeline 版本；\n3) 环境：依赖版本（requirements/lockfile/容器镜像）、CUDA/驱动、硬件；\n4) 超参与配置：学习率、batch、seed 等，配置文件版本化；\n5) 随机性：固定随机种子（Python/NumPy/PyTorch/CUDA），但注意 GPU 上非确定性仍存（cuDNN 算法、原子操作），完全复现需额外设置（deterministic 模式，可能降速）；\n6) 训练状态：checkpoint。\n挑战：\n- GPU 非确定性：完全 bit-level 复现难，通常追求「统计复现」（相近结果）；\n- 分布式训练：通信顺序引入不确定性；\n- 数据顺序：shuffle 受 seed 影响；\n- 依赖漂移：库版本变化。\n实践：\n1) 实验跟踪（MLflow/W&B）：自动记录代码/参数/指标/工件/环境；\n2) 配置驱动（YAML/Hydra），非硬编码；\n3) 容器化环境；\n4) 数据版本化；\n5) 固定 seed + 记录硬件；\n6) checkpoint 保存。\nLLM 训练复现更难（大规模分布式、数值不稳定），但仍需尽量记录全条件，便于诊断「为什么这次训练效果不同」。可复现是 MLOps 成熟度的基础。"
     },
@@ -141,7 +214,11 @@
       "question": "GPU 资源调度与弹性扩缩容在 LLM 服务中怎么做？",
       "points": 10,
       "difficulty": 4,
-      "tags": ["GPU", "调度", "弹性"],
+      "tags": [
+        "GPU",
+        "调度",
+        "弹性"
+      ],
       "dimension": "skill",
       "reference_answer": "挑战：GPU 贵且稀缺，LLM 推理显存大、流量波动，需高效调度与弹性。\n调度：\n1) 多模型共享 GPU：多租户/多模型时分或显存复用（需隔离，防互相影响）；\n2) 批处理：continuous batching 最大化 GPU 利用；\n3) 优先级/队列：高优先级请求/用户优先；\n4) 多 GPU 并行：大模型 TP/PP 分布；\n5) 请求路由：按模型/负载路由到合适副本。\n弹性扩缩容：\n1) 按指标（QPS、延迟、GPU 利用率、队列长度）自动扩缩副本数；\n2) 流量高峰扩容、低谷缩容降本；\n3) 预测性扩容（周期性流量提前扩）；\n4) 冷启动问题：LLM 模型大、加载慢（分钟级），扩容滞后于流量，需预热（keep warm）、预留缓冲、快速加载（量化、优化的 checkpoint 格式）；\n5) Spot/抢占式实例：用便宜实例+优雅退出处理降本，配合检查点恢复。\n基础设施：Kubernetes + GPU operator、Ray Serve、KubeRay、云厂商托管（SageMaker/Vertex/Bedrock）。\n挑战：\n- GPU 供应波动；\n- 模型加载延迟限制弹性速度；\n- 显存碎片；\n- 多模型/多版本共存。\nLLM 服务成本主要在 GPU，精细调度与弹性是降本关键，但受冷启动与显存约束，比传统 Web 服务弹性难。需容量规划 + 自动伸缩 + 预热结合。"
     },
@@ -149,7 +226,11 @@
       "question": "LLM 推理的吞吐（throughput）与延迟（latency）如何权衡？",
       "points": 10,
       "difficulty": 4,
-      "tags": ["吞吐", "延迟", "权衡"],
+      "tags": [
+        "吞吐",
+        "延迟",
+        "权衡"
+      ],
       "dimension": "skill",
       "reference_answer": "吞吐：单位时间处理 token/请求数（整体产能）。延迟：单请求响应时间（用户体验）。\n关系：常冲突——\n- 大 batch 提吞吐（GPU 并行高效）但增单请求延迟（等批、排队、共享算力）；\n- 小 batch 低延迟但吞吐低（GPU 利用率低）。\n关键指标：\n- TTFT（首 token）：影响交互体验首响；\n- TPOT（每 token 延迟）：影响流式生成速度感；\n- 总延迟、p99（长尾）；\n- 每 GPU 吞吐（token/s）。\n权衡策略（按场景）：\n1) 实时对话：重 TTFT/TPOT，小 batch、低并发保延迟，吞吐让步；\n2) 批量离线（批量生成/评测）：重吞吐，大 batch、满并发，延迟无所谓；\n3) 混合：分优先级队列，交互请求优先小 batch，后台批处理用剩余算力。\n优化手段：\n- continuous batching：兼顾吞吐与延迟（动态批）；\n- 投机解码、量化、Flash Attention：降延迟同时提吞吐；\n- 分块 prefill：让长 prompt prefill 不阻塞 decode；\n- 容量规划：按峰值延迟 SLA 算所需 GPU。\n监控：分别测吞吐与延迟分位，找帕累托前沿。SLA 明确（如 p99 TTFT<500ms）。理解权衡对成本规划（多少 GPU 满足 SLA）与调度策略至关重要。"
     },
@@ -157,7 +238,11 @@
       "question": "什么是 RAG 的「检索-生成」延迟分解？如何优化？",
       "points": 5,
       "difficulty": 3,
-      "tags": ["RAG延迟", "性能", "优化"],
+      "tags": [
+        "RAG延迟",
+        "性能",
+        "优化"
+      ],
       "dimension": "skill",
       "reference_answer": "RAG 一次请求延迟组成：\n1) query 处理：query 改写/扩展（可选，加一次 LLM 调用）；\n2) query embedding：编码 query 向量（快，<50ms）；\n3) 检索：向量+BM25 检索（ANN，ms-几十 ms）；\n4) rerank：Cross-Encoder 对候选精排（每候选一次前向，几十-几百 ms，常是瓶颈）；\n5) 上下文拼装；\n6) LLM 生成：prefill（处理 prompt+上下文，随长度增长）+ decode（生成回答，随输出长度）。\n总延迟 = 上述之和，LLM 生成（尤其长上下文 prefill + 长输出 decode）通常占大头。\n优化：\n1) 并行：query embedding/检索/rerank 可与某些步骤并行；多路检索并行；\n2) prompt 缓存：稳定 system 前缀缓存 KV；\n3) 缩短上下文：rerank 后只送 Top-K、压缩、去噪；\n4) 快检索：HNSW、量化向量、限制 nprobe/efSearch；\n5) rerank 优化：限制候选数（如 Top-20→Top-5）、轻量 reranker、批量化；\n6) 流式：边检索边生成（先送部分上下文），TTFT 优化；\n7) 模型/量化：降 LLM 延迟；\n8) query 改写按需（简单 query 跳过）；\n9) 缓存高频 query 结果。\n监控各阶段耗时，定位瓶颈（检索 vs rerank vs prefill vs decode），针对性优化。RAG 延迟是系统工程，需端到端 profile。"
     },
@@ -165,7 +250,11 @@
       "question": "什么是 LLM 网关（LLM Gateway）？它在企业中的作用？",
       "points": 5,
       "difficulty": 4,
-      "tags": ["LLM网关", "企业", "治理"],
+      "tags": [
+        "LLM网关",
+        "企业",
+        "治理"
+      ],
       "dimension": "skill",
       "reference_answer": "LLM 网关：企业内统一的 LLM 访问层，所有应用通过它访问各种 LLM（自有/商业 API），类似数据库网关或 API 网关。\n作用：\n1) 统一接入：屏蔽不同提供商 API 差异（OpenAI/Anthropic/自托管），应用用统一接口；\n2) 路由与降级：按成本/延迟/能力路由，失败自动 fallback/熔断；\n3) 成本控制：token 计量、预算限额、按团队/应用分摊、配额；\n4) 安全合规：prompt/output 过滤（guardrail）、PII 脱敏、敏感词、审计日志、数据不外泄（路由到私有模型）；\n5) 缓存：高频 query 缓存，降本降延迟；\n6) 可观测：统一日志/监控/追踪，便于治理与优化；\n7) 版本与实验：prompt 版本、A/B、灰度；\n8) 速率限制与公平调度。\n价值：\n- 集中治理（安全/成本/合规）；\n- 解耦应用与模型（换模型不动应用）；\n- 复用（缓存/guardrail/监控统一实现）；\n- 合规（金融/医疗等强监管必需）。\n工具：LiteLLM、Portkey、Kong AI Gateway、自建。LLM 网关是企业 LLM 规模化、安全、可控部署的关键基础设施，尤其多团队/多模型/强合规场景。"
     },
@@ -173,7 +262,11 @@
       "question": "如何估算 LLM 服务的成本？主要成本驱动因素？",
       "points": 5,
       "difficulty": 3,
-      "tags": ["成本", "估算", "LLMOps"],
+      "tags": [
+        "成本",
+        "估算",
+        "LLMOps"
+      ],
       "dimension": "skill",
       "reference_answer": "成本驱动：\n1) 推理算力（最大头）：GPU 时薪 × 副本数 × 时长。受模型大小、流量、延迟 SLA 影响。自托管按 GPU；API 按 token 计费。\n2) Token 量：输入 token（prompt+上下文）+ 输出 token。长上下文/长输出成本高。API 按输入/输出分别计价。\n3) 流量峰值：按峰值配 GPU，平均利用率低则浪费（成本/请求高）。\n4) 模型尺寸：大模型每 token 算力多，贵；量化/蒸馏降本。\n5) 检索/RAG：向量库、embedding 计算、rerank（额外模型调用）。\n6) 存储：模型权重、向量库、日志。\n7) 开发/实验：训练/微调、评测。\n估算方法：\n1) API：每请求成本 = 输入 token×单价 + 输出 token×单价；按月活/人均请求数/token 估月成本；\n2) 自托管：GPU 数（按峰值 QPS 与单 GPU 吞吐算）×时薪×24×30；折算每千 token 成本对比 API；\n3) 盈亏平衡：自托管成本 vs API，大流量时自托管便宜，小流量 API 省事。\n降本：量化、蒸馏小模型、模型路由（简单 query 用小模型）、prompt 缓存、批处理 API（半价）、弹性伸缩、精简 prompt、限制输出长度。成本是 LLM 落地的关键约束，需建模监控，按 ROI 优化。"
     },
@@ -181,7 +274,11 @@
       "question": "什么是持续训练（Continuous Training, CT）？它在 MLOps 中的位置？",
       "points": 5,
       "difficulty": 3,
-      "tags": ["持续训练", "CT", "MLOps"],
+      "tags": [
+        "持续训练",
+        "CT",
+        "MLOps"
+      ],
       "dimension": "skill",
       "reference_answer": "CT：模型不是一次训练终身使用，而是随新数据/反馈/概念漂移持续/定期再训练，保持性能。是 MLOps 中 CI/CD 之后的「CT」（CI/CD/CT 三连）。\n位置：MLOps 把 ML 系统建成自动化闭环——\n1) 数据采集/标注 → 特征工程；\n2) 训练（CI 触发：新数据、定期、性能下降告警）；\n3) 评估（自动化，门槛）；\n4) 部署（CD：registry→金丝雀→全量）；\n5) 监控（性能/漂移）；\n6) 回到 1（CT 触发再训练）。\nCT 触发：\n- 定期（日/周）；\n- 新数据累积达阈值；\n- 性能/漂移告警；\n- 业务变化（新品类/规则）。\n形式：\n1) 全量重训：用累积数据从头训（简单，资源多）；\n2) 增量学习：在新数据上继续训（省资源，需防遗忘）；\n3) 在线学习：流式持续更新（实时，工程复杂）。\n挑战：\n- 自动化 pipeline 复杂；\n- 数据质量/标注瓶颈；\n- 评估门槛与回滚机制；\n- 版本与血缘；\n- 漂移检测准确。\nLLM 时代 CT：基座大模型 CT 成本极高（少做），但下游 SFT/LoRA/RAG 知识库可频繁更新（轻量 CT）。CT 是对抗模型衰减、保持长期价值的核心 MLOps 实践。"
     },
@@ -189,7 +286,11 @@
       "question": "如何对 LLM 服务做容量规划（capacity planning）？",
       "points": 10,
       "difficulty": 4,
-      "tags": ["容量规划", "GPU", "LLMOps"],
+      "tags": [
+        "容量规划",
+        "GPU",
+        "LLMOps"
+      ],
       "dimension": "skill",
       "reference_answer": "目标：确定满足 SLA（延迟/吞吐/可用）所需 GPU/副本数，平衡成本。\n步骤：\n1) 负载建模：\n   - 流量曲线（日均/峰值 QPS、突发）；\n   - 请求特征（prompt 长度分布、输出长度分布）；\n2) 单 GPU 能力：benchmark 单 GPU（或单副本）在该模型/配置下的吞吐（token/s）与延迟（TTFT/TPOT）随并发变化；\n3) 算所需副本：\n   - 按吞吐：峰值 QPS × 每请求 token 速率 ÷ 单副本吞吐 = 副本数；\n   - 按延迟：满足 p99 SLA 所需并发/副本；\n   - 取大者，加冗余（N+1，故障容错）；\n4) 显存：模型 + KV cache（按并发序列×长度）+ 临时，算单 GPU 可承载并发；\n5) 峰值 vs 平均：按峰值配（或弹性补）；\n6) 冷启动缓冲：预留预热容量。\n关键考量：\n- 模型尺寸与量化决定单 GPU 并发；\n- batch 策略影响吞吐-延迟；\n- TP/PP 改变副本单位；\n- 流量突发与长尾；\n- 成本（GPU 时薪 × 副本 × 时长）。\n工具：benchmark（vLLM 自带）、压测（locust/k6）、监控驱动调整。\n实践：先小规模 benchmark 建性能模型，按峰值+缓冲规划，弹性伸缩应对波动，持续用真实数据校准。容量规划过保守=浪费，过激进=SLA 违约，需数据驱动迭代。"
     },
@@ -197,7 +298,11 @@
       "question": "MLOps 成熟度模型有哪几个层级？",
       "points": 5,
       "difficulty": 3,
-      "tags": ["成熟度", "MLOps", "层级"],
+      "tags": [
+        "成熟度",
+        "MLOps",
+        "层级"
+      ],
       "dimension": "skill",
       "reference_answer": "Google 定义的 MLOps 成熟度（0-2 级，可扩展）：\n0 级（无 MLOps/手工流程）：\n- 数据科学家 notebook 训练，手工交付给工程团队部署；\n- 无自动化、无监控、训练与服务脱节、不可复现；\n- 多数初创/原型阶段。\n1 级（ML Pipeline 自动化）：\n- 训练 pipeline 自动化（代码+数据+环境版本化）；\n- 实验可复现；\n- CI/CD 部署模型；\n- 有基础监控；\n- 多数成熟 ML 团队。\n2 级（CI/CD Pipeline 自动化）：\n- 完整 CI/CD/CT 闭环：训练 pipeline 本身也 CI/CD（改训练代码自动触发训练-评估-部署）；\n- 持续训练、自动化再部署；\n- 全链路监控（数据/模型/业务）、元数据/血缘、治理；\n- 大型 ML 平台（大厂/成熟产品）。\n进阶（3+）：多模型/多租户治理、自动架构搜索、元学习、full observability。\n意义：评估团队现状、规划改进路径。不是所有场景都需 2 级（YAGNI）——小规模/低频模型 1 级够，高频/高风险/大规模才需 2 级。LLM 时代 LLMOps 成熟度类似：从手工 prompt 调试 → prompt/模型版本化+评估 → 自动化评测+灰度+监控+路由的完整闭环。按业务规模与风险选合适层级，避免过度工程。"
     },
@@ -205,7 +310,11 @@
       "question": "如何安全地回滚一个有问题的 LLM 部署？",
       "points": 5,
       "difficulty": 3,
-      "tags": ["回滚", "部署", "LLMOps"],
+      "tags": [
+        "回滚",
+        "部署",
+        "LLMOps"
+      ],
       "dimension": "skill",
       "reference_answer": "回滚场景：新模型/prompt 上线后发现质量下降、安全事件、延迟/成本飙升、错误率上升。\n快速回滚机制（应提前具备）：\n1) 版本化部署：每个版本可寻址，registry 存历史版本；\n2) 蓝绿/多版本共存：新旧版本同时部署，切流量即回滚（秒级）；\n3) 配置驱动：模型版本/prompt 版本由配置控制，改配置即切，无需重新部署；\n4) 自动回滚：监控指标超阈值（错误率/延迟/负反馈）自动触发回滚，无需人工；\n5) 渐进发布（金丝雀）限制影响面，回滚只影响小流量。\n回滚步骤：\n1) 检测：监控告警/用户反馈/bad case；\n2) 决策：评估严重度（安全/全量故障→立即回滚；轻微质量降→评估再定）；\n3) 执行：切流量到上一稳定版本；\n4) 验证：确认回滚后指标恢复；\n5) 复盘：定位根因（数据/代码/prompt/模型/基础设施），修复后再灰度。\n注意事项：\n- 数据迁移兼容（新版本可能写了不兼容的数据）；\n- 状态/会话连续（用户会话中途切换）；\n- 回滚也要测（确保回滚路径可用）；\n- 沟通（用户/团队）。\nLLM 输出不可预测，回滚能力是上线信心前提。缺乏快速回滚=不敢上线或事故扩大。工程上把「可回滚」作为部署的一等要求。"
     },
@@ -213,7 +322,11 @@
       "question": "什么是数据血缘（Data Lineage）与模型血缘？为什么重要？",
       "points": 5,
       "difficulty": 3,
-      "tags": ["血缘", "数据治理", "MLOps"],
+      "tags": [
+        "血缘",
+        "数据治理",
+        "MLOps"
+      ],
       "dimension": "skill",
       "reference_answer": "血缘（Lineage）：追踪数据/工件「从哪来、经哪些变换、用到哪去」的完整链路。\n数据血缘：原始数据 → 清洗 → 特征 → 训练集 → 模型 → 预测。每环节记录来源、变换逻辑、版本。\n模型血缘：模型 ← 训练数据版本 + 代码 commit + 超参 + 上游模型（如微调自某基座）+ 环境。\n为什么重要：\n1) 可追溯/调试：线上预测异常→定位到模型版本→训练数据/代码→根因（数据 bug、污染、漂移）；\n2) 合规/审计：GDPR/监管要求能解释决策依据、数据来源；\n3) 影响分析：某数据源出错→知道影响了哪些模型/预测，范围评估；\n4) 复现：凭血缘重建训练全条件；\n5) 治理：数据质量、版本、所有权追溯。\n实现：\n- 元数据系统记录 lineage（来源/变换/下游）；\n- pipeline 框架自动捕获（Airflow/Prefect/Dagster 的 lineage）；\n- 数据/模型版本化（DVC/registry）；\n- 统一 ID 关联（数据版本↔模型↔实验）。\nLLM 时代：训练数据来源复杂（爬取/合成/微调混合），血缘对版权/合规/安全（防训练数据投毒/泄露）关键；下游应用的 prompt/检索/模型组合也需血缘追踪。血缘是数据/模型治理的基础，缺乏则系统不透明、不可问责。"
     },
@@ -221,7 +334,11 @@
       "question": "开源 LLM 自托管 vs 商业 API，如何选择？",
       "points": 10,
       "difficulty": 4,
-      "tags": ["自托管", "API", "选型"],
+      "tags": [
+        "自托管",
+        "API",
+        "选型"
+      ],
       "dimension": "skill",
       "reference_answer": "商业 API（OpenAI/Anthropic/...）：\n优点：强能力（顶级模型）、开箱即用、无需运维、弹性计费、快速集成；\n缺点：成本（高流量贵）、数据外泄（合规/隐私风险）、依赖供应商（停服/涨价/限流）、定制受限（微调/部署受限）、延迟（网络）、速率限制。\n开源自托管（Llama/Qwen/Mistral + vLLM）：\n优点：数据不出（隐私/合规）、无 token 计费（大流量成本可控）、完全可控（微调/部署/定制）、无速率限制、可离线；\n缺点：需 GPU 与运维、模型能力常弱于顶级商业模型、需自己处理安全/对齐、初始投入大、需调优（量化/推理框架）。\n选择维度：\n1) 数据敏感性：金融/医疗/机密 → 自托管或提供数据保护的 API；\n2) 流量规模：小→API 省事，大→自托管经济；\n3) 成本预算：固定预算 vs 按量；\n4) 能力需求：需顶级推理/创作 → API；通用任务 → 开源够；\n5) 合规/地域：数据跨境限制 → 本地自托管；\n6) 团队能力：有无 ML 平台运维；\n7) 定制：需深度微调/特定领域 → 自托管。\n常见策略：\n- 混合（模型路由）：简单/敏感用自托管开源，复杂用 API；\n- 起步用 API 验证，流量起来后部分迁自托管降本；\n- 数据敏感场景用 API 供应商的企业版（数据不训练承诺）或自托管。\n无绝对优劣，按场景权衡。开源模型能力快速逼近商业模型，自托管性价比持续提升。"
     },
@@ -229,7 +346,11 @@
       "question": "LLM 推理服务的高可用（HA）如何保证？",
       "points": 10,
       "difficulty": 4,
-      "tags": ["高可用", "HA", "可靠性"],
+      "tags": [
+        "高可用",
+        "HA",
+        "可靠性"
+      ],
       "dimension": "skill",
       "reference_answer": "高可用：服务持续可用，单点故障不影响整体。\n措施：\n1) 多副本：部署多个推理副本，负载均衡，单副本故障不影响；\n2) 多可用区/多区域：跨 AZ/Region 部署，防整机房故障；\n3) 健康检查与自动重启：探针检测副本健康，故障自动重启/替换；\n4) 负载均衡：请求分发，故障副本摘除；\n5) 限流与降级：过载时限流保核心、降级（用更小模型/缓存结果/拒部分请求）防雪崩；\n6) 熔断：下游（如向量库/embedding）故障时熔断，防级联失败；\n7) 模型路由与 fallback：主模型故障自动切备选模型/提供商；\n8) 缓存：高频结果缓存，部分请求不依赖模型；\n9) 优雅退出/预热：滚动部署时优雅退出、新副本预热后接流量，避免冷启动延迟；\n10) 容量冗余：N+1 或按峰值配，容忍部分副本下线。\n监控与应急：\n- SLO/SLI（可用率、延迟、错误率）跟踪；\n- 告警与 on-call；\n- 故障演练（混沌工程）；\n- 回滚与快速恢复。\n挑战：LLM 副本重（GPU、模型大），冷启动慢，故障切换延迟；成本高难大量冗余；依赖外部（API、向量库）的 HA。\n实践：Kubernetes + 健康检查 + 多副本 + 多 AZ + 负载均衡 + 熔断降级 + 监控。LLM 服务可用性要求视场景（客服需高，内部工具可低），按 SLA 设计冗余与恢复机制。"
     },
@@ -237,7 +358,11 @@
       "question": "如何为 LLM 应用建立评估驱动的开发流程？",
       "points": 5,
       "difficulty": 3,
-      "tags": ["评估驱动", "开发流程", "LLMOps"],
+      "tags": [
+        "评估驱动",
+        "开发流程",
+        "LLMOps"
+      ],
       "dimension": "skill",
       "reference_answer": "评估驱动：把评估作为开发的核心环节，每次变更量化验证，而非凭直觉。\n流程：\n1) 先建评估集：在开发前构建覆盖典型/边界/bad case 的评估集 + 评分标准（rubric/参考答案/LLM-Judge）；\n2) 基线：当前版本在评估集的指标作为基线；\n3) 迭代：每次改 prompt/模型/RAG/参数 → 跑评估集 → 对比基线（改善/回归）→ 数据驱动决策；\n4) 门槛：定义最低指标，不达标不合并/上线；\n5) 回归：CI 集成，变更自动跑评估，防退化；\n6) 在线验证：离线通过后灰度/A-B 真实流量确认；\n7) 持续扩充：线上 bad case 入评估集，迭代。\n关键转变：\n- 从「调到感觉不错」到「指标证明更好」；\n- 从「一次发布」到「持续评估回归」；\n- 评估集是一等资产，持续投入。\n挑战：\n- 评估集构建成本；\n- 自动评估的局限（需人工校准）；\n- 多目标权衡（质量/成本/延迟/安全）；\n- 避免过拟合评估集（留 holdout）。\n工具：Promptfoo/LangSmith/Langfuse + 自建评测管线。评估驱动让 LLM 开发从「炼丹」走向「工程」，是可靠迭代的基础。投入评估基础设施回报巨大——它决定了迭代速度与质量上限。"
     },
@@ -245,7 +370,11 @@
       "question": "什么是 Guardrails（护栏）？如何在 LLM 应用中部署？",
       "points": 10,
       "difficulty": 4,
-      "tags": ["guardrails", "护栏", "安全"],
+      "tags": [
+        "guardrails",
+        "护栏",
+        "安全"
+      ],
       "dimension": "skill",
       "reference_answer": "Guardrails：在 LLM 输入/输出处加的结构化检查与控制，确保交互符合安全、合规、质量要求，是「应用层」的防护（区别于模型训练时的对齐）。\n类型：\n1) 输入护栏：检查用户输入——prompt 注入检测、PII 脱敏、敏感话题拦截、越狱检测、长度/格式校验；\n2) 输出护栏：检查模型输出——有害内容过滤、事实校验（与证据/知识库比对）、格式校验（JSON/schema）、PII 泄露检测、品牌/合规检查；\n3) 工具调用护栏：校验 Agent 的工具调用参数、权限、危险操作确认。\n实现：\n- 规则/正则（关键词、格式）；\n- 分类器（毒性/意图/注入检测小模型）；\n- LLM-Judge（用模型判断是否违规）；\n- schema 校验；\n- 外部知识校验（faithfulness）。\n部署位置：\n- 应用入口（输入护栏）；\n- LLM 调用前后（输出护栏）；\n- 工具调用前后；\n- 集成在 LLM 网关统一执行。\n违规处理：拒绝、要求重写、改写、降级、转人工、记录告警。\n框架：NeMo Guardrails、Guardrails AI、Lakera、自建。\n原则：\n- 纵深防御（输入+输出+模型对齐+人工多道）；\n- 可配置（不同场景不同策略）；\n- 监控误报/漏报，迭代；\n- 不依赖单一防护（guardrail 不是银弹）。\nGuardrails 是生产 LLM 应用的必备安全层，尤其面向公众/高风险场景。"
     },
@@ -253,7 +382,11 @@
       "question": "如何对 LLM 推理做基准测试（benchmark）？",
       "points": 5,
       "difficulty": 3,
-      "tags": ["基准测试", "性能", "benchmark"],
+      "tags": [
+        "基准测试",
+        "性能",
+        "benchmark"
+      ],
       "dimension": "skill",
       "reference_answer": "目的：量化推理系统（模型+框架+硬件）的性能，指导选型、容量规划、优化。\n测试维度：\n1) 延迟：TTFT、TPOT、端到端延迟，分 p50/p99；\n2) 吞吐：每秒 token（input/output）、每秒请求数；\n3) 并发：不同并发下的延迟-吞吐曲线；\n4) 显存：峰值显存、KV cache 容量、最大并发序列；\n5) 质量：量化/压缩后的输出质量（在评估集对比）。\n测试方法：\n1) 固定负载：模拟真实流量分布（prompt 长度、输出长度、QPS），用压测工具（vLLM 自带 benchmark、locust、k6、自定义）；\n2) 扫描并发：从低到高扫描并发数，画延迟-吞吐曲线，找饱和点；\n3) 多配置对比：不同模型大小/量化/batch/框架；\n4) 长时间稳定性：内存泄漏、性能衰减。\n关键实践：\n- 真实负载（用真实 query 分布，非固定短文本）；\n- 预热（先跑几轮，避冷启动）；\n- 多次取均值/分位；\n- 记录环境（硬件、版本、配置）；\n- 分别测 prefill 与 decode（瓶颈不同）。\n工具：vLLM benchmark_serving.py、TensorRT-LLM benchmark、llm-perf、自建。\n输出：性能报告（延迟/吞吐/显存/成本 vs 并发/配置），指导 GPU 选型、副本数、参数调优。基准测试是性能工程的基础，避免拍脑袋规划。"
     }

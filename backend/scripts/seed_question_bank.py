@@ -26,8 +26,9 @@
 题目与参考答案为原创编写，基于 2024-2025 公开技术资料的常见考点方向，
 覆盖各领域高频知识点。不照搬任何单一来源原文。
 
-配额设计（各分类 target_points 合计 100）：见 _categories.json。
-组卷（assemble）用 DP 子集和按 target 在各分类内凑分，分值以 5/10 为主。
+配额设计（各分类 target_points 合计 155，约 31 题）：见 _categories.json。
+组卷（assemble）用 DP 子集和按 target 在各分类内凑分，同分组合优先题目更多者；
+分值以 5/10 为主；动态组卷（plan_and_assemble）按简历/JD 信号重分配额后归一 150 分。
 """
 from __future__ import annotations
 
@@ -196,21 +197,20 @@ async def seed(team_name: str | None) -> None:
         await session.commit()
         print(f"\n✓ 完成：新增 {total_new} 题，已存在跳过 {total_skip} 题，题库总题数 {total_new + total_skip}")
 
-        # 3. assemble 验证（凑 100）
+        # 3. assemble 验证（静态配额）
         svc = QuestionBankService(session)
         picked, actual, deficits = await svc.assemble(team_id=team.id)
+        static_total = sum(c["target_points"] for c in categories)
         print(
-            f"\n组卷验证：选中 {len(picked)} 题，实际总分 {actual} / 100，"
+            f"\n组卷验证：选中 {len(picked)} 题，实际总分 {actual} / {static_total}，"
             f"缺口分类 {len(deficits)} 个"
         )
         if deficits:
             for d in deficits:
                 print(f"  ⚠ {d['category_name']}: 目标 {d['target']}，实际 {d['actual']}，缺 {d['gap']}")
             print("  （缺口分类需继续扩充题目至题库总分 ≥ target）")
-        elif actual == 100:
-            print("  ✓ 完美凑满 100 分")
         else:
-            print(f"  ℹ 实际 {actual}（容差内）")
+            print(f"  ℹ 无缺口，凑到 {actual} 分")
 
     await engine.dispose()
 

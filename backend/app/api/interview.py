@@ -74,6 +74,8 @@ class _ComposeRequest(BaseModel):
     quotas: dict[UUID, int] | None = None
     tolerance: int = 5
     exclude_question_ids: list[UUID] | None = None
+    dynamic: bool = True
+    """默认 True：按候选人简历 + JD 动态匹配配额（目标约 30 题）。"""
 
 
 class _ComposeResponse(BaseModel):
@@ -84,6 +86,8 @@ class _ComposeResponse(BaseModel):
     actual_total: int
     target_total: int
     deficits: list[dict] = []
+    plan: dict | None = None
+    """动态配额计划（signals + 各分类配额调整）；静态组卷时为 None。"""
 
 
 # ============================================================================
@@ -617,7 +621,8 @@ async def compose_from_bank(
 ) -> _ComposeResponse:
     """从题库凑分组卷，写入当前 session（新 batch_id）。
 
-    凑不满 100 时返回 deficits；调用方据 deficits 决定 abort / AI 兜底。
+    默认 ``dynamic=true``：按候选人简历 + JD 动态匹配配额（约 30 题）；
+    凑不满时返回 deficits；调用方据 deficits 决定 abort / AI 兜底。
     """
     team_id = _require_team(user)
     service = InterviewService(db)
@@ -634,12 +639,28 @@ async def compose_from_bank(
             resource="interview_session",
         )
 
-    items, actual, deficits = await QuestionBankService(db).assemble(
-        team_id=team_id,
-        quotas=payload.quotas,
-        tolerance=payload.tolerance,
-        exclude_question_ids=payload.exclude_question_ids,
-    )
+    bank_svc = QuestionBankService(db)
+    plan: dict | None = None
+    if payload.dynamic:
+        signals = await bank_svc.build_candidate_signals(
+            team_id=team_id,
+            candidate_id=session.candidate_id,
+            job_id=session.job_id,
+        )
+        items, actual, deficits, plan = await bank_svc.plan_and_assemble(
+            team_id=team_id,
+            signals=signals,
+            quotas=payload.quotas,
+            tolerance=payload.tolerance,
+            exclude_question_ids=payload.exclude_question_ids,
+        )
+    else:
+        items, actual, deficits = await bank_svc.assemble(
+            team_id=team_id,
+            quotas=payload.quotas,
+            tolerance=payload.tolerance,
+            exclude_question_ids=payload.exclude_question_ids,
+        )
     if not items:
         # 无题可选（题库空），不实例化，直接返回空缺口信息
         return _ComposeResponse(
@@ -663,6 +684,7 @@ async def compose_from_bank(
         actual_total=actual,
         target_total=actual + sum(d["target"] for d in deficits),
         deficits=deficits,
+        plan=plan,
     )
 
 
