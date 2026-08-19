@@ -55,6 +55,22 @@ async def _ensure_team_admin(session, admin_email: str, admin_password: str) -> 
     else:
         print(f"• team 已存在: {team.name} ({team.id})")
 
+    # 悬空用户挂回：清库事故后存量用户的 team_id 可能为 NULL 或指向已消失的 team,
+    # 不修复则一切团队职能接口 403「当前用户未加入任何团队」
+    dangling = (
+        await session.execute(
+            select(User).where(
+                (User.team_id.is_(None))
+                | ~User.team_id.in_(select(Team.id))
+            )
+        )
+    ).scalars().all()
+    if dangling:
+        for u in dangling:
+            u.team_id = team.id
+        await session.flush()
+        print(f"✓ 悬空用户挂回团队: {len(dangling)} 个 ({', '.join(u.email for u in dangling)})")
+
     user = (
         await session.execute(select(User).where(User.email == admin_email))
     ).scalars().first()

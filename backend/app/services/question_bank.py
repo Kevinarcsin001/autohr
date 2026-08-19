@@ -104,6 +104,44 @@ def _norm_token(s: str) -> str:
     return s.strip().lower()
 
 
+def _dice_similarity(a: str, b: str) -> float:
+    """字符二元组（bigram）Dice 相似度，∈ [0,1]。零依赖的语义近似层。
+
+    用于弥补裸子串匹配的「表述不一致」：如「调模型」与「模型微调」共享
+    bigram「模型」→ dice≈0.4；「prompt 工程」与「Prompt Engineering」→ 高分。
+    后续可替换/叠加真 embedding（接口处预留：``_signal_match_strength``）。
+    """
+    sa, sb = _norm_token(a), _norm_token(b)
+    if len(sa) < 2 or len(sb) < 2:
+        return 0.0
+    ga = {sa[i : i + 2] for i in range(len(sa) - 1)}
+    gb = {sb[i : i + 2] for i in range(len(sb) - 1)}
+    if not ga or not gb:
+        return 0.0
+    return 2 * len(ga & gb) / (len(ga) + len(gb))
+
+
+_FUZZY_THRESHOLD: float = 0.35
+"""Dice 相似度调此阈值判为模糊命中（实测「调模型/模型微调」≈0.4，随机中文词对 <0.2）。"""
+
+_FUZZY_STRENGTH: float = 0.5
+"""模糊命中的强度折扣：子串命中=1.0，模糊命中=0.5（进入亲和度时同比例折算）。"""
+
+
+def _signal_match_strength(signal: str, target: str) -> float:
+    """信号→目标词的匹配置信度：0（不命中）/ _FUZZY_STRENGTH（模糊）/ 1.0（子串命中）。
+
+    匹配顺序：先子串（原 ``_token_matches`` 语义，短 token 防误命中），
+    不中再做 Dice 模糊匹配。真 embedding 可在此处叠加：
+    ``max(current, embed_sim(signal, target) if sim >= 0.75 else 0)``。
+    """
+    if _token_matches(signal, target):
+        return 1.0
+    if _dice_similarity(signal, target) >= _FUZZY_THRESHOLD:
+        return _FUZZY_STRENGTH
+    return 0.0
+
+
 def _token_matches(signal: str, target: str) -> bool:
     """宽松匹配：双向子串，短 token 防误命中（拉丁 ≥3 字符 / CJK ≥2 字符）。"""
     sig, tgt = _norm_token(signal), _norm_token(target)
@@ -142,21 +180,30 @@ def compute_dynamic_quotas(
     if not categories:
         return {}, {}
 
-    # 1) 每分类亲和度分
+    # 1) 每分类亲和度分（子串命中=1.0 强度，Dice 模糊命中=0.5 强度）
     scores: dict[uuid.UUID, float] = {}
     for cat_id, slug, name, _base in categories:
         score = 0.0
         cat_words = [slug, name]
         cat_tags = items_tags.get(cat_id, [])
         for signal, weight in signals:
-            # 直接命中：信号与 slug/name 互为子串 → 强信号加成
-            if any(_token_matches(signal, w) for w in cat_words):
-                score += 2.0 * weight
+            # 直接/模糊命中：信号与 slug/name 匹配（强度折算）
+            strength = max(
+                (_signal_match_strength(signal, w) for w in cat_words), default=0.0
+            )
+            if strength > 0:
+                score += 2.0 * strength * weight
                 continue
-            # tags 命中率：该分类多少比例的题 tags 命中信号
+            # tags 命中率：该分类多少比例的题 tags 命中信号（模糊命中按强度折算）
             if cat_tags:
-                hit = sum(1 for tags in cat_tags if any(_token_matches(signal, t) for t in tags))
-                score += (hit / len(cat_tags)) * weight
+                hit_sum = sum(
+                    max(
+                        (_signal_match_strength(signal, t) for t in tags),
+                        default=0.0,
+                    )
+                    for tags in cat_tags
+                )
+                score += (hit_sum / len(cat_tags)) * weight
         scores[cat_id] = round(score, 4)
 
     max_score = max(scores.values(), default=0.0)
@@ -376,6 +423,8 @@ class QuestionBankService:
         1. JD 硬性 required_skills（2.0）——岗位明确要求，优先满足
         2. JD 正文命中的分类名/slug（1.5）——无硬性要求时的兜底
         3. 候选人简历 skills（1.0）——候选人实际技能，用于出题验证
+        4. 工作经历反扫（0.8）——用分类词表扫 work_history 职位/描述，
+           捕获项目里实际用过但未列入 skills 的技术栈
 
         同词去重取最大权重。
         """
@@ -410,7 +459,7 @@ class QuestionBankService:
                         _add(word, 1.5)
                         break
 
-        # 3) 候选人简历 skills（最新 ParsedStructure）
+        # 3) 候选人简历 skills（最新 ParsedStructure，w=1.0）
         stmt = (
             select(ParsedStructure.data)
             .join(CandidateResume, CandidateResume.id == ParsedStructure.resume_id)
@@ -419,11 +468,31 @@ class QuestionBankService:
             .limit(1)
         )
         row = (await self._db.execute(stmt)).first()
+        structure: dict | None = None
         if row is not None:
-            structure = row[0].get("structure") if isinstance(row[0], dict) else None
-            if isinstance(structure, dict):
+            inner = row[0].get("structure") if isinstance(row[0], dict) else None
+            if isinstance(inner, dict):
+                structure = inner
                 for skill in structure.get("skills") or []:
                     _add(str(skill), 1.0)
+
+        # 4) 工作经历反扫（w=0.8）：用题库分类词表（slug/name，经过策展）扫
+        #    work_history 的职位/描述文本 —— 项目里做过但没写进 skills 的技术栈也能被捕获。
+        #    不扫 tags 词表：通用词（如「基础」）会大面积误命中。
+        if structure is not None:
+            cats = await self.list_categories(team_id=team_id, active_only=True)
+            vocab = [w for c in cats for w in (c.slug, c.name)]
+            texts = [
+                " ".join(filter(None, [str(wh.get("title") or ""), str(wh.get("description") or "")]))
+                for wh in structure.get("work_history") or []
+                if isinstance(wh, dict)
+            ]
+            blob = _norm_token(" ".join(t for t in texts if t))
+            if blob:
+                for word in vocab:
+                    w = word.strip().lower()
+                    if len(w) >= 3 and w in blob:
+                        _add(word, 0.8)
 
         # 按权重降序，便于前端展示与调试
         result = sorted(signals.items(), key=lambda kv: (-kv[1], kv[0]))
@@ -443,6 +512,9 @@ class QuestionBankService:
 
         plan = {"total_target", "signals", "quotas": [(category_id/name/base/quota/score/matched)]}
         signals 为空且 quotas 为空时退化为静态 target_points 组卷（plan 仍返回基准信息）。
+
+        分类内选题策略（v2）：题目 tags 命中信号的优先入选 —— 先在「相关题」内
+        DP 凑分配额，凑不满再用「中性题」补缺口，保证相关题尽量用上。
         """
         categories = await self.list_categories(team_id=team_id, active_only=True)
         cat_tuples = [(c.id, c.slug, c.name, c.target_points) for c in categories]
@@ -463,12 +535,62 @@ class QuestionBankService:
         else:
             scores = {cid: 0.0 for cid, _s, _n, _b in cat_tuples}
 
-        items, total, deficits = await self.assemble(
-            team_id=team_id,
-            quotas=quotas,
-            tolerance=tolerance,
-            exclude_question_ids=exclude_question_ids,
-        )
+        exclude = set(exclude_question_ids or [])
+        selected: list[QuestionBankItem] = []
+        deficits: list[dict[str, Any]] = []
+        total = 0
+        cat_by_id = {c.id: c for c in categories}
+
+        sig_norm = [(s, w) for s, w in (signals or [])]
+
+        def _item_relevance(tags: list[str]) -> int:
+            """题目 tags 命中的信号数（子串或模糊）。"""
+            return sum(
+                1
+                for t in tags
+                if any(_signal_match_strength(s, t) > 0 for s, _w in sig_norm)
+            )
+
+        for cat_id, quota in quotas.items():
+            if quota <= 0:
+                continue
+            cat = cat_by_id[cat_id]
+            cat_items = [
+                it
+                for it in await self.list_items(
+                    team_id=team_id, category_id=cat_id, active_only=True
+                )
+                if it.id not in exclude
+            ]
+            # 相关题优先（命中多在前，同命中分值小在前 → 多题优先）；其余中性题补口
+            relevant = sorted(
+                (it for it in cat_items if _item_relevance(it.tags or []) > 0),
+                key=lambda it: (-_item_relevance(it.tags or []), it.points),
+            )
+            neutral = [it for it in cat_items if _item_relevance(it.tags or []) == 0]
+
+            picked, actual = subset_sum_dp(relevant, quota, tolerance=tolerance)
+            gap = quota - actual
+            if gap > 0:
+                # 容差内尽量补齐；剩余目标为 gap，容差沿用 tolerance
+                picked2, actual2 = subset_sum_dp(neutral, gap, tolerance=tolerance)
+                picked += picked2
+                actual += actual2
+            for it in picked:
+                exclude.add(it.id)
+            selected.extend(picked)
+            total += actual
+            gap_final = quota - actual
+            if gap_final > tolerance or not picked:
+                deficits.append(
+                    {
+                        "category_id": cat_id,
+                        "category_name": cat.name,
+                        "target": quota,
+                        "actual": actual,
+                        "gap": gap_final,
+                    }
+                )
 
         cat_by_id = {c.id: c for c in categories}
         plan = {
@@ -489,7 +611,7 @@ class QuestionBankService:
                 if q > 0
             ],
         }
-        return items, total, deficits, plan
+        return selected, total, deficits, plan
 
     # ----- 实例化（写入 interview_questions） -----
 

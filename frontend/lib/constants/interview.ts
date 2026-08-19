@@ -14,6 +14,8 @@ type BadgeVariant =
   | "destructive"
   | "outline";
 
+export type { BadgeVariant };
+
 export const DIMENSION_LABEL: Record<InterviewDimension, string> = {
   skill: "技能深挖",
   project: "项目经历",

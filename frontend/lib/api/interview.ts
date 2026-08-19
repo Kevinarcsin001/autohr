@@ -211,7 +211,6 @@ export async function batchSaveFeedbackApi(
 // ============================================================================
 
 export type HiringRecommendation = "hire" | "reserve" | "reject";
-
 export interface HiringRecommendationOut {
   id: string;
   session_id: string;
@@ -242,6 +241,121 @@ export async function getRecommendationApi(
 ): Promise<GenerateRecommendationResponse> {
   const { data } = await apiClient.get<GenerateRecommendationResponse>(
     `/api/interview/sessions/${sessionId}/recommend`,
+  );
+  return data;
+}
+
+// ============================================================================
+// 渐进式自适应面试（M1）
+// ============================================================================
+
+export interface AdaptiveSignal {
+  signal: string;
+  weight: number;
+}
+
+export interface AdaptiveTurn {
+  id: string;
+  seq: number;
+  question_item_id: string | null;
+  question_text: string;
+  dimension: InterviewDimension | null;
+  category_id: string | null;
+  category_name: string | null;
+  answer_text: string | null;
+  answered_at: string | null;
+  rating: number | null;
+  rating_evidence: {
+    key_points_hit?: string[];
+    key_points_missed?: string[];
+    strengths?: string[];
+    flaws?: string[];
+    follow_up_suggestion?: string;
+  } | null;
+  rating_model: string | null;
+  next_decision: {
+    action?: "deepen" | "retry" | "switch" | "complete";
+    reason?: string;
+    difficulty?: number;
+    weak?: boolean;
+  } | null;
+}
+
+export interface AdaptiveBranch {
+  category_id: string;
+  category_name: string;
+  score: number;
+  status: "pending" | "active" | "done" | "weak" | "exhausted";
+  turns_count: number;
+  avg_rating: number | null;
+}
+
+export interface AdaptiveStartResponse {
+  session_id: string;
+  mode: string;
+  signals: AdaptiveSignal[];
+  branches: AdaptiveBranch[];
+  first_turn: AdaptiveTurn;
+}
+
+export interface AdaptiveStateResponse {
+  session_id: string;
+  mode: string;
+  status: InterviewSessionStatus;
+  total_turns: number;
+  answered_turns: number;
+  plan_signals: AdaptiveSignal[];
+  branches: AdaptiveBranch[];
+  turns: AdaptiveTurn[];
+  ability: Record<string, number>;
+  done: boolean;
+  done_reason: string | null;
+}
+
+export interface AdaptiveAnswerResponse {
+  turn: AdaptiveTurn;
+  rating_error: string | null;
+}
+
+export interface AdaptiveNextResponse {
+  turn: AdaptiveTurn | null;
+  done: boolean;
+  done_reason: string | null;
+  decision: AdaptiveTurn["next_decision"];
+}
+
+/** 启动自适应面试（幂等：已有 turns 返回当前状态）。 */
+export async function adaptiveStartApi(sessionId: string): Promise<AdaptiveStartResponse> {
+  const { data } = await apiClient.post<AdaptiveStartResponse>(
+    `/api/interview/sessions/${sessionId}/adaptive/start`,
+  );
+  return data;
+}
+
+/** 自适应面试大屏状态。 */
+export async function adaptiveStateApi(sessionId: string): Promise<AdaptiveStateResponse> {
+  const { data } = await apiClient.get<AdaptiveStateResponse>(
+    `/api/interview/sessions/${sessionId}/adaptive/state`,
+  );
+  return data;
+}
+
+/** 提交回答（M1 手输文本）。 */
+export async function adaptiveAnswerApi(
+  sessionId: string,
+  payload: { turn_id: string; answer_text: string },
+): Promise<AdaptiveAnswerResponse> {
+  const { data } = await apiClient.post<AdaptiveAnswerResponse>(
+    `/api/interview/sessions/${sessionId}/adaptive/answer`,
+    payload,
+  );
+  return data;
+}
+
+/** 获取下一题（幂等；全部完成 done=true）。 */
+export async function adaptiveNextApi(sessionId: string): Promise<AdaptiveNextResponse> {
+  const { data } = await apiClient.get<AdaptiveNextResponse>(
+    `/api/interview/sessions/${sessionId}/adaptive/next`,
   );
   return data;
 }

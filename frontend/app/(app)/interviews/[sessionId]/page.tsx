@@ -146,9 +146,17 @@ export default function InterviewSessionPage() {
     <div className="mx-auto max-w-4xl space-y-6 p-6">
       {/* 顶部：返回 + 候选人/职位信息 */}
       <header className="space-y-2">
-        <Link href="/interviews" className="text-sm text-muted-foreground hover:underline">
-          ← 返回面试列表
-        </Link>
+        <div className="flex items-center justify-between">
+          <Link href="/interviews" className="text-sm text-muted-foreground hover:underline">
+            ← 返回面试列表
+          </Link>
+          <Link
+            href={`/interviews/${sessionId}/adaptive`}
+            className="text-sm text-primary hover:underline"
+          >
+            渐进式自适应面试 →
+          </Link>
+        </div>
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="space-y-1">
             <h1 className="text-xl font-bold">{candidate_name ?? "—"}</h1>

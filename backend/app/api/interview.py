@@ -31,6 +31,13 @@ from app.core.middleware.error_handler import ForbiddenError, NotFoundError
 from app.models.candidate import Candidate
 from app.models.interview import InterviewFeedback, InterviewQuestion
 from app.models.job import Job
+from app.schemas.adaptive import (
+    AdaptiveAnswerOut,
+    AdaptiveAnswerRequest,
+    AdaptiveNextOut,
+    AdaptiveStartOut,
+    AdaptiveStateOut,
+)
 from app.schemas.interview import (
     BatchFeedbackRequest,
     BatchFeedbackResponse,
@@ -47,6 +54,9 @@ from app.schemas.interview import (
     InterviewSessionOut,
     SessionDetailResponse,
     UpdateSessionRequest,
+)
+from app.services.adaptive_interview import (
+    AdaptiveInterviewService,
 )
 from app.services.interview import InterviewError, InterviewService
 from app.services.question_bank import QuestionBankService
@@ -724,6 +734,87 @@ async def batch_save_feedback(
     await db.commit()
 
     return BatchFeedbackResponse(saved=saved, errors=errors)
+
+
+# ============================================================================
+# 渐进式自适应面试（M1：规则式选题 + LLM 对照评分；手输回答）
+# ============================================================================
+
+
+@router.post(
+    "/sessions/{session_id}/adaptive/start",
+    response_model=AdaptiveStartOut,
+    status_code=status.HTTP_200_OK,
+)
+async def adaptive_start(
+    session_id: UUID,
+    user: CurrentUser,
+    db: DbSession,
+) -> AdaptiveStartOut:
+    """启动自适应面试：简历/JD 信号 → 分支计划 → 首题（幂等，重复调用返回当前状态）。"""
+    team_id = _require_team(user)
+    result = await AdaptiveInterviewService(db).start(
+        team_id=team_id, session_id=session_id, started_by=user.id
+    )
+    await db.commit()
+    return result
+
+
+@router.get(
+    "/sessions/{session_id}/adaptive/state",
+    response_model=AdaptiveStateOut,
+)
+async def adaptive_state(
+    session_id: UUID,
+    user: CurrentUser,
+    db: DbSession,
+) -> AdaptiveStateOut:
+    """自适应面试大屏：分支进度 + 回合时间线 + 能力画像。"""
+    team_id = _require_team(user)
+    return await AdaptiveInterviewService(db).state(team_id=team_id, session_id=session_id)
+
+
+@router.post(
+    "/sessions/{session_id}/adaptive/answer",
+    response_model=AdaptiveAnswerOut,
+)
+async def adaptive_answer(
+    session_id: UUID,
+    payload: AdaptiveAnswerRequest,
+    user: CurrentUser,
+    db: DbSession,
+) -> AdaptiveAnswerOut:
+    """提交回答（M1 手输文本）：保存回答并同步 LLM 评分 + 下一题决策。
+
+    评分失败时回答仍保存（rating_error 携带原因），由 /adaptive/next 自动重试评分。
+    """
+    team_id = _require_team(user)
+    result = await AdaptiveInterviewService(db).submit_answer(
+        team_id=team_id,
+        session_id=session_id,
+        turn_id=payload.turn_id,
+        answer_text=payload.answer_text,
+    )
+    await db.commit()
+    return result
+
+
+@router.get(
+    "/sessions/{session_id}/adaptive/next",
+    response_model=AdaptiveNextOut,
+)
+async def adaptive_next(
+    session_id: UUID,
+    user: CurrentUser,
+    db: DbSession,
+) -> AdaptiveNextOut:
+    """获取下一题（含上一题的选题理由）；幂等：未回答的题即当前题。全部完成时 done=true。"""
+    team_id = _require_team(user)
+    result = await AdaptiveInterviewService(db).next_question(
+        team_id=team_id, session_id=session_id
+    )
+    await db.commit()
+    return result
 
 
 __all__ = ["router"]

@@ -9,9 +9,10 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
 
 # ============================================================================
 # 类型
@@ -188,8 +189,14 @@ class InterviewSessionOut(BaseModel):
     status: InterviewSessionStatusLiteral
     interviewer_id: uuid.UUID | None = None
     overall_notes: str | None = None
-    created_at: str | None = None
-    updated_at: str | None = None
+    mode: str = "batch"
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+    @field_serializer("created_at", "updated_at")
+    @classmethod
+    def _serialize_dt(cls, v: datetime | None) -> str | None:
+        return v.isoformat() if v else None
 
 
 class InterviewSessionListItem(BaseModel):

@@ -23,7 +23,12 @@ from app.models.candidate import (
 from app.models.dedup import DedupMatch
 from app.models.email_config import EmailConfig
 from app.models.hiring import HiringRecommendation
-from app.models.interview import InterviewFeedback, InterviewQuestion, InterviewSession
+from app.models.interview import (
+    InterviewFeedback,
+    InterviewQuestion,
+    InterviewSession,
+    InterviewTurn,
+)
 from app.models.invite import TeamInvite
 from app.models.job import Job, JobHardRequirement, JobVersion
 from app.models.llm_call import LLMCall
@@ -58,6 +63,7 @@ __all__ = [
     "InterviewSession",
     "InterviewQuestion",
     "InterviewFeedback",
+    "InterviewTurn",
     # hiring
     "HiringRecommendation",
     # dedup

@@ -238,8 +238,9 @@ async def parse_resume_handler(
     # 解析成功 → 自动触发结构化抽取
     if summary and summary.get("status") == "success":
         try:
-            from app.models.async_job import AsyncJob
             from sqlalchemy import select
+
+            from app.models.async_job import AsyncJob
 
             async with AsyncSessionLocal() as session:
                 idem_key = f"extract:{target_id}"
@@ -312,8 +313,9 @@ async def extract_structured_handler(
     # 提取成功后更新候选人姓名
     if summary and summary.get("status") in ("success", "extracted", "partial_extracted"):
         try:
-            from app.models.candidate import Candidate, CandidateResume, ParsedStructure
             from sqlalchemy import select
+
+            from app.models.candidate import Candidate, CandidateResume, ParsedStructure
 
             async with AsyncSessionLocal() as session:
                 resume = await session.scalar(
@@ -385,9 +387,10 @@ async def extract_structured_handler(
     # 抽取成功 → 自动触发评分（含推理+面试问题生成）
     if summary and summary.get("status") in ("success", "extracted", "partial_extracted"):
         try:
+            from sqlalchemy import select
+
             from app.models.async_job import AsyncJob
             from app.models.screening import ScreeningResult
-            from sqlalchemy import select
 
             async with AsyncSessionLocal() as session:
                 resume = await session.scalar(

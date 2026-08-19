@@ -1,6 +1,6 @@
 """解析器基类 — 定义通用 ParserResult。"""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass
