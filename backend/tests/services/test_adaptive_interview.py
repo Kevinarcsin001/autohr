@@ -34,6 +34,8 @@ from app.services.adaptive_interview import (
     AdaptiveInterviewError,
     AdaptiveInterviewService,
     decide_next_action,
+    estimate_branch_ability,
+    target_difficulty,
 )
 
 # ============================================================================
@@ -245,6 +247,53 @@ def test_decide_no_deepen_beyond_difficulty_5() -> None:
 
 
 # ============================================================================
+# M3：CAT 能力估计（纯函数）
+# ============================================================================
+
+
+def test_estimate_ability_prior_shrinkage() -> None:
+    """单回合 5@d3：先验收缩防跳变 → θ≈0.69（目标难度 4，而非直冲 5）。"""
+    theta = estimate_branch_ability([(5, 3)])
+    assert theta is not None
+    assert 0.6 < theta < 0.75
+    assert target_difficulty(theta) == 4
+
+
+def test_estimate_ability_converges_with_evidence() -> None:
+    """多回合强表现 → θ 上升；难度高的好表现贡献更大。"""
+    weak = estimate_branch_ability([(2, 3), (2, 3)])
+    strong = estimate_branch_ability([(5, 3), (5, 5)])
+    assert strong is not None and weak is not None
+    assert strong > 0.7 > weak
+    assert target_difficulty(strong) > target_difficulty(weak)
+
+
+def test_estimate_ability_empty() -> None:
+    assert estimate_branch_ability([]) is None
+    assert target_difficulty(None) == 3
+
+
+def test_decide_uses_theta_for_difficulty() -> None:
+    d = decide_next_action(
+        rating=5, branch_turns=1, last_difficulty=3,
+        branch_has_items=True, total_turns=2, branch_theta=0.69,
+    )
+    assert d["action"] == "deepen"
+    assert d["difficulty"] == 4
+    assert d.get("theta") == 0.69
+
+
+def test_decide_fallback_without_theta() -> None:
+    d = decide_next_action(
+        rating=5, branch_turns=1, last_difficulty=3,
+        branch_has_items=True, total_turns=2,
+    )
+    assert d["action"] == "deepen"
+    assert d["difficulty"] == 4
+    assert "theta" not in d
+
+
+# ============================================================================
 # 集成：start / answer / next
 # ============================================================================
 
@@ -281,13 +330,33 @@ async def test_good_answer_deepens_same_branch() -> None:
         )
         assert answered.turn.rating == 5
         assert answered.turn.next_decision["action"] == "deepen"
+        # M3 CAT：θ 驱动难度并透出 theta（5@d3 → θ≈0.688 → 目标 4）
+        assert answered.turn.next_decision.get("theta") is not None
 
         nxt = await svc.next_question(team_id=team.id, session_id=session_id)
         assert nxt.turn is not None
         assert nxt.turn.category_name == "RAG 检索增强"  # 同分支
         assert nxt.turn.seq == 2
-        # 深挖 → 下一题难度应高于首题（首题 d3 → d4）
         assert nxt.decision["difficulty"] == 4
+
+
+async def test_state_ability_uses_cat_estimator() -> None:
+    """能力画像用 CAT 估计器（难度加权+先验收缩），非简单均值。"""
+    async with AsyncSessionLocal() as session:
+        team, _job, _cand, world = await _seed_world(session)
+        router, _ = _make_router([5])
+        svc = _svc(session, router)
+        session_id = world["session"].id
+        started = await svc.start(
+            team_id=team.id, session_id=session_id, started_by=world["user"].id
+        )
+        await svc.submit_answer(
+            team_id=team.id, session_id=session_id,
+            turn_id=started.first_turn.id, answer_text="完整讲清了链路与取舍",
+        )
+        state = await svc.state(team_id=team.id, session_id=session_id)
+        # 5@d3 → θ = (1.0·3+2.5)/(3+5) = 0.688（简单均值会是 1.0）
+        assert 0.6 < state.ability.get("RAG 检索增强", 0) < 0.8
 
 
 async def test_bad_answer_marks_weak_and_switches() -> None:

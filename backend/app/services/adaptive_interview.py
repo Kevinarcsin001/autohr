@@ -79,6 +79,41 @@ class AdaptiveInterviewError(Exception):
 # ============================================================================
 
 
+_PRIOR_WEIGHT: float = 5.0
+"""能力估计的先验强度（相当于一次 perf=0.5、难度和为 5 的伪观测）。"""
+
+
+def estimate_branch_ability(ratings: list[tuple[int, int]]) -> float | None:
+    """CAT 能力估计：难度加权的表现均值 θ ∈ [0,1]（带先验收缩）。
+
+    Args:
+        ratings: [(rating 1-5, difficulty 1-5)] —— 该分支全部已评分回合
+
+    数学：perf = rating/5；高难度回合权重更高（d4 答好比 d2 更能证明能力）；
+    加先验（perf=0.5、权重 5）防单回合小样本跳变：
+        θ = (Σ perf·d + 0.5·PRIOR) / (Σ d + PRIOR)
+    例：5@d3 → (1.0·3+2.5)/8 = 0.69（目标难度 4，稳健提升而非直冲 5）。
+    M3 如需完整 IRT 可在此替换为 Newton-Raphson 求 MLE，接口不变。
+    """
+    if not ratings:
+        return None
+    num = sum((r / 5.0) * d for r, d in ratings)
+    den = sum(d for _, d in ratings)
+    if den <= 0:
+        return None
+    return round((num + 0.5 * _PRIOR_WEIGHT) / (den + _PRIOR_WEIGHT), 3)
+
+
+def target_difficulty(theta: float | None) -> int:
+    """CAT 选题难度：Fisher 信息在答对率 P≈0.5 时最大 → 题目难度 ≈ 能力水平。
+
+    θ ∈ [0,1] 线性映射难度 b = 1 + θ·4，夹 [1,5]；无估计时默认 3。
+    """
+    if theta is None:
+        return _DEFAULT_DIFFICULTY
+    return max(1, min(5, round(1 + theta * 4)))
+
+
 def decide_next_action(
     *,
     rating: int,
@@ -86,6 +121,7 @@ def decide_next_action(
     last_difficulty: int,
     branch_has_items: bool,
     total_turns: int,
+    branch_theta: float | None = None,
 ) -> dict:
     """根据最新回合评分决定下一步。
 
@@ -95,10 +131,12 @@ def decide_next_action(
         last_difficulty: 当前分支最后一题难度（1-5）
         branch_has_items: 当前分支是否还有未问过的题
         total_turns: 总回合数（含最新）
+        branch_theta: 分支能力估计（CAT）；提供时 deepen/retry 的目标难度
+            改由 ``target_difficulty(θ)`` 决定（信息增益最大），否则回退旧规则
 
     Returns:
         ``{"action": deepen|retry|switch|complete, "reason": str,
-           "difficulty": int, "weak"?: bool}``；difficulty 为下一题目标难度。
+           "difficulty": int, "weak"?: bool, "theta"?: float}``。
     """
     if total_turns >= _MAX_TURNS:
         return {
@@ -107,12 +145,16 @@ def decide_next_action(
             "difficulty": 0,
         }
 
+    theta_d = target_difficulty(branch_theta) if branch_theta is not None else None
+
     if rating >= 4:
         if branch_turns < _BRANCH_BUDGET and last_difficulty < 5 and branch_has_items:
+            diff = theta_d if theta_d is not None else last_difficulty + 1
             return {
                 "action": "deepen",
-                "reason": f"回答优秀（{rating}/5），同分支难度 +1 深挖上限",
-                "difficulty": last_difficulty + 1,
+                "reason": f"回答优秀（{rating}/5），按能力估计（θ={branch_theta}）选难度 {diff} 深挖",
+                "difficulty": diff,
+                **({"theta": branch_theta} if branch_theta is not None else {}),
             }
         return {
             "action": "switch",
@@ -122,10 +164,12 @@ def decide_next_action(
 
     if rating == 3:
         if branch_turns < _BRANCH_BUDGET and branch_has_items:
+            diff = theta_d if theta_d is not None else last_difficulty
             return {
                 "action": "retry",
-                "reason": "回答一般（3/5），同分支换考点再验证一次",
-                "difficulty": last_difficulty,
+                "reason": f"回答一般（3/5），同分支换考点再验证（目标难度 {diff}）",
+                "difficulty": diff,
+                **({"theta": branch_theta} if branch_theta is not None else {}),
             }
         return {
             "action": "switch",
@@ -310,13 +354,24 @@ class AdaptiveInterviewService:
 
         branches: list[BranchState] = []
         ability: dict[str, float] = {}
+        diff_by_item = await self._difficulties_of_turns(turns)
         for b in plan.get("branches", []):
             cid = uuid.UUID(b["category_id"])
             b_turns = [t for t in turns if t.category_id == cid]
+            theta = estimate_branch_ability([
+                (
+                    t.rating,
+                    diff_by_item.get(
+                        t.question_item_id, _DEFAULT_DIFFICULTY
+                    ) if t.question_item_id else _DEFAULT_DIFFICULTY,
+                )
+                for t in b_turns
+                if t.rating
+            ])
+            if theta is not None:
+                ability[b["category_name"]] = theta
             rated = [t.rating for t in b_turns if t.rating is not None]
             avg = round(sum(rated) / len(rated), 2) if rated else None
-            if avg is not None:
-                ability[b["category_name"]] = round(avg / 5.0, 2)
             branches.append(
                 BranchState(
                     category_id=cid,
@@ -432,10 +487,43 @@ class AdaptiveInterviewService:
             last_difficulty=last_difficulty,
             branch_has_items=branch_has_items,
             total_turns=len(all_turns),
+            branch_theta=await self._branch_theta(b_turns),
         )
         if decision.get("weak") and turn.category_id is not None:
             decision["weak_category_id"] = str(turn.category_id)
         turn.next_decision = decision
+
+    async def _branch_theta(self, b_turns: list[InterviewTurn]) -> float | None:
+        """分支能力估计：拉取各回合题目难度 → estimate_branch_ability。"""
+        pairs: list[tuple[int, int]] = []
+        item_ids = [t.question_item_id for t in b_turns if t.question_item_id and t.rating]
+        if not item_ids:
+            return None
+        diff_by_item: dict[uuid.UUID, int] = {}
+        result = await self._db.execute(
+            select(QuestionBankItem.id, QuestionBankItem.difficulty).where(
+                QuestionBankItem.id.in_(item_ids)
+            )
+        )
+        for iid, d in result.all():
+            diff_by_item[iid] = d or _DEFAULT_DIFFICULTY
+        for t in b_turns:
+            if t.rating and t.question_item_id and t.question_item_id in diff_by_item:
+                pairs.append((t.rating, diff_by_item[t.question_item_id]))
+        return estimate_branch_ability(pairs)
+
+    async def _difficulties_of_turns(
+        self, turns: list[InterviewTurn]
+    ) -> dict[uuid.UUID, int]:
+        item_ids = [t.question_item_id for t in turns if t.question_item_id]
+        if not item_ids:
+            return {}
+        result = await self._db.execute(
+            select(QuestionBankItem.id, QuestionBankItem.difficulty).where(
+                QuestionBankItem.id.in_(item_ids)
+            )
+        )
+        return {iid: (d or _DEFAULT_DIFFICULTY) for iid, d in result.all()}
 
     async def _turn_difficulty(self, turn: InterviewTurn) -> int:
         if turn.question_item_id is None:
@@ -612,7 +700,9 @@ class AdaptiveInterviewService:
                 team_id=team_id, category_id=category_id,
                 difficulty=difficulty, asked=asked, signals=signals,
             )
-            target = (category_id, picked)
+            found: tuple[uuid.UUID, QuestionBankItem] | None = (
+                (category_id, picked) if picked is not None else None
+            )
         else:
             # switch/start：优先「从未问过」的分支；无 pending 时回访非薄弱且预算未用尽的分支
             visited = {t.category_id for t in turns if t.category_id is not None}
@@ -621,7 +711,7 @@ class AdaptiveInterviewService:
                 for t in turns
                 if (d := t.next_decision or {}).get("weak_category_id")
             }
-            target: tuple[uuid.UUID | None, QuestionBankItem | None] = (None, None)
+            found = None
             for c in ordered or []:
                 if c.id in weak:
                     continue
@@ -633,12 +723,12 @@ class AdaptiveInterviewService:
                     difficulty=difficulty, asked=asked, signals=signals,
                 )
                 if picked is not None:
-                    target = (c.id, picked)
+                    found = (c.id, picked)
                     break
 
-        cid, picked = target
-        if cid is None or picked is None:
+        if found is None:
             return None
+        cid, picked = found
 
         cat = await self._db.get(QuestionCategory, cid)
         seq = (turns[-1].seq + 1) if turns else 1
