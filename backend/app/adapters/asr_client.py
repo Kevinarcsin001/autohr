@@ -50,6 +50,36 @@ class ASRClient:
             raise ASRError(f"ASR 转写失败({resp.status_code}): {resp.text[:200]}")
         return resp.json()
 
+    async def transcribe_segments(
+        self,
+        *,
+        audio_bytes: bytes,
+        ranges: list[tuple[float, float]],
+        filename: str = "recording.mp4",
+        initial_prompt: str | None = None,
+    ) -> dict:
+        """整场录制 + 多时间区间 → 每区间一个转写结果（M2b 会后回捞）。
+
+        Returns:
+            {ranges: [{ok, text, segments, error?}], language, duration, model}
+        """
+        import json
+
+        files = {"audio": (filename, audio_bytes)}
+        data = {"ranges_json": json.dumps([[s, e] for s, e in ranges][:100])}
+        if initial_prompt:
+            data["initial_prompt"] = initial_prompt[:500]
+        try:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                resp = await client.post(
+                    f"{self._base_url}/transcribe-segments", files=files, data=data
+                )
+        except httpx.HTTPError as exc:
+            raise ASRError(f"ASR 服务不可达: {exc}") from exc
+        if resp.status_code != 200:
+            raise ASRError(f"ASR 区间转写失败({resp.status_code}): {resp.text[:200]}")
+        return resp.json()
+
     async def health(self) -> dict:
         try:
             async with httpx.AsyncClient(timeout=5) as client:

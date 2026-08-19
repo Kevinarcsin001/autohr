@@ -381,3 +381,40 @@ export async function adaptiveAudioApi(
   );
   return data;
 }
+
+/** 打点：标注本题在整场录制中的起始时间（毫秒或 mm:ss）。 */
+export async function adaptiveMarkOffsetApi(
+  sessionId: string,
+  turnId: string,
+  audioStartMs: string | number,
+): Promise<void> {
+  await apiClient.patch(
+    `/api/interview/sessions/${sessionId}/adaptive/turns/${turnId}/offset`,
+    { audio_start_ms: audioStartMs },
+  );
+}
+
+/** 上传整场会议录制（钉钉/腾讯会议云录制下载或本地录制）。 */
+export async function adaptiveUploadRecordingApi(
+  sessionId: string,
+  file: File,
+): Promise<{ session_id: string; recording_status: string; storage_key: string }> {
+  const form = new FormData();
+  form.append("audio", file);
+  const { data } = await apiClient.post(
+    `/api/interview/sessions/${sessionId}/adaptive/recording`,
+    form,
+    { headers: { "Content-Type": "multipart/form-data" }, timeout: 300_000 },
+  );
+  return data;
+}
+
+/** 触发会后回捞处理。 */
+export async function adaptiveProcessRecordingApi(
+  sessionId: string,
+): Promise<{ status: string; async_job_id: string | null }> {
+  const { data } = await apiClient.post(
+    `/api/interview/sessions/${sessionId}/adaptive/recording/process`,
+  );
+  return data;
+}

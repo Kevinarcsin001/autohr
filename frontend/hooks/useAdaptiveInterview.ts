@@ -5,9 +5,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   adaptiveAnswerApi,
   adaptiveAudioApi,
+  adaptiveMarkOffsetApi,
   adaptiveNextApi,
+  adaptiveProcessRecordingApi,
   adaptiveStartApi,
   adaptiveStateApi,
+  adaptiveUploadRecordingApi,
 } from "@/lib/api/interview";
 
 const ADAPTIVE_KEY = (sessionId: string) =>
@@ -67,4 +70,23 @@ export function useAdaptiveNext(sessionId: string) {
     mutationFn: () => adaptiveNextApi(sessionId),
     onSuccess: () => qc.invalidateQueries({ queryKey: ADAPTIVE_KEY(sessionId) }),
   });
+}
+
+/** 录制回捞三件套（M2b）。 */
+export function useRecordingReplay(sessionId: string) {
+  const qc = useQueryClient();
+  const upload = useMutation({
+    mutationFn: (file: File) => adaptiveUploadRecordingApi(sessionId, file),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ADAPTIVE_KEY(sessionId) }),
+  });
+  const process = useMutation({
+    mutationFn: () => adaptiveProcessRecordingApi(sessionId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ADAPTIVE_KEY(sessionId) }),
+  });
+  const markOffset = useMutation({
+    mutationFn: ({ turnId, offset }: { turnId: string; offset: string | number }) =>
+      adaptiveMarkOffsetApi(sessionId, turnId, offset),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ADAPTIVE_KEY(sessionId) }),
+  });
+  return { upload, process, markOffset };
 }

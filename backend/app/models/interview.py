@@ -52,6 +52,11 @@ class InterviewSession(UUIDPKMixin, TimestampMixin, Base):
     adaptive_plan: Mapped[dict | None] = mapped_column(JSONB_COMPAT, nullable=True)
     """adaptive 启动时快照：匹配信号 + 分支计划（排序/亲和度），供前端展示与可解释性。"""
 
+    recording_storage_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    """M2b 会后回捞：整场会议录制文件（MinIO key）。"""
+    recording_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    """uploaded / processing / done / failed。"""
+
 
 class InterviewQuestion(UUIDPKMixin, CreatedAtMixin, Base):
     """面试题（按 batch_id 分批）：AI 生成 或 题库选题实例化。
@@ -157,6 +162,8 @@ class InterviewTurn(UUIDPKMixin, CreatedAtMixin, Base):
 
     answer_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     audio_storage_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    audio_start_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    """M2b：本题在整场录制中的起始毫秒（面试官标注）；区间终点=下一题起点。"""
     transcription_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
     """pending / processing / done / failed；M1 手输回答为 None。"""
 

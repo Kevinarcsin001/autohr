@@ -51,12 +51,113 @@ class Segment(BaseModel):
     text: str
 
 
+class RangeResult(BaseModel):
+    ok: bool
+    text: str = ""
+    segments: list[Segment] = []
+    error: str | None = None
+
+
+class TranscribeSegmentsResponse(BaseModel):
+    """整段录制文件 + 多个时间区间 → 每区间一个转写结果（会后回捞 M2b）。"""
+
+    ranges: list[RangeResult]
+    language: str
+    duration: float
+    model: str
+
+
 class TranscribeResponse(BaseModel):
     text: str
     segments: list[Segment]
     language: str
     duration: float
     model: str
+
+
+@app.post("/transcribe-segments", response_model=TranscribeSegmentsResponse)
+async def transcribe_segments(
+    audio: UploadFile = File(...),
+    ranges_json: str = Form(default="[]"),
+    initial_prompt: str | None = Form(default=None),
+) -> TranscribeSegmentsResponse:
+    """上传整场录制，按 [[start_s, end_s], ...] 区间逐段转写（ffmpeg -ss/-to 切片）。
+
+    用于 M2b 会后回捞：一次上传避免大文件重复传输；
+    每段独立 VAD+转写，单段失败不影响其他段（ok=False + error）。
+    """
+    import json as _json
+
+    data = await audio.read()
+    if len(data) > MAX_AUDIO_MB * 1024 * 1024:
+        raise HTTPException(413, f"audio too large (> {MAX_AUDIO_MB}MB)")
+    try:
+        ranges = [(float(s), float(e)) for s, e in _json.loads(ranges_json)][:100]
+    except (ValueError, TypeError, _json.JSONDecodeError):
+        raise HTTPException(400, "ranges_json must be [[start,end],...]")
+    if not ranges:
+        raise HTTPException(400, "empty ranges")
+    prompt = (initial_prompt or "").strip()[:MAX_INITIAL_PROMPT] or None
+
+    suffix = Path(audio.filename or "rec.mp4").suffix or ".mp4"
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
+        f.write(data)
+        tmp = f.name
+
+    model = get_model()
+    results: list[RangeResult] = []
+    language = ""
+    duration = 0.0
+    try:
+        import subprocess
+
+        for start, end in ranges:
+            if end <= start or end - start > 3600:
+                results.append(RangeResult(ok=False, error=f"invalid range {start}-{end}"))
+                continue
+            seg_tmp = tempfile.mktemp(suffix=".wav")
+            try:
+                subprocess.run(
+                    ["ffmpeg", "-y", "-i", tmp, "-ss", str(start), "-to", str(end),
+                     "-ac", "1", "-ar", "16000", seg_tmp],
+                    check=True, capture_output=True, timeout=300,
+                )
+                seg_iter, info = model.transcribe(
+                    seg_tmp,
+                    vad_filter=VAD_ENABLED,
+                    vad_parameters={"min_silence_duration_ms": 500},
+                    initial_prompt=prompt,
+                    beam_size=5,
+                )
+                segs = [
+                    Segment(start=float(s.start), end=float(s.end), text=s.text.strip())
+                    for s in seg_iter
+                    if s.text.strip()
+                ]
+                language = language or info.language
+                duration = max(duration, float(info.duration or 0))
+                results.append(
+                    RangeResult(
+                        ok=True,
+                        text="".join(s.text + " " for s in segs).strip(),
+                        segments=segs,
+                    )
+                )
+            except Exception as exc:  # noqa: BLE001
+                results.append(RangeResult(ok=False, error=str(exc)[:200]))
+            finally:
+                try:
+                    os.unlink(seg_tmp)
+                except OSError:
+                    pass
+        return TranscribeSegmentsResponse(
+            ranges=results, language=language, duration=duration, model=MODEL_NAME
+        )
+    finally:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
 
 
 @app.get("/health")

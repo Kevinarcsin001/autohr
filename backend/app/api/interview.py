@@ -26,19 +26,19 @@ from fastapi import APIRouter, File, Form, Query, UploadFile, status
 from pydantic import BaseModel
 from sqlalchemy import select
 
-from app.core.config import settings
 from app.core.deps import CurrentUser, DbSession
 from app.core.logging import get_logger
 from app.core.middleware.error_handler import (
     ForbiddenError,
     NotFoundError,
+)
+from app.core.middleware.error_handler import (
     ValidationError as AppValidationError,
 )
 from app.models.candidate import Candidate
 from app.models.interview import (
     InterviewFeedback,
     InterviewQuestion,
-    InterviewSession,
     InterviewTurn,
 )
 from app.models.job import Job
@@ -860,6 +860,104 @@ async def adaptive_upload_audio(
         "transcription_status": "pending",
         "async_job_id": str(job_id) if job_id else None,
         "storage_key": storage_key,
+    }
+
+
+@router.patch(
+    "/sessions/{session_id}/adaptive/turns/{turn_id}/offset",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def adaptive_mark_offset(
+    session_id: UUID,
+    turn_id: UUID,
+    payload: dict,
+    user: CurrentUser,
+    db: DbSession,
+) -> None:
+    """M2b 打点：标注本题在整场录制中的起始时间（毫秒或 mm:ss 字符串）。"""
+    _require_team(user)
+    turn = await db.get(InterviewTurn, turn_id)
+    if turn is None or turn.session_id != session_id:
+        raise NotFoundError(f"turn {turn_id} not found", resource="interview_turn")
+    raw = payload.get("audio_start_ms") or payload.get("offset")
+    ms: int | None = None
+    if isinstance(raw, (int, float)):
+        ms = int(raw)
+    elif isinstance(raw, str) and raw.strip():
+        parts = raw.strip().split(":")
+        try:
+            nums = [float(p) for p in parts]
+            ms = int(sum(v * 60 ** (len(nums) - 1 - i) for i, v in enumerate(nums)) * 1000)
+        except ValueError:
+            ms = None
+    if ms is None or ms < 0:
+        raise AppValidationError("audio_start_ms 需为毫秒数或 mm:ss", field="audio_start_ms")
+    turn.audio_start_ms = ms
+    await db.commit()
+
+
+@router.post(
+    "/sessions/{session_id}/adaptive/recording",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def adaptive_upload_recording(
+    session_id: UUID,
+    user: CurrentUser,
+    db: DbSession,
+    audio: UploadFile = File(...),
+) -> dict:
+    """M2b 上传整场会议录制（钉钉/腾讯会议云录制下载或本地录制）。
+
+    上传后可继续 PATCH 各题起点打点，然后 POST …/recording/process 触发回捞。
+    """
+    _require_team(user)
+    session = await AdaptiveInterviewService(db)._load_session(  # noqa: SLF001
+        team_id=UUID(str(user.team_id)), session_id=session_id
+    )
+    if audio.content_type and not (
+        audio.content_type.startswith("audio/") or audio.content_type.startswith("video/")
+    ):
+        raise AppValidationError("仅接受音视频文件", field="audio")
+    data = await audio.read()
+    if not data:
+        raise AppValidationError("文件为空", field="audio")
+    if len(data) > 500 * 1024 * 1024:
+        raise AppValidationError("录制超过 500MB 上限", field="audio")
+
+    from app.adapters.storage import get_storage
+
+    suffix = Path(audio.filename or "rec.mp4").suffix or ".mp4"
+    key = f"interview-audio/recordings/{session_id}{suffix}"
+    await get_storage().put(
+        key, data, mime=audio.content_type or "video/mp4", encrypt=False
+    )
+    session.recording_storage_key = key
+    session.recording_status = "uploaded"
+    await db.commit()
+    return {"session_id": str(session_id), "recording_status": "uploaded", "storage_key": key}
+
+
+@router.post(
+    "/sessions/{session_id}/adaptive/recording/process",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def adaptive_process_recording(
+    session_id: UUID,
+    user: CurrentUser,
+    db: DbSession,
+) -> dict:
+    """触发会后回捞：按各题打点区间转写 + 自动评分（异步）。"""
+    team_id = _require_team(user)
+    await AdaptiveInterviewService(db)._load_session(  # noqa: SLF001
+        team_id=team_id, session_id=session_id
+    )
+    from app.workers.transcription_task import enqueue_recording_replay
+
+    job_id = await enqueue_recording_replay(session_id=session_id)
+    return {
+        "session_id": str(session_id),
+        "async_job_id": str(job_id) if job_id else None,
+        "status": "queued",
     }
 
 

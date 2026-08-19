@@ -23,6 +23,7 @@ import {
   useAdaptiveNext,
   useAdaptiveStart,
   useAdaptiveState,
+  useRecordingReplay,
 } from "@/hooks/useAdaptiveInterview";
 import {
   ADAPTIVE_STATUS_LABEL,
@@ -48,6 +49,7 @@ export default function AdaptiveInterviewPage() {
   const answer = useAdaptiveAnswer(sessionId);
   const audio = useAdaptiveAudio(sessionId);
   const next = useAdaptiveNext(sessionId);
+  const replay = useRecordingReplay(sessionId);
 
   const [answerText, setAnswerText] = useState("");
   const [nextResult, setNextResult] = useState<{
@@ -274,9 +276,14 @@ export default function AdaptiveInterviewPage() {
           )}
         </div>
 
-        {/* 右：时间线 */}
+        {/* 右：时间线 + 会后回捞 */}
         <div className="space-y-2">
           <p className="text-sm font-medium">回合时间线</p>
+          <ReplayPanel
+            turns={data.turns}
+            recordingStatus={null}
+            replay={replay}
+          />
           <div className="max-h-[70vh] space-y-1.5 overflow-y-auto rounded-md border p-2">
             {data.turns.length === 0 && (
               <p className="text-xs text-muted-foreground">尚未开始</p>
@@ -451,6 +458,129 @@ function AudioRecorder({
         （BlackHole / VB-Cable）设为输入后在此选择。录音上传后自动转写并评分。
       </p>
       {error && <p className="text-xs text-destructive">{error}</p>}
+    </div>
+  );
+}
+
+/**
+ * 会后回捞面板（M2b）：上传整场录制 + 逐题打点(mm:ss) + 触发处理。
+ * 场景：忘了开录音/设备故障时，用钉钉/腾讯会议云录制文件事后补齐账本。
+ */
+function ReplayPanel({
+  turns,
+  recordingStatus,
+  replay,
+}: {
+  turns: NonNullable<ReturnType<typeof useAdaptiveState>["data"]>["turns"];
+  recordingStatus: string | null;
+  replay: ReturnType<typeof useRecordingReplay>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [offsets, setOffsets] = useState<Record<string, string>>({});
+  const [file, setFile] = useState<File | null>(null);
+  const [uploaded, setUploaded] = useState(false);
+
+  const pendingTurns = turns.filter(
+    (t) => t.answer_text === null && (t as { audio_start_ms?: number | null }).audio_start_ms == null,
+  );
+
+  if (!open) {
+    return (
+      <button
+        className="text-xs text-muted-foreground underline"
+        onClick={() => setOpen(true)}
+      >
+        + 会后回捞（上传会议录制补齐回答）
+      </button>
+    );
+  }
+
+  return (
+    <div className="space-y-2 rounded-md border p-3 text-xs">
+      <div className="flex items-center justify-between">
+        <span className="font-medium">会后回捞</span>
+        <button className="text-muted-foreground" onClick={() => setOpen(false)}>
+          收起
+        </button>
+      </div>
+
+      {/* 1. 上传录制 */}
+      <div className="flex items-center gap-2">
+        <input
+          type="file"
+          accept="audio/*,video/*"
+          className="min-w-0 flex-1 text-xs"
+          onChange={(e) => {
+            setFile(e.target.files?.[0] ?? null);
+            setUploaded(false);
+          }}
+        />
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={!file || replay.upload.isPending || uploaded}
+          onClick={() =>
+            file &&
+            replay.upload.mutate(file, { onSuccess: () => setUploaded(true) })
+          }
+        >
+          {replay.upload.isPending ? "上传中…" : uploaded ? "已上传 ✓" : "上传录制"}
+        </Button>
+      </div>
+
+      {/* 2. 逐题打点 */}
+      <p className="text-muted-foreground">
+        听回放标注每题起始时间（格式 mm:ss，如 12:30）；未标注的题会被跳过。
+      </p>
+      <div className="max-h-40 space-y-1 overflow-y-auto">
+        {pendingTurns.length === 0 && (
+          <p className="text-muted-foreground">全部题目已有回答或已打点。</p>
+        )}
+        {pendingTurns.map((t) => (
+          <div key={t.id} className="flex items-center gap-2">
+            <span className="w-6 text-muted-foreground">#{t.seq}</span>
+            <span className="min-w-0 flex-1 truncate" title={t.question_text}>
+              {t.question_text}
+            </span>
+            <input
+              className="w-20 rounded border bg-background px-2 py-0.5"
+              placeholder="mm:ss"
+              value={offsets[t.id] ?? ""}
+              onChange={(e) =>
+                setOffsets((o) => ({ ...o, [t.id]: e.target.value }))
+              }
+            />
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={!offsets[t.id]?.trim() || replay.markOffset.isPending}
+              onClick={() =>
+                replay.markOffset.mutate({
+                  turnId: t.id,
+                  offset: offsets[t.id],
+                })
+              }
+            >
+              打点
+            </Button>
+          </div>
+        ))}
+      </div>
+
+      {/* 3. 处理 */}
+      <Button
+        size="sm"
+        disabled={!uploaded || replay.process.isPending}
+        onClick={() => replay.process.mutate()}
+      >
+        {replay.process.isPending ? "已提交…" : "▶ 按打点转写并评分"}
+      </Button>
+      {replay.upload.error && (
+        <p className="text-destructive">上传失败：{(replay.upload.error as Error).message}</p>
+      )}
+      <p className="text-muted-foreground">
+        处理异步进行（几分钟），完成后各题回答与评分自动出现在时间线。
+      </p>
     </div>
   );
 }
