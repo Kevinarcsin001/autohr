@@ -164,7 +164,24 @@ services:
     environment:
       MINERU_MODEL_DIR: /app/models
 
+  # ASR 转写服务(faster-whisper + silero VAD, CPU int8) — 面试音频→文本
+  asr:
+    build:
+      context: ./asr-service
+    container_name: autohr-asr
+    restart: unless-stopped
+    ports:
+      - "${ASR_PORT:-8010}:8010"
+    environment:
+      ASR_MODEL: ${ASR_MODEL:-small}
+      ASR_DEVICE: cpu
+      ASR_COMPUTE_TYPE: int8
+      ASR_VAD_ENABLED: "true"
+    volumes:
+      - asr_models:/app/models
+
 volumes:
   postgres_data:
   redis_data:
   minio_data:
+  asr_models:

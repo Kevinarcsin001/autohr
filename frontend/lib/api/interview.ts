@@ -264,6 +264,8 @@ export interface AdaptiveTurn {
   category_name: string | null;
   answer_text: string | null;
   answered_at: string | null;
+  audio_storage_key: string | null;
+  transcription_status: "pending" | "processing" | "done" | "failed" | null;
   rating: number | null;
   rating_evidence: {
     key_points_hit?: string[];
@@ -356,6 +358,26 @@ export async function adaptiveAnswerApi(
 export async function adaptiveNextApi(sessionId: string): Promise<AdaptiveNextResponse> {
   const { data } = await apiClient.get<AdaptiveNextResponse>(
     `/api/interview/sessions/${sessionId}/adaptive/next`,
+  );
+  return data;
+}
+
+/** 上传本题音频（M2a）：存 MinIO + 入队 Celery 转写 → 转写完成自动评分。 */
+export async function adaptiveAudioApi(
+  sessionId: string,
+  payload: { turn_id: string; audio: Blob; filename?: string },
+): Promise<{ turn_id: string; transcription_status: string; async_job_id: string | null; storage_key: string }> {
+  const form = new FormData();
+  form.append("turn_id", payload.turn_id);
+  form.append(
+    "audio",
+    payload.audio,
+    payload.filename ?? `turn-${payload.turn_id}.webm`,
+  );
+  const { data } = await apiClient.post(
+    `/api/interview/sessions/${sessionId}/adaptive/audio`,
+    form,
+    { headers: { "Content-Type": "multipart/form-data" } },
   );
   return data;
 }

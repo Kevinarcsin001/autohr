@@ -33,6 +33,8 @@ class TurnOut(BaseModel):
     category_name: str | None = None
     answer_text: str | None = None
     answered_at: datetime | None = None
+    audio_storage_key: str | None = None
+    transcription_status: str | None = None
     rating: int | None = Field(default=None, ge=1, le=5)
     rating_evidence: dict | None = None
     rating_model: str | None = None

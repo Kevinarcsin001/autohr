@@ -10,7 +10,7 @@
  *
  * 数据流：state 查询为唯一真源；start/answer/next 操作后 invalidate 自动刷新。
  */
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 
@@ -19,6 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   useAdaptiveAnswer,
+  useAdaptiveAudio,
   useAdaptiveNext,
   useAdaptiveStart,
   useAdaptiveState,
@@ -45,6 +46,7 @@ export default function AdaptiveInterviewPage() {
   const start = useAdaptiveStart(sessionId);
   const { data, isLoading, isError, error } = useAdaptiveState(sessionId, !start.isIdle);
   const answer = useAdaptiveAnswer(sessionId);
+  const audio = useAdaptiveAudio(sessionId);
   const next = useAdaptiveNext(sessionId);
 
   const [answerText, setAnswerText] = useState("");
@@ -221,11 +223,22 @@ export default function AdaptiveInterviewPage() {
                 </p>
               </div>
               <textarea
-                className="min-h-[120px] w-full rounded-md border p-3 text-sm"
-                placeholder="记录候选人回答（M1 手动输入；M2 将接入音频自动转写）…"
+                className="min-h-[100px] w-full rounded-md border p-3 text-sm"
+                placeholder="记录候选人回答（手输，或用下方录音自动转写）…"
                 value={answerText}
                 onChange={(e) => setAnswerText(e.target.value)}
                 disabled={answer.isPending}
+              />
+              <AudioRecorder
+                disabled={
+                  !!currentTurn.transcription_status &&
+                  currentTurn.transcription_status !== "failed"
+                }
+                uploading={audio.isPending}
+                onUpload={(blob, filename) =>
+                  currentTurn &&
+                  audio.mutate({ turn_id: currentTurn.id, audio: blob, filename })
+                }
               />
               {answer.error && (
                 <Alert variant="destructive">
@@ -307,6 +320,12 @@ function LastRatingCard({ turn }: { turn: NonNullable<ReturnType<typeof useAdapt
         {turn.rating_model && (
           <span className="text-xs text-muted-foreground">{turn.rating_model}</span>
         )}
+        {turn.transcription_status === "done" && (
+          <Badge variant="outline">音频已转写</Badge>
+        )}
+        {turn.transcription_status === "failed" && (
+          <Badge variant="destructive">转写失败(可重传)</Badge>
+        )}
       </div>
       {ev && (
         <div className="space-y-1.5 text-xs">
@@ -325,6 +344,113 @@ function LastRatingCard({ turn }: { turn: NonNullable<ReturnType<typeof useAdapt
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * 音频录制器（M2a）：选设备（物理麦=面试官/虚拟声卡=候选人会议声）→ 录 → 上传。
+ * 转写异步：上传后状态轮询由 useAdaptiveState 的 invalidate 驱动。
+ */
+function AudioRecorder({
+  disabled,
+  uploading,
+  onUpload,
+}: {
+  disabled: boolean;
+  uploading: boolean;
+  onUpload: (blob: Blob, filename: string) => void;
+}) {
+  const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
+  const [deviceId, setDeviceId] = useState<string>("");
+  const [recording, setRecording] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  const mediaRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (disabled) return;
+    navigator.mediaDevices
+      ?.enumerateDevices()
+      .then((all) =>
+        setDevices(all.filter((d) => d.kind === "audioinput" && d.deviceId)),
+      )
+      .catch(() => setDevices([]));
+  }, [disabled]);
+
+  const startRec = async () => {
+    setError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: deviceId ? { deviceId: { exact: deviceId } } : true,
+      });
+      const rec = new MediaRecorder(stream, {
+        mimeType: MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+          ? "audio/webm;codecs=opus"
+          : "audio/webm",
+      });
+      chunksRef.current = [];
+      rec.ondataavailable = (e) => e.data.size > 0 && chunksRef.current.push(e.data);
+      rec.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+        if (blob.size > 0) onUpload(blob, `turn-${Date.now()}.webm`);
+      };
+      rec.start(1000);
+      mediaRef.current = rec;
+      setRecording(true);
+      setElapsed(0);
+      timerRef.current = setInterval(() => setElapsed((s) => s + 1), 1000);
+    } catch {
+      setError("无法访问麦克风：请检查浏览器权限；录会议声需先装虚拟声卡（BlackHole/VB-Cable）");
+    }
+  };
+
+  const stopRec = () => {
+    mediaRef.current?.stop();
+    mediaRef.current = null;
+    setRecording(false);
+    if (timerRef.current) clearInterval(timerRef.current);
+  };
+
+  useEffect(() => () => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    mediaRef.current?.stream.getTracks().forEach((t) => t.stop());
+  }, []);
+
+  return (
+    <div className="space-y-2 rounded-md border p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          className="min-w-0 flex-1 rounded border bg-background px-2 py-1 text-xs"
+          value={deviceId}
+          onChange={(e) => setDeviceId(e.target.value)}
+          disabled={disabled || recording}
+        >
+          <option value="">🎤 默认麦克风（面试官声音）</option>
+          {devices.map((d) => (
+            <option key={d.deviceId} value={d.deviceId}>
+              {d.label || `设备 ${d.deviceId.slice(0, 8)}`}
+            </option>
+          ))}
+        </select>
+        {!recording ? (
+          <Button variant="outline" size="sm" onClick={startRec} disabled={disabled || uploading}>
+            {uploading ? "上传中…" : "● 开始录音"}
+          </Button>
+        ) : (
+          <Button variant="destructive" size="sm" onClick={stopRec}>
+            ■ 停止并上传 ({elapsed}s)
+          </Button>
+        )}
+      </div>
+      <p className="text-[11px] leading-relaxed text-muted-foreground">
+        提示：选「默认麦克风」录面试官提问；录候选人/会议声请在系统中把虚拟声卡
+        （BlackHole / VB-Cable）设为输入后在此选择。录音上传后自动转写并评分。
+      </p>
+      {error && <p className="text-xs text-destructive">{error}</p>}
     </div>
   );
 }

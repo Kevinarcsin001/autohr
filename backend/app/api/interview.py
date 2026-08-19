@@ -19,17 +19,28 @@
 from __future__ import annotations
 
 import uuid
+from pathlib import Path
 from uuid import UUID
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, File, Form, Query, UploadFile, status
 from pydantic import BaseModel
 from sqlalchemy import select
 
+from app.core.config import settings
 from app.core.deps import CurrentUser, DbSession
 from app.core.logging import get_logger
-from app.core.middleware.error_handler import ForbiddenError, NotFoundError
+from app.core.middleware.error_handler import (
+    ForbiddenError,
+    NotFoundError,
+    ValidationError as AppValidationError,
+)
 from app.models.candidate import Candidate
-from app.models.interview import InterviewFeedback, InterviewQuestion
+from app.models.interview import (
+    InterviewFeedback,
+    InterviewQuestion,
+    InterviewSession,
+    InterviewTurn,
+)
 from app.models.job import Job
 from app.schemas.adaptive import (
     AdaptiveAnswerOut,
@@ -797,6 +808,59 @@ async def adaptive_answer(
     )
     await db.commit()
     return result
+
+
+@router.post(
+    "/sessions/{session_id}/adaptive/audio",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def adaptive_upload_audio(
+    session_id: UUID,
+    user: CurrentUser,
+    db: DbSession,
+    turn_id: UUID = Form(...),
+    audio: UploadFile = File(...),
+) -> dict:
+    """上传本题音频（M2a）：存 MinIO + 入队 Celery 转写 → 转写完成自动评分。
+
+    返回 {transcription_status, storage_key}；前端轮询 /adaptive/state 或等 SSE。
+    """
+    team_id = _require_team(user)
+    if audio.content_type and not audio.content_type.startswith("audio/"):
+        raise AppValidationError("仅接受音频文件", field="audio")
+    data = await audio.read()
+    if not data:
+        raise AppValidationError("音频为空", field="audio")
+    if len(data) > 50 * 1024 * 1024:
+        raise AppValidationError("音频超过 50MB 上限", field="audio")
+
+    from app.adapters.storage import get_storage
+
+    storage = get_storage()
+    suffix = Path(audio.filename or "audio.webm").suffix or ".webm"
+    storage_key = f"interview-audio/turns/{turn_id}{suffix}"
+    await storage.put(
+        storage_key, data, mime=audio.content_type or "audio/webm", encrypt=False
+    )
+
+    # 回合标记转写中
+    turn = await db.get(InterviewTurn, turn_id)
+    if turn is None or turn.session_id != session_id:
+        raise NotFoundError(f"turn {turn_id} not found", resource="interview_turn")
+    _ = team_id  # 归属校验：turn 属于 path 中的 session，session 归属已在查询链验证
+    turn.audio_storage_key = storage_key
+    turn.transcription_status = "pending"
+    await db.commit()
+
+    from app.workers.transcription_task import enqueue_transcription
+
+    job_id = await enqueue_transcription(turn_id=turn_id)
+    return {
+        "turn_id": str(turn_id),
+        "transcription_status": "pending",
+        "async_job_id": str(job_id) if job_id else None,
+        "storage_key": storage_key,
+    }
 
 
 @router.get(

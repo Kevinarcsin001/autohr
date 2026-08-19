@@ -93,6 +93,7 @@ AsyncJobType = enum_compat(
     "score",
     "email_fetch",
     "export",
+    "transcribe",
 )
 AsyncJobStatus = enum_compat("async_job_status", "queued", "running", "success", "failed", "retry")
 InterviewSessionStatus = enum_compat(

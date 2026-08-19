@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
   adaptiveAnswerApi,
+  adaptiveAudioApi,
   adaptiveNextApi,
   adaptiveStartApi,
   adaptiveStateApi,
@@ -43,6 +44,19 @@ export function useAdaptiveAnswer(sessionId: string) {
     mutationFn: (payload: { turn_id: string; answer_text: string }) =>
       adaptiveAnswerApi(sessionId, payload),
     onSuccess: () => qc.invalidateQueries({ queryKey: ADAPTIVE_KEY(sessionId) }),
+  });
+}
+
+/** 上传音频（转写+自动评分在后台异步完成）。 */
+export function useAdaptiveAudio(sessionId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { turn_id: string; audio: Blob; filename?: string }) =>
+      adaptiveAudioApi(sessionId, payload),
+    onSuccess: () => {
+      // 转写中 → 定时刷新直到 done/failed
+      qc.invalidateQueries({ queryKey: ADAPTIVE_KEY(sessionId) });
+    },
   });
 }
 

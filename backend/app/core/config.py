@@ -50,6 +50,10 @@ class Settings(BaseSettings):
     # 用于生成签名 URL 的外部地址（浏览器可访问）；不设置则回退到 MINIO_ENDPOINT
     MINIO_PUBLIC_ENDPOINT: str = Field(default="")
     MINERU_ENDPOINT: str = Field(default="http://mineru:8001")
+
+    # === ASR(面试音频转写) ===
+    ASR_BASE_URL: str = Field(default="http://asr:8010")
+    ASR_TIMEOUT_SECONDS: float = Field(default=600.0)
     MINIO_ACCESS_KEY: str = Field(default="autohr")
     MINIO_SECRET_KEY: str = Field(default="autohr_dev_secret")
     MINIO_BUCKET: str = Field(default="resumes")

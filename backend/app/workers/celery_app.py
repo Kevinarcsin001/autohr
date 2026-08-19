@@ -17,6 +17,7 @@ app = Celery(
     backend=settings.REDIS_URL,
     include=[  # 任务 11：先列出 fetch_emails 所在模块，beat 才能解析
         "app.workers.tasks",
+        "app.workers.transcription_task",
     ],
 )
 
