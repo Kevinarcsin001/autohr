@@ -969,11 +969,19 @@ async def adaptive_next(
     session_id: UUID,
     user: CurrentUser,
     db: DbSession,
+    force_category_id: UUID | None = Query(default=None),
+    skip_current: bool = Query(default=False),
 ) -> AdaptiveNextOut:
-    """获取下一题（含上一题的选题理由）；幂等：未回答的题即当前题。全部完成时 done=true。"""
+    """获取下一题（含上一题的选题理由）；幂等：未回答的题即当前题。全部完成时 done=true。
+
+    面试官控制：``?force_category_id=`` 指定分支出题；``?skip_current=true`` 跳过当前题换考点。
+    """
     team_id = _require_team(user)
     result = await AdaptiveInterviewService(db).next_question(
-        team_id=team_id, session_id=session_id
+        team_id=team_id,
+        session_id=session_id,
+        force_category_id=force_category_id,
+        skip_current=skip_current,
     )
     await db.commit()
     return result

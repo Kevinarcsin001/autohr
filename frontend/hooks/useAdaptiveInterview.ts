@@ -63,11 +63,12 @@ export function useAdaptiveAudio(sessionId: string) {
   });
 }
 
-/** 获取下一题。 */
+/** 获取下一题（可选：指定分支 / 跳过当前题 — 面试官控制权）。 */
 export function useAdaptiveNext(sessionId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => adaptiveNextApi(sessionId),
+    mutationFn: (opts?: { forceCategoryId?: string; skipCurrent?: boolean }) =>
+      adaptiveNextApi(sessionId, opts),
     onSuccess: () => qc.invalidateQueries({ queryKey: ADAPTIVE_KEY(sessionId) }),
   });
 }

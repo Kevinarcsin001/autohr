@@ -82,16 +82,19 @@ export default function AdaptiveInterviewPage() {
     );
   }, [answer, answerText, currentTurn]);
 
-  const onNext = useCallback(() => {
-    next.mutate(undefined, {
-      onSuccess: (res) =>
-        setNextResult({
-          reason: res.decision?.reason,
-          done: res.done,
-          doneReason: res.done_reason,
-        }),
-    });
-  }, [next]);
+  const onNext = useCallback(
+    (opts?: { forceCategoryId?: string; skipCurrent?: boolean }) => {
+      next.mutate(opts, {
+        onSuccess: (res) =>
+          setNextResult({
+            reason: res.decision?.reason,
+            done: res.done,
+            doneReason: res.done_reason,
+          }),
+      });
+    },
+    [next],
+  );
 
   // ------------------------------------------------------------------ 启动前
   if (start.isIdle && !data) {
@@ -155,26 +158,42 @@ export default function AdaptiveInterviewPage() {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[260px_1fr_280px]">
-        {/* 左：分支进度 */}
+        {/* 左：分支进度（可点击 = 面试官指定分支） */}
         <div className="space-y-2">
           <p className="text-sm font-medium">分支进度</p>
           <div className="space-y-1.5 rounded-md border p-2">
-            {data.branches.map((b) => (
-              <div key={b.category_id} className="flex items-center gap-2 text-sm">
-                <span className="min-w-0 flex-1 truncate" title={b.category_name}>
-                  {b.category_name}
-                </span>
-                <Badge variant={ADAPTIVE_STATUS_VARIANT[b.status] ?? "outline"}>
-                  {ADAPTIVE_STATUS_LABEL[b.status] ?? b.status}
-                </Badge>
-                {b.avg_rating !== null && (
-                  <Badge variant={RATING_VARIANT(Math.round(b.avg_rating))}>
-                    {b.avg_rating.toFixed(1)}
+            {data.branches.map((b) => {
+              const isActive = currentTurn?.category_id === b.category_id;
+              return (
+                <div key={b.category_id} className="flex items-center gap-1.5 text-sm">
+                  <span className="min-w-0 flex-1 truncate" title={b.category_name}>
+                    {b.category_name}
+                  </span>
+                  <Badge variant={ADAPTIVE_STATUS_VARIANT[b.status] ?? "outline"}>
+                    {ADAPTIVE_STATUS_LABEL[b.status] ?? b.status}
                   </Badge>
-                )}
-              </div>
-            ))}
+                  {b.avg_rating !== null && (
+                    <Badge variant={RATING_VARIANT(Math.round(b.avg_rating))}>
+                      {b.avg_rating.toFixed(1)}
+                    </Badge>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 px-1.5 text-[11px]"
+                    disabled={next.isPending || isActive}
+                    title={isActive ? "当前分支" : `从「${b.category_name}」出下一题`}
+                    onClick={() => onNext({ forceCategoryId: b.category_id })}
+                  >
+                    {isActive ? "●" : "问"}
+                  </Button>
+                </div>
+              );
+            })}
           </div>
+          <p className="text-[11px] text-muted-foreground">
+            点击分支「问」= 强制从该分支出题（覆盖自动决策，decision 记录 override）
+          </p>
           {/* 能力画像 */}
           <p className="pt-1 text-sm font-medium">能力画像</p>
           <div className="space-y-1.5 rounded-md border p-2">
@@ -204,12 +223,17 @@ export default function AdaptiveInterviewPage() {
         {/* 中：当前题 + 操作 */}
         <div className="space-y-3">
           {data.done ? (
-            <Alert>
-              <AlertDescription>
-                ✅ 面试完成 — {data.done_reason ?? "全部回合结束"}。
-                回合记录与评分已保存，可回到会话详情查看录用建议。
-              </AlertDescription>
-            </Alert>
+            <div className="space-y-3">
+              <Alert>
+                <AlertDescription>
+                  ✅ 面试完成 — {data.done_reason ?? "全部回合结束"}。
+                  回合记录与评分已保存，可回到会话详情查看录用建议。
+                </AlertDescription>
+              </Alert>
+              <p className="text-xs text-muted-foreground">
+                想继续追问？点击左侧任意分支的「问」可重新出题。
+              </p>
+            </div>
           ) : currentTurn ? (
             <>
               <div className="rounded-md border p-4">
@@ -251,6 +275,15 @@ export default function AdaptiveInterviewPage() {
                 <Button onClick={onSubmitAnswer} disabled={!canAnswer || !answerText.trim()}>
                   {answer.isPending ? "评分中…" : "提交回答并评分"}
                 </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={next.isPending}
+                  title="不满意这题？同分支换考点重新出题（原题作废标记 skipped）"
+                  onClick={() => onNext({ skipCurrent: true })}
+                >
+                  ⟳ 换一题
+                </Button>
                 {lastTurn?.rating_evidence?.follow_up_suggestion && (
                   <span className="text-xs text-muted-foreground">
                     上题建议：{lastTurn.rating_evidence.follow_up_suggestion.slice(0, 80)}
@@ -263,7 +296,7 @@ export default function AdaptiveInterviewPage() {
               {/* 刚评分完，等待下一题 */}
               {lastTurn && <LastRatingCard turn={lastTurn} />}
               {showNextBtn && (
-                <Button onClick={onNext} disabled={next.isPending}>
+                <Button onClick={() => onNext()} disabled={next.isPending}>
                   {next.isPending ? "选择下一题…" : "下一题 →"}
                 </Button>
               )}

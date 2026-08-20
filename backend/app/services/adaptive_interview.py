@@ -53,11 +53,17 @@ logger = get_logger(__name__)
 # 常量（策略旋钮）
 # ============================================================================
 
-_MAX_TURNS: int = 12
-"""单场最大回合数（硬上限）。"""
+_MAX_TURNS: int = 24
+"""单场最大回合数（硬上限）。约对应一场 45-60 分钟技术面试的题量。"""
 
-_BRANCH_BUDGET: int = 3
-"""每分支最大题数（深挖预算）。"""
+_MIN_TURNS: int = 16
+"""最小回合数：未达此数前，分支耗尽时优先回访强分支而非收卷。"""
+
+_BRANCH_BUDGET: int = 4
+"""每分支最大题数（深挖预算）。强分支可适当起预算（见 _STRONG_BRANCH_EXTRA）。"""
+
+_STRONG_BRANCH_EXTRA: int = 2
+"""强分支（avg≥4）追加预算：表现好的分支值得多问，换取更准的 θ。"""
 
 _DEFAULT_DIFFICULTY: int = 3
 """分支起始难度。"""
@@ -68,6 +74,17 @@ _RATING_TEMPERATURE: float = 0.1
 
 _MAX_ANSWER_CHARS: int = 6000
 """送入评分 prompt 的回答截断上限。"""
+
+
+def utc_now_iso() -> str:
+    pass
+
+
+def _is_skipped(turn: InterviewTurn) -> bool:
+    """回合是否被面试官跳过（不计分、不再视为待答）。"""
+    return bool((turn.rating_evidence or {}).get("skipped"))
+
+    return datetime.now(timezone.utc).isoformat()
 
 
 class AdaptiveInterviewError(Exception):
@@ -122,6 +139,7 @@ def decide_next_action(
     branch_has_items: bool,
     total_turns: int,
     branch_theta: float | None = None,
+    branch_avg: float | None = None,
 ) -> dict:
     """根据最新回合评分决定下一步。
 
@@ -146,9 +164,13 @@ def decide_next_action(
         }
 
     theta_d = target_difficulty(branch_theta) if branch_theta is not None else None
+    # 动态预算：强分支（均分≥4）追加额度，换取更准的 θ
+    budget = _BRANCH_BUDGET + (
+        _STRONG_BRANCH_EXTRA if (branch_avg or 0) >= 4.0 else 0
+    )
 
     if rating >= 4:
-        if branch_turns < _BRANCH_BUDGET and last_difficulty < 5 and branch_has_items:
+        if branch_turns < budget and last_difficulty < 5 and branch_has_items:
             diff = theta_d if theta_d is not None else last_difficulty + 1
             return {
                 "action": "deepen",
@@ -158,12 +180,16 @@ def decide_next_action(
             }
         return {
             "action": "switch",
-            "reason": "当前分支已充分验证，切换下一分支",
+            "reason": (
+                f"分支预算用尽（{budget} 题，均分 {branch_avg}），切换下一分支"
+                if branch_turns >= budget
+                else "当前分支已充分验证，切换下一分支"
+            ),
             "difficulty": 0,
         }
 
     if rating == 3:
-        if branch_turns < _BRANCH_BUDGET and branch_has_items:
+        if branch_turns < budget and branch_has_items:
             diff = theta_d if theta_d is not None else last_difficulty
             return {
                 "action": "retry",
@@ -254,7 +280,9 @@ class AdaptiveInterviewService:
         session = await self._load_session(team_id=team_id, session_id=session_id)
         turns = await self._list_turns(session_id)
         if turns:
-            pending = next((t for t in turns if t.answer_text is None), None)
+            pending = next(
+                (t for t in turns if t.answer_text is None and not _is_skipped(t)), None
+            )
             state = await self.state(team_id=team_id, session_id=session_id)
             return AdaptiveStartOut(
                 session_id=session_id,
@@ -488,6 +516,10 @@ class AdaptiveInterviewService:
             branch_has_items=branch_has_items,
             total_turns=len(all_turns),
             branch_theta=await self._branch_theta(b_turns),
+            branch_avg=(
+                round(sum(t.rating for t in b_turns if t.rating) / max(1, len([t for t in b_turns if t.rating])), 2)
+                if any(t.rating for t in b_turns) else None
+            ),
         )
         if decision.get("weak") and turn.category_id is not None:
             decision["weak_category_id"] = str(turn.category_id)
@@ -610,17 +642,76 @@ class AdaptiveInterviewService:
     # ----- 下一题 -----
 
     async def next_question(
-        self, *, team_id: uuid.UUID, session_id: uuid.UUID
+        self,
+        *,
+        team_id: uuid.UUID,
+        session_id: uuid.UUID,
+        force_category_id: uuid.UUID | None = None,
+        skip_current: bool = False,
     ) -> AdaptiveNextOut:
+        """获取下一题。
+
+        面试官控制权（副驾驶模式）：
+        - ``skip_current``：跳过当前待答题（同分支换考点重新出题）
+        - ``force_category_id``：无视系统决策，强制从指定分支出题
+          （decision 记录 override 供回放审计）
+        """
         session = await self._load_session(team_id=team_id, session_id=session_id)
         turns = await self._list_turns(session_id)
         if not turns:
             raise AppValidationError("adaptive 会话未启动，请先调用 /adaptive/start")
 
-        pending = next((t for t in turns if t.answer_text is None), None)
+        plan = session.adaptive_plan or {}
+        signals = [(s["signal"], float(s["weight"])) for s in plan.get("signals", [])]
+
+        pending = next(
+            (t for t in turns if t.answer_text is None and not _is_skipped(t)), None
+        )
         if pending is not None:
-            # 幂等：未回答的题即当前题
-            return AdaptiveNextOut(turn=TurnOut.model_validate(pending))
+            if skip_current:
+                # 面试官跳过：当前题作废（不计分，标记 skipped），同分支换考点重新出题
+                pending.rating = None
+                pending.rating_evidence = {"skipped": True, "skipped_at": utc_now_iso()}
+                pending.answer_text = None
+                pending.next_decision = {
+                    "action": "switch",
+                    "reason": "面试官跳过本题",
+                    "difficulty": 0,
+                    "skipped": True,
+                }
+                await self._db.flush()
+                turns = await self._list_turns(session_id)
+            else:
+                # 幂等：未回答的题即当前题
+                return AdaptiveNextOut(turn=TurnOut.model_validate(pending))
+
+        if force_category_id is not None:
+            # 面试官手动指定分支（无视上一题决策；仅受回合上限约束）
+
+            if len(turns) >= _MAX_TURNS:
+                if session.status != "completed":
+                    session.status = "completed"
+                    await self._db.flush()
+                return AdaptiveNextOut(
+                    done=True,
+                    done_reason=f"已达最大回合数（{_MAX_TURNS}）",
+                    decision={"action": "switch", "reason": "面试官指定分支出题", "override": True},
+                )
+            next_turn = await self._create_turn(
+                session=session, turns=turns, team_id=team_id,
+                category_id=force_category_id, ordered=None,
+                difficulty=_DEFAULT_DIFFICULTY, signals=signals,
+            )
+            if session.status == "completed":
+                session.status = "in_progress"  # 手动出题重新打开
+                await self._db.flush()
+            if next_turn is None:
+                raise AppValidationError("该分支没有可出的题目")
+            await self._db.flush()
+            return AdaptiveNextOut(
+                turn=TurnOut.model_validate(next_turn),
+                decision={"action": "switch", "reason": "面试官指定分支出题", "override": True},
+            )
 
         last = turns[-1]
         if last.rating is None:

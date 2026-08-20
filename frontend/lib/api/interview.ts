@@ -355,9 +355,16 @@ export async function adaptiveAnswerApi(
 }
 
 /** 获取下一题（幂等；全部完成 done=true）。 */
-export async function adaptiveNextApi(sessionId: string): Promise<AdaptiveNextResponse> {
+export async function adaptiveNextApi(
+  sessionId: string,
+  opts?: { forceCategoryId?: string; skipCurrent?: boolean },
+): Promise<AdaptiveNextResponse> {
+  const params = new URLSearchParams();
+  if (opts?.forceCategoryId) params.set("force_category_id", opts.forceCategoryId);
+  if (opts?.skipCurrent) params.set("skip_current", "true");
+  const qs = params.toString();
   const { data } = await apiClient.get<AdaptiveNextResponse>(
-    `/api/interview/sessions/${sessionId}/adaptive/next`,
+    `/api/interview/sessions/${sessionId}/adaptive/next${qs ? `?${qs}` : ""}`,
   );
   return data;
 }
