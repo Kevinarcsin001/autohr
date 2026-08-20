@@ -1,12 +1,13 @@
 "use client";
 
-import { Suspense, useCallback } from "react";
+import { Suspense, useCallback, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { NewInterviewDialog } from "@/components/NewInterviewDialog";
 import { useInterviewSessions } from "@/hooks/useInterviewSessions";
 import { formatDateTime } from "@/lib/utils";
 
@@ -38,6 +39,7 @@ export default function InterviewsPage() {
 }
 
 function InterviewsContent() {
+  const [newOpen, setNewOpen] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -76,7 +78,11 @@ function InterviewsContent() {
 
   return (
     <div className="mx-auto max-w-[1200px] space-y-4 p-6">
-      <h1 className="text-2xl font-bold">面试管理</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold">面试管理</h1>
+        <Button onClick={() => setNewOpen(true)}>＋ 新建面试</Button>
+      </div>
+      <NewInterviewDialog open={newOpen} onClose={() => setNewOpen(false)} />
 
       {/* 状态筛选 */}
       <div className="flex items-center gap-2 text-sm">

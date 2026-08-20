@@ -425,3 +425,14 @@ export async function adaptiveProcessRecordingApi(
   );
   return data;
 }
+
+/** 手动创建面试会话（HR 发起面试）。 */
+export async function createSessionApi(
+  payload: CreateSessionRequest,
+): Promise<InterviewSessionOut> {
+  const { data } = await apiClient.post<InterviewSessionOut>(
+    "/api/interview/sessions",
+    payload,
+  );
+  return data;
+}
