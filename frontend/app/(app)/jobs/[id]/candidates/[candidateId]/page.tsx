@@ -14,6 +14,7 @@ import { StructuredFields } from "@/components/StructuredFields";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useCreateInterviewSession } from "@/hooks/useInterviewSessions";
 import { Tabs } from "@/components/ui/tabs";
 import { useCandidateDetail } from "@/hooks/useCandidateDetail";
 import { useOverrideCandidate } from "@/hooks/useOverrideCandidate";
@@ -43,6 +44,16 @@ export default function CandidateDetailPage() {
 
   const [activeTab, setActiveTab] = useState("structure");
   const [overrideOpen, setOverrideOpen] = useState(false);
+  const createSession = useCreateInterviewSession();
+  const startInterview = () => {
+    createSession.mutate(
+      { candidate_id: candidateId, job_id: jobId },
+      {
+        onSuccess: (session) =>
+          router.push(`/interviews/${session.id}/adaptive`),
+      },
+    );
+  };
 
   const {
     data: detail,
@@ -139,6 +150,13 @@ export default function CandidateDetailPage() {
           >
             关闭
           </Button>
+          <Button
+            onClick={startInterview}
+            disabled={createSession.isPending}
+            title="创建面试会话并进入渐进式自适应面试"
+          >
+            {createSession.isPending ? "创建中…" : "▶ 发起面试"}
+          </Button>
           {screening_result && (
             <Button onClick={() => setOverrideOpen(true)}>
               HR 改判
@@ -186,10 +204,21 @@ export default function CandidateDetailPage() {
             <ReasonsList scoreId={scoreId} parsedText={parsedText} />
           )}
           {activeTab === "interview" && (
-            <InterviewQuestions
-              candidateId={candidate.id}
-              jobId={jobId}
-            />
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-muted-foreground">
+                  AI 面试题（batch 模式）；或发起渐进式自适应面试——按简历/JD
+                  分支逐题深挖，自动转写评分
+                </p>
+                <Button size="sm" onClick={startInterview} disabled={createSession.isPending}>
+                  {createSession.isPending ? "创建中…" : "▶ 发起渐进式面试"}
+                </Button>
+              </div>
+              <InterviewQuestions
+                candidateId={candidate.id}
+                jobId={jobId}
+              />
+            </div>
           )}
         </section>
       </div>
