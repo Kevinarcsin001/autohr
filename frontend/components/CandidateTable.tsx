@@ -300,6 +300,10 @@ export const COLUMN_DEFS: ColumnDef<CandidateListItem>[] = [
         return <Badge variant="destructive">淘汰</Badge>;
       }
       if (row.original.disqualified === false) {
+        // 初筛通过但评分未落 → 解析/评分进行中(异步链路),不误导为已完成
+        if (!row.original.score_id) {
+          return <Badge variant="secondary">解析评分中…</Badge>;
+        }
         return <Badge variant="success">通过</Badge>;
       }
       return <Badge variant="outline">待处理</Badge>;
