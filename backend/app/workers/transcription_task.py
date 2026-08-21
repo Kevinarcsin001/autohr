@@ -30,7 +30,9 @@ logger = get_logger(__name__)
 
 async def enqueue_transcription(*, turn_id: uuid.UUID) -> uuid.UUID | None:
     """创建 AsyncJob 并投递 Celery 任务（幂等：同 idempotency_key 复用）。"""
-    import app.workers.tasks as tasks_mod
+    from app.workers.transcription_task import transcribe_turn_handler
+
+    from app.workers.transcription_task import transcribe_turn_handler
 
     idem = f"transcribe:{turn_id}"
     async with AsyncSessionLocal() as session:
@@ -47,7 +49,7 @@ async def enqueue_transcription(*, turn_id: uuid.UUID) -> uuid.UUID | None:
         session.add(job)
         await session.commit()
         job_id = job.id
-    tasks_mod.transcribe_turn_handler.delay(str(job_id))
+    transcribe_turn_handler.delay(str(job_id))
     return job_id
 
 

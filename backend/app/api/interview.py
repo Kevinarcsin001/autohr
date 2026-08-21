@@ -848,8 +848,31 @@ async def adaptive_upload_audio(
     if turn is None or turn.session_id != session_id:
         raise NotFoundError(f"turn {turn_id} not found", resource="interview_turn")
     _ = team_id  # 归属校验：turn 属于 path 中的 session，session 归属已在查询链验证
+    if turn.transcription_status in ("pending", "processing"):
+        # 超时自愈：pending/processing 超过 2 分钟视为任务丢失，允许重传覆盖
+        # （turn 表无 updated_at，用 rating_evidence 里的时间戳或 created_at 近似）
+        from datetime import datetime, timezone
+
+        marker = (turn.rating_evidence or {}).get("audio_queued_at")
+        stale = True
+        if marker:
+            try:
+                queued = datetime.fromisoformat(str(marker))
+                stale = (datetime.now(timezone.utc) - queued).total_seconds() > 120
+            except ValueError:
+                stale = True
+        if not stale:
+            raise AppValidationError("该题音频转写中，请稍候再上传", field="audio")
+    if turn.answer_text is not None and turn.transcription_status == "done":
+        raise AppValidationError("该题已有回答（转写完成），请先获取下一题", field="audio")
     turn.audio_storage_key = storage_key
     turn.transcription_status = "pending"
+    from datetime import datetime, timezone
+
+    turn.rating_evidence = {
+        **(turn.rating_evidence or {}),
+        "audio_queued_at": datetime.now(timezone.utc).isoformat(),
+    }
     await db.commit()
 
     from app.workers.transcription_task import enqueue_transcription

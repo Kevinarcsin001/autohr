@@ -17,6 +17,7 @@ import { useParams } from "next/navigation";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ContinuousRecorder } from "@/components/ContinuousRecorder";
 import {
   useAdaptiveAnswer,
   useAdaptiveAudio,
@@ -52,6 +53,7 @@ export default function AdaptiveInterviewPage() {
   const replay = useRecordingReplay(sessionId);
 
   const [answerText, setAnswerText] = useState("");
+  const [autoMode, setAutoMode] = useState(true);
   const [nextResult, setNextResult] = useState<{
     reason?: string;
     done?: boolean;
@@ -66,6 +68,39 @@ export default function AdaptiveInterviewPage() {
     [data],
   );
   const lastTurn = data?.turns[data.turns.length - 1] ?? null;
+  const currentTurnRef = useRef<typeof currentTurn>(null);
+  useEffect(() => {
+    currentTurnRef.current = currentTurn;
+  }, [currentTurn]);
+
+  /** 自动模式：切片 → 作为当前题回答上传 → 评分落地后自动取下一题 */
+  const onAutoSegment = useCallback(
+    (blob: Blob, filename: string) => {
+      const turn = currentTurnRef.current;
+      if (!turn) return;
+      audio.mutate(
+        { turn_id: turn.id, audio: blob, filename },
+        {
+          onSuccess: () => {
+            // 转写+评分后台异步（约 20s）；稍等后自动取下一题
+            setTimeout(
+              () =>
+                next.mutate(undefined, {
+                  onSuccess: (res) =>
+                    setNextResult({
+                      reason: res.decision?.reason,
+                      done: res.done,
+                      doneReason: res.done_reason,
+                    }),
+                }),
+              25_000,
+            );
+          },
+        },
+      );
+    },
+    [audio, next],
+  );
 
   const onStart = useCallback(() => {
     setNextResult(null);
@@ -255,17 +290,26 @@ export default function AdaptiveInterviewPage() {
                 onChange={(e) => setAnswerText(e.target.value)}
                 disabled={answer.isPending}
               />
-              <AudioRecorder
-                disabled={
-                  !!currentTurn.transcription_status &&
-                  currentTurn.transcription_status !== "failed"
-                }
-                uploading={audio.isPending}
-                onUpload={(blob, filename) =>
-                  currentTurn &&
-                  audio.mutate({ turn_id: currentTurn.id, audio: blob, filename })
-                }
-              />
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <button className="underline" onClick={() => setAutoMode((v) => !v)}>
+                  {autoMode ? "切到手动模式(每题点击)" : "切到自动模式(连续监听)"}
+                </button>
+              </div>
+              {autoMode ? (
+                <ContinuousRecorder onSegment={onAutoSegment} uploadPending={audio.isPending} />
+              ) : (
+                <AudioRecorder
+                  disabled={
+                    !!currentTurn.transcription_status &&
+                    currentTurn.transcription_status !== "failed"
+                  }
+                  uploading={audio.isPending}
+                  onUpload={(blob, filename) =>
+                    currentTurn &&
+                    audio.mutate({ turn_id: currentTurn.id, audio: blob, filename })
+                  }
+                />
+              )}
               {answer.error && (
                 <Alert variant="destructive">
                   <AlertDescription>{extractErr(answer.error) ?? "提交失败"}</AlertDescription>
