@@ -54,6 +54,27 @@ class Settings(BaseSettings):
     # === ASR(面试音频转写) ===
     ASR_BASE_URL: str = Field(default="http://asr:8010")
     ASR_TIMEOUT_SECONDS: float = Field(default=600.0)
+
+    # === 自适应面试引擎(全部可 .env 覆盖) ===
+    ADAPTIVE_MAX_TURNS: int = Field(default=24, ge=4, le=60, description="单场最大回合数")
+    ADAPTIVE_MIN_TURNS: int = Field(default=16, ge=0, le=60, description="最小回合数(未达不提前收卷)")
+    ADAPTIVE_BRANCH_BUDGET: int = Field(default=4, ge=1, le=10, description="每分支基础题数预算")
+    ADAPTIVE_STRONG_EXTRA: int = Field(default=2, ge=0, le=10, description="强分支(均分≥4)追加预算")
+    ADAPTIVE_FOLLOWUP_QUOTA: int = Field(
+        default=10, ge=0, le=10, description="每分支 LLM 内容追问最大次数"
+    )
+    ADAPTIVE_BREADTH_MIN: int = Field(
+        default=6, ge=1, le=16, description="收卷前最低分支覆盖数(广度门槛)"
+    )
+    ADAPTIVE_BREADTH_FORCE_SWITCH: int = Field(
+        default=3, ge=2, le=10, description="同分支连问达此数强制切换(广度守卫)"
+    )
+    ADAPTIVE_FOLLOWUP_MODEL: str = Field(
+        default="", description="追问生成模型(空=用评分同通道)"
+    )
+    ADAPTIVE_FOLLOWUP_TEMPERATURE: float = Field(
+        default=0.4, ge=0.0, le=1.0, description="追问生成 temperature"
+    )
     MINIO_ACCESS_KEY: str = Field(default="autohr")
     MINIO_SECRET_KEY: str = Field(default="autohr_dev_secret")
     MINIO_BUCKET: str = Field(default="resumes")

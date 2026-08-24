@@ -97,6 +97,10 @@ class AdaptiveStateOut(BaseModel):
     turns: list[TurnOut]
     ability: dict[str, float] = Field(default_factory=dict)
     """分支名 → 能力估计（当前 = 该分支平均分/5，M3 升级为 CAT θ）。"""
+    coverage: str = "0/1"
+    """分支覆盖「已问/总分支」——广度可视化。"""
+    followup_turns: int = 0
+    """内容追问题数（LLM 锚定原话生成的题）。"""
     done: bool
     done_reason: str | None = None
 

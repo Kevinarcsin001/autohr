@@ -24,6 +24,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.llm import LLMError, LLMResponse, LLMRouter, LLMSchemaError, Message
+from app.core.config import settings as _settings
 from app.core.logging import get_logger
 from app.core.middleware.error_handler import NotFoundError
 from app.core.middleware.error_handler import ValidationError as AppValidationError
@@ -53,17 +54,19 @@ logger = get_logger(__name__)
 # 常量（策略旋钮）
 # ============================================================================
 
-_MAX_TURNS: int = 24
-"""单场最大回合数（硬上限）。约对应一场 45-60 分钟技术面试的题量。"""
+# ============================================================================
+# 常量薄壳：运行时从 settings 读取（全部可 .env 覆盖）；此处的字面量仅作缺省
+# ============================================================================
 
-_MIN_TURNS: int = 16
-"""最小回合数：未达此数前，分支耗尽时优先回访强分支而非收卷。"""
 
-_BRANCH_BUDGET: int = 4
-"""每分支最大题数（深挖预算）。强分支可适当起预算（见 _STRONG_BRANCH_EXTRA）。"""
+def _max_turns() -> int:
+    return _settings.ADAPTIVE_MAX_TURNS
 
-_STRONG_BRANCH_EXTRA: int = 2
-"""强分支（avg≥4）追加预算：表现好的分支值得多问，换取更准的 θ。"""
+
+def _branch_budget(avg: float | None = None) -> int:
+    base = _settings.ADAPTIVE_BRANCH_BUDGET
+    return base + (_settings.ADAPTIVE_STRONG_EXTRA if (avg or 0) >= 4.0 else 0)
+
 
 _DEFAULT_DIFFICULTY: int = 3
 """分支起始难度。"""
@@ -140,6 +143,9 @@ def decide_next_action(
     total_turns: int,
     branch_theta: float | None = None,
     branch_avg: float | None = None,
+    branch_consecutive: int = 0,
+    branch_followups: int = 0,
+    followup_anchor: str | None = None,
 ) -> dict:
     """根据最新回合评分决定下一步。
 
@@ -156,20 +162,40 @@ def decide_next_action(
         ``{"action": deepen|retry|switch|complete, "reason": str,
            "difficulty": int, "weak"?: bool, "theta"?: float}``。
     """
-    if total_turns >= _MAX_TURNS:
+    if total_turns >= _max_turns():
         return {
             "action": "complete",
-            "reason": f"已达最大回合数（{_MAX_TURNS}）",
+            "reason": f"已达最大回合数（{_max_turns()}）",
             "difficulty": 0,
         }
 
     theta_d = target_difficulty(branch_theta) if branch_theta is not None else None
-    # 动态预算：强分支（均分≥4）追加额度，换取更准的 θ
-    budget = _BRANCH_BUDGET + (
-        _STRONG_BRANCH_EXTRA if (branch_avg or 0) >= 4.0 else 0
-    )
+    budget = _branch_budget(branch_avg)
+
+    # 广度守卫：同分支连问达阈值 → 强制 switch（可回访），防单分支黑洞
+    if branch_consecutive >= _settings.ADAPTIVE_BREADTH_FORCE_SWITCH:
+        return {
+            "action": "switch",
+            "reason": (
+                f"广度守卫：同分支已连问 {branch_consecutive} 题，"
+                f"强制切换分支保持覆盖面"
+            ),
+            "difficulty": 0,
+        }
 
     if rating >= 4:
+        # 内容追问优先（锚定候选人原话，比题库模板更深）
+        if followup_anchor and branch_followups < _settings.ADAPTIVE_FOLLOWUP_QUOTA:
+            return {
+                "action": "followup",
+                "reason": (
+                    f"回答优秀（{rating}/5）且证据有可追问点"
+                    f"（分支追问 {branch_followups}/{_settings.ADAPTIVE_FOLLOWUP_QUOTA}）"
+                ),
+                "difficulty": (theta_d or _DEFAULT_DIFFICULTY) + 1,
+                "followup": True,
+                **({"theta": branch_theta} if branch_theta is not None else {}),
+            }
         if branch_turns < budget and last_difficulty < 5 and branch_has_items:
             diff = theta_d if theta_d is not None else last_difficulty + 1
             return {
@@ -415,6 +441,7 @@ class AdaptiveInterviewService:
             )
 
         done, done_reason = self._done_state(session, turns)
+        visited = {t.category_id for t in turns if t.category_id is not None}
         return AdaptiveStateOut(
             session_id=session_id,
             mode=session.mode,
@@ -427,6 +454,8 @@ class AdaptiveInterviewService:
             ability=ability,
             done=done,
             done_reason=done_reason,
+            coverage=f"{len(visited)}/{len(plan.get('branches', [])) or 1}",
+            followup_turns=sum(1 for t in turns if (t.rating_evidence or {}).get("is_followup")),
         )
 
     @staticmethod
@@ -438,7 +467,7 @@ class AdaptiveInterviewService:
             return "weak"
         if is_current and b_turns[-1].answer_text is None:
             return "active"
-        if len(b_turns) >= _BRANCH_BUDGET:
+        if len(b_turns) >= _branch_budget():
             return "done"
         return "active" if is_current else "done"
 
@@ -497,6 +526,9 @@ class AdaptiveInterviewService:
         evidence = await self._llm_rate(session=session, turn=turn)
         turn.rating = evidence["rating"]
         turn.rating_evidence = {k: v for k, v in evidence.items() if k != "model"}
+        # 追问回合标记（计追问配额 + 前端样式区分）
+        if turn.question_item_id is None:
+            turn.rating_evidence = {**turn.rating_evidence, "is_followup": True}
         turn.rating_model = evidence.get("model")
 
         team_id = await self._team_of_session(session)
@@ -507,6 +539,20 @@ class AdaptiveInterviewService:
         asked = {t.question_item_id for t in all_turns if t.question_item_id is not None}
         branch_has_items = await self._branch_has_unasked(
             team_id=team_id, category_id=turn.category_id, asked=asked
+        )
+
+        # v2 决策输入：连问数(广度守卫) + 追问配额 + 追问锚点(内容感知)
+        consecutive = 0
+        for t in reversed(all_turns):
+            if t.category_id == turn.category_id:
+                consecutive += 1
+            else:
+                break
+        branch_followups = sum(
+            1 for t in b_turns if (t.rating_evidence or {}).get("is_followup")
+        )
+        followup_anchor = (turn.rating_evidence or {}).get("follow_up_suggestion") or (
+            "；".join(((turn.rating_evidence or {}).get("strengths") or [])[:2]) or None
         )
 
         decision = decide_next_action(
@@ -520,6 +566,9 @@ class AdaptiveInterviewService:
                 round(sum(t.rating for t in b_turns if t.rating) / max(1, len([t for t in b_turns if t.rating])), 2)
                 if any(t.rating for t in b_turns) else None
             ),
+            branch_consecutive=consecutive,
+            branch_followups=branch_followups,
+            followup_anchor=followup_anchor,
         )
         if decision.get("weak") and turn.category_id is not None:
             decision["weak_category_id"] = str(turn.category_id)
@@ -574,6 +623,53 @@ class AdaptiveInterviewService:
             team_id=team_id, category_id=category_id, active_only=True
         )
         return any(it.id not in asked for it in items)
+
+    # ------------------------------------------------------------------
+    # 内容追问生成（v2：锚定候选人原话，LLM 现场出题；失败回退题库）
+    # ------------------------------------------------------------------
+
+    async def _generate_followup(
+        self, *, session: InterviewSession, turn: InterviewTurn
+    ) -> str | None:
+        """基于评分证据(follow_up_suggestion/亮点) + 候选人原话，生成一道追问。
+
+        Returns:
+            追问文本;失败返回 None(调用方回退题库选题，面试不中断)。
+        """
+        ev = turn.rating_evidence or {}
+        anchor = (
+            (ev.get("follow_up_suggestion") or "").strip()
+            or "；".join((ev.get("strengths") or [])[:2])
+        )
+        if not anchor:
+            return None
+        answer = (turn.answer_text or "")[:3000]
+
+        system = (
+            "你是资深技术面试官。候选人刚答完一题且表现出色，请基于他的回答内容出一道"
+            "更深的追问。要求：1) 必须锚定他回答中的具体表述(引用他的原话或提到的技术点)；"
+            "2) 比原题深一档(追问原理/权衡/踩坑/badcase)；3) 一道题，口语化，40字以内；"
+            "4) 只输出题干本身，不要任何前缀或解释。"
+        )
+        user = (
+            f"# 原题\n{turn.question_text}\n\n# 候选人回答(节选)\n{answer}\n\n"
+            f"# 评分证据中的可追问点\n{anchor}\n\n请输出追问："
+        )
+        router = self._get_router()
+        try:
+            resp = await router.chat(
+                messages=[Message(role="system", content=system), Message(role="user", content=user)],
+                temperature=_settings.ADAPTIVE_FOLLOWUP_TEMPERATURE,
+                scope=_INTERVIEW_SCOPE,
+                timeout=20.0,
+            )
+        except (LLMError, LLMSchemaError) as exc:
+            logger.warning("followup_generate_failed", error=str(exc)[:150])
+            return None
+        text = (resp.content or "").strip().strip('"“”').replace("\n", " ")
+        if not (6 <= len(text) <= 200):
+            return None
+        return text
 
     async def _llm_rate(self, *, session: InterviewSession, turn: InterviewTurn) -> dict:
         reference = ""
@@ -688,13 +784,13 @@ class AdaptiveInterviewService:
         if force_category_id is not None:
             # 面试官手动指定分支（无视上一题决策；仅受回合上限约束）
 
-            if len(turns) >= _MAX_TURNS:
+            if len(turns) >= _max_turns():
                 if session.status != "completed":
                     session.status = "completed"
                     await self._db.flush()
                 return AdaptiveNextOut(
                     done=True,
-                    done_reason=f"已达最大回合数（{_MAX_TURNS}）",
+                    done_reason=f"已达最大回合数（{_max_turns()}）",
                     decision={"action": "switch", "reason": "面试官指定分支出题", "override": True},
                 )
             next_turn = await self._create_turn(
@@ -730,6 +826,33 @@ class AdaptiveInterviewService:
 
         plan = session.adaptive_plan or {}
         signals = [(s["signal"], float(s["weight"])) for s in plan.get("signals", [])]
+
+        if decision.get("action") == "followup":
+            # v2 内容追问：LLM 锚定原话生成；失败无感回退题库同分支深挖
+            q_text = await self._generate_followup(session=session, turn=last)
+            if q_text:
+                seq = turns[-1].seq + 1
+                # 锚点存证：取评分建议/首个亮点（前端展示"基于你的回答"）
+                anchor = (
+                    (last.rating_evidence or {}).get("follow_up_suggestion")
+                    or "；".join(((last.rating_evidence or {}).get("strengths") or [])[:1])
+                )
+                ft = InterviewTurn(
+                    session_id=session.id,
+                    seq=seq,
+                    question_item_id=None,
+                    question_text=q_text,
+                    dimension=last.dimension,
+                    category_id=last.category_id,
+                    category_name=last.category_name,
+                    rating_evidence={"is_followup": True, "anchor_quote": (anchor or "")[:200]},
+                )
+                self._db.add(ft)
+                await self._db.flush()
+                return AdaptiveNextOut(turn=TurnOut.model_validate(ft), decision=decision)
+            # 生成失败 → 回退 deepen 选题
+            decision = {**decision, "action": "deepen",
+                        "reason": decision["reason"] + "（追问生成失败，回退题库深挖）"}
 
         if decision.get("action") in ("deepen", "retry"):
             next_turn = await self._create_turn(
@@ -807,7 +930,7 @@ class AdaptiveInterviewService:
                 if c.id in weak:
                     continue
                 b_turns = sum(1 for t in turns if t.category_id == c.id)
-                if c.id in visited and b_turns >= _BRANCH_BUDGET:
+                if c.id in visited and b_turns >= _branch_budget():
                     continue
                 picked = await self._pick_item(
                     team_id=team_id, category_id=c.id,

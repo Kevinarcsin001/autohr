@@ -180,6 +180,9 @@ export default function AdaptiveInterviewPage() {
         <h1 className="text-lg font-semibold">自适应面试</h1>
         <Badge variant="outline">{data.total_turns} 回合</Badge>
         <Badge variant="outline">已答 {data.answered_turns}</Badge>
+        {data.followup_turns > 0 && (
+          <Badge variant="secondary">追问 ×{data.followup_turns}</Badge>
+        )}
         {data.plan_signals.slice(0, 6).map((s) => (
           <Badge key={s.signal} variant={s.weight >= 2 ? "default" : "secondary"}>
             {s.signal}
@@ -196,6 +199,10 @@ export default function AdaptiveInterviewPage() {
         {/* 左：分支进度（可点击 = 面试官指定分支） */}
         <div className="space-y-2">
           <p className="text-sm font-medium">分支进度</p>
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span>广度覆盖 {data.coverage}</span>
+            {data.followup_turns > 0 && <span>· 追问 {data.followup_turns} 题</span>}
+          </div>
           <div className="space-y-1.5 rounded-md border p-2">
             {data.branches.map((b) => {
               const isActive = currentTurn?.category_id === b.category_id;
@@ -277,11 +284,19 @@ export default function AdaptiveInterviewPage() {
                   {currentTurn.category_name && (
                     <Badge variant="secondary">{currentTurn.category_name}</Badge>
                   )}
+                  {currentTurn.rating_evidence?.is_followup && (
+                    <Badge variant="warning">⤷ 基于你的回答追问</Badge>
+                  )}
                   {nextResult?.reason && <span>选题理由：{nextResult.reason}</span>}
                 </div>
                 <p className="whitespace-pre-wrap text-[15px] leading-relaxed">
                   {currentTurn.question_text}
                 </p>
+                {currentTurn.rating_evidence?.anchor_quote && (
+                  <p className="mt-2 border-l-2 pl-2 text-xs italic text-muted-foreground">
+                    ↩ 你提到：{currentTurn.rating_evidence.anchor_quote}
+                  </p>
+                )}
               </div>
               <textarea
                 className="min-h-[100px] w-full rounded-md border p-3 text-sm"

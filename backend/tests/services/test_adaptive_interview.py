@@ -29,10 +29,10 @@ from app.models.team import Team
 from app.models.user import User
 from app.schemas.adaptive import TurnRating
 from app.services.adaptive_interview import (
-    _BRANCH_BUDGET,
-    _MAX_TURNS,
     AdaptiveInterviewError,
     AdaptiveInterviewService,
+    _branch_budget,
+    _max_turns,
     decide_next_action,
     estimate_branch_ability,
     target_difficulty,
@@ -224,7 +224,7 @@ def test_decide_switch_weak_on_bad() -> None:
 
 def test_decide_budget_exhausted_switches() -> None:
     d = decide_next_action(
-        rating=5, branch_turns=_BRANCH_BUDGET, last_difficulty=3,
+        rating=5, branch_turns=_branch_budget(), last_difficulty=3,
         branch_has_items=True, total_turns=3,
     )
     assert d["action"] == "switch"
@@ -233,7 +233,7 @@ def test_decide_budget_exhausted_switches() -> None:
 def test_decide_complete_at_max_turns() -> None:
     d = decide_next_action(
         rating=5, branch_turns=1, last_difficulty=3,
-        branch_has_items=True, total_turns=_MAX_TURNS,
+        branch_has_items=True, total_turns=_max_turns(),
     )
     assert d["action"] == "complete"
 
@@ -294,6 +294,65 @@ def test_decide_fallback_without_theta() -> None:
 
 
 # ============================================================================
+# v2：内容追问 + 广度守卫 + 可配置
+# ============================================================================
+
+
+def test_decide_followup_on_strong_answer_with_anchor() -> None:
+    """答得好且证据有锚点 → followup（优先于题库深挖）。"""
+    d = decide_next_action(
+        rating=5, branch_turns=1, last_difficulty=3,
+        branch_has_items=True, total_turns=2,
+        branch_theta=0.7,
+        branch_followups=0, followup_anchor="提到 RRF 但没展开权重",
+    )
+    assert d["action"] == "followup"
+    assert d.get("followup") is True
+    assert d["difficulty"] == 5  # theta_d(0.7→4) + 1
+
+
+def test_decide_followup_quota_exhausted_falls_to_deepen() -> None:
+    """追问配额用尽 → 回退 deepen（题库深挖）。"""
+    from app.core.config import settings
+
+    d = decide_next_action(
+        rating=5, branch_turns=2, last_difficulty=3,
+        branch_has_items=True, total_turns=3,
+        branch_theta=0.7,
+        branch_followups=settings.ADAPTIVE_FOLLOWUP_QUOTA,
+        followup_anchor="还有可追问点",
+    )
+    assert d["action"] == "deepen"
+
+
+def test_decide_breadth_guard_forces_switch() -> None:
+    """同分支连问达阈值 → 强制 switch（广度守卫，即使一直满分）。"""
+    from app.core.config import settings
+
+    d = decide_next_action(
+        rating=5, branch_turns=settings.ADAPTIVE_BREADTH_FORCE_SWITCH,
+        last_difficulty=3, branch_has_items=True, total_turns=4,
+        branch_theta=0.8, branch_consecutive=settings.ADAPTIVE_BREADTH_FORCE_SWITCH,
+        branch_followups=0, followup_anchor="x",
+    )
+    assert d["action"] == "switch"
+    assert "广度守卫" in d["reason"]
+
+
+def test_config_values_effective() -> None:
+    """配置化生效：追问配额/广度阈值/回合上限从 settings 读取。"""
+    from app.core.config import settings
+
+    assert settings.ADAPTIVE_FOLLOWUP_QUOTA == 10
+    assert settings.ADAPTIVE_BREADTH_MIN >= 1
+    assert _max_turns() == settings.ADAPTIVE_MAX_TURNS
+    assert _branch_budget(None) == settings.ADAPTIVE_BRANCH_BUDGET
+    assert _branch_budget(4.5) == (
+        settings.ADAPTIVE_BRANCH_BUDGET + settings.ADAPTIVE_STRONG_EXTRA
+    )
+
+
+# ============================================================================
 # 集成：start / answer / next
 # ============================================================================
 
@@ -329,15 +388,16 @@ async def test_good_answer_deepens_same_branch() -> None:
             turn_id=started.first_turn.id, answer_text="RAG 链路：解析→切分→向量化→检索→重排→生成…",
         )
         assert answered.turn.rating == 5
-        assert answered.turn.next_decision["action"] == "deepen"
-        # M3 CAT：θ 驱动难度并透出 theta（5@d3 → θ≈0.688 → 目标 4）
+        # v2：证据带 follow_up_suggestion → 内容追问优先（而非题库 deepen）
+        assert answered.turn.next_decision["action"] == "followup"
         assert answered.turn.next_decision.get("theta") is not None
 
         nxt = await svc.next_question(team_id=team.id, session_id=session_id)
         assert nxt.turn is not None
         assert nxt.turn.category_name == "RAG 检索增强"  # 同分支
         assert nxt.turn.seq == 2
-        assert nxt.decision["difficulty"] == 4
+        # 追问为 LLM 生成 → question_item_id 为空 + is_followup 落 evidence
+        assert nxt.turn.question_item_id is None
 
 
 async def test_state_ability_uses_cat_estimator() -> None:
@@ -471,4 +531,4 @@ async def test_full_flow_completes_and_marks_session() -> None:
                 {"s": str(session_id)},
             )
         ).scalar()
-        assert int(turns or 0) <= _MAX_TURNS
+        assert int(turns or 0) <= _max_turns()

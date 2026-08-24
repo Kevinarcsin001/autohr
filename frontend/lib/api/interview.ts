@@ -273,6 +273,9 @@ export interface AdaptiveTurn {
     strengths?: string[];
     flaws?: string[];
     follow_up_suggestion?: string;
+    is_followup?: boolean;
+    anchor_quote?: string;
+    skipped?: boolean;
   } | null;
   rating_model: string | null;
   next_decision: {
@@ -310,6 +313,8 @@ export interface AdaptiveStateResponse {
   branches: AdaptiveBranch[];
   turns: AdaptiveTurn[];
   ability: Record<string, number>;
+  coverage: string;
+  followup_turns: number;
   done: boolean;
   done_reason: string | null;
 }
