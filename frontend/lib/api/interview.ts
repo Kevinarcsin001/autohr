@@ -279,7 +279,7 @@ export interface AdaptiveTurn {
   } | null;
   rating_model: string | null;
   next_decision: {
-    action?: "deepen" | "retry" | "switch" | "complete";
+    action?: "deepen" | "retry" | "switch" | "complete" | "followup";
     reason?: string;
     difficulty?: number;
     weak?: boolean;

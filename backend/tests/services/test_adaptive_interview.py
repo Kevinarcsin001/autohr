@@ -336,7 +336,7 @@ def test_decide_breadth_guard_forces_switch() -> None:
         branch_followups=0, followup_anchor="x",
     )
     assert d["action"] == "switch"
-    assert "广度守卫" in d["reason"]
+    assert "广度" in d["reason"]
 
 
 def test_config_values_effective() -> None:
@@ -387,17 +387,16 @@ async def test_good_answer_deepens_same_branch() -> None:
             team_id=team.id, session_id=session_id,
             turn_id=started.first_turn.id, answer_text="RAG 链路：解析→切分→向量化→检索→重排→生成…",
         )
-        assert answered.turn.rating == 5
-        # v2：证据带 follow_up_suggestion → 内容追问优先（而非题库 deepen）
-        assert answered.turn.next_decision["action"] == "followup"
-        assert answered.turn.next_decision.get("theta") is not None
+        # v2.1 异步评分：submit 立即返回（rating=None，评分在 /next 完成）
+        assert answered.turn.rating is None
 
         nxt = await svc.next_question(team_id=team.id, session_id=session_id)
         assert nxt.turn is not None
+        # next 内补评后决策：证据带 follow_up_suggestion → 内容追问
+        assert nxt.decision is not None and nxt.decision["action"] == "followup"
         assert nxt.turn.category_name == "RAG 检索增强"  # 同分支
         assert nxt.turn.seq == 2
-        # 追问为 LLM 生成 → question_item_id 为空 + is_followup 落 evidence
-        assert nxt.turn.question_item_id is None
+        assert nxt.turn.question_item_id is None  # LLM 生成
 
 
 async def test_state_ability_uses_cat_estimator() -> None:
@@ -414,6 +413,7 @@ async def test_state_ability_uses_cat_estimator() -> None:
             team_id=team.id, session_id=session_id,
             turn_id=started.first_turn.id, answer_text="完整讲清了链路与取舍",
         )
+        await svc.next_question(team_id=team.id, session_id=session_id)  # 触发补评
         state = await svc.state(team_id=team.id, session_id=session_id)
         # 5@d3 → θ = (1.0·3+2.5)/(3+5) = 0.688（简单均值会是 1.0）
         assert 0.6 < state.ability.get("RAG 检索增强", 0) < 0.8
@@ -458,12 +458,11 @@ async def test_rating_failure_degrades_then_retried_by_next() -> None:
             team_id=team.id, session_id=session_id,
             turn_id=started.first_turn.id, answer_text="我讲一下 RAG 完整链路……",
         )
-        # 回答已保存 + 评分失败信息
+        # v2.1: submit 永不评分（异步），立即返回
         assert res.turn.answer_text is not None
-        assert res.rating_error is not None
-        assert res.turn.rating is None
+        assert res.rating_error is None
 
-        # /next 自动重试评分 → 成功 → 给出下一题
+        # /next 补评（前 2 次 LLM 失败耗尽路由重试后第 3 次成功）
         nxt = await svc.next_question(team_id=team.id, session_id=session_id)
         assert nxt.turn is not None
         assert nxt.decision is not None

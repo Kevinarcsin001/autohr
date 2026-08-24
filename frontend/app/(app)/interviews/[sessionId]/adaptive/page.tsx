@@ -54,6 +54,7 @@ export default function AdaptiveInterviewPage() {
 
   const [answerText, setAnswerText] = useState("");
   const [autoMode, setAutoMode] = useState(true);
+  const [selectedTurnId, setSelectedTurnId] = useState<string | null>(null);
   const [nextResult, setNextResult] = useState<{
     reason?: string;
     done?: boolean;
@@ -112,10 +113,22 @@ export default function AdaptiveInterviewPage() {
     answer.mutate(
       { turn_id: currentTurn.id, answer_text: answerText },
       {
-        onSuccess: () => setAnswerText(""),
+        onSuccess: () => {
+          setAnswerText("");
+          // v2.1: 评分已异步化——提交后立即取下一题(next 内完成评分+决策),
+          // 面试官不等 LLM,体验连续
+          next.mutate(undefined, {
+            onSuccess: (res) =>
+              setNextResult({
+                reason: res.decision?.reason,
+                done: res.done,
+                doneReason: res.done_reason,
+              }),
+          });
+        },
       },
     );
-  }, [answer, answerText, currentTurn]);
+  }, [answer, answerText, currentTurn, next]);
 
   const onNext = useCallback(
     (opts?: { forceCategoryId?: string; skipCurrent?: boolean }) => {
@@ -376,29 +389,85 @@ export default function AdaptiveInterviewPage() {
             recordingStatus={null}
             replay={replay}
           />
+          <p className="text-[11px] text-muted-foreground">点击任意回合查看完整问答与评分证据</p>
           <div className="max-h-[70vh] space-y-1.5 overflow-y-auto rounded-md border p-2">
             {data.turns.length === 0 && (
               <p className="text-xs text-muted-foreground">尚未开始</p>
             )}
-            {[...data.turns].reverse().map((t) => (
-              <div key={t.id} className="rounded border p-2 text-xs">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-muted-foreground">#{t.seq}</span>
-                  <span className="min-w-0 flex-1 truncate" title={t.question_text}>
-                    {t.question_text}
-                  </span>
-                  <Badge variant={RATING_VARIANT(t.rating)}>
-                    {t.rating ?? "待评"}
-                  </Badge>
-                </div>
-                {t.next_decision?.action && (
-                  <p className="mt-1 text-muted-foreground">
-                    → {DECISION_LABEL[t.next_decision.action] ?? t.next_decision.action}
-                    {t.next_decision.reason ? `：${t.next_decision.reason.slice(0, 50)}` : ""}
-                  </p>
-                )}
-              </div>
-            ))}
+            {[...data.turns].reverse().map((t) => {
+              const isFu = !!(t.rating_evidence?.is_followup);
+              const act = t.next_decision?.action;
+              const axisLabel =
+                isFu || act === "followup" || act === "deepen"
+                  ? "深"
+                  : act === "switch" || act === "retry"
+                    ? "广"
+                    : "";
+              const axisVariant =
+                axisLabel === "深" ? "default" : "outline";
+              return (
+                <button
+                  key={t.id}
+                  className="w-full rounded border p-2 text-left text-xs hover:bg-accent"
+                  onClick={() =>
+                    setSelectedTurnId((prev) => (prev === t.id ? null : t.id))
+                  }
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-muted-foreground">#{t.seq}</span>
+                    {isFu && <span title="基于上一题回答的追问">⤷</span>}
+                    <span className="min-w-0 flex-1 truncate" title={t.question_text}>
+                      {t.question_text}
+                    </span>
+                    {axisLabel && (
+                      <Badge variant={axisVariant} className="px-1 text-[10px]">
+                        {axisLabel}
+                      </Badge>
+                    )}
+                    <Badge variant={RATING_VARIANT(t.rating)}>
+                      {t.rating ?? "评中"}
+                    </Badge>
+                  </div>
+                  {selectedTurnId === t.id && (
+                    <div className="mt-2 space-y-1.5 border-t pt-2">
+                      <p className="whitespace-pre-wrap font-medium">
+                        {t.question_text}
+                      </p>
+                      {t.rating_evidence?.anchor_quote && (
+                        <p className="border-l-2 pl-2 italic text-muted-foreground">
+                          ↩ 基于你提到：{t.rating_evidence.anchor_quote}
+                        </p>
+                      )}
+                      {t.answer_text && (
+                        <p className="whitespace-pre-wrap text-muted-foreground">
+                          <span className="font-medium">答：</span>
+                          {t.answer_text.slice(0, 400)}
+                          {t.answer_text.length > 400 && "…"}
+                        </p>
+                      )}
+                      {t.rating_evidence?.key_points_hit?.length ? (
+                        <p className="text-green-700 dark:text-green-400">
+                          ✓ {(t.rating_evidence.key_points_hit ?? []).join("；")}
+                        </p>
+                      ) : null}
+                      {t.rating_evidence?.key_points_missed?.length ? (
+                        <p className="text-amber-700 dark:text-amber-400">
+                          ⚠ 遗漏：{(t.rating_evidence.key_points_missed ?? []).join("；")}
+                        </p>
+                      ) : null}
+                      {t.next_decision?.action && (
+                        <p className="text-muted-foreground">
+                          → {DECISION_LABEL[t.next_decision.action] ?? t.next_decision.action}
+                          {t.next_decision.reason
+                            ? `：${t.next_decision.reason.slice(0, 80)}`
+                            : ""}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>

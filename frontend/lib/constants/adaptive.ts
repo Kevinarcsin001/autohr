@@ -20,8 +20,9 @@ export const ADAPTIVE_STATUS_VARIANT: Record<string, BadgeVariant> = {
 };
 
 export const DECISION_LABEL: Record<string, string> = {
-  deepen: "深挖",
+  deepen: "深度·同分支深挖",
+  followup: "深度·内容追问",
   retry: "换考点再验证",
-  switch: "切换分支",
+  switch: "广度·切换分支",
   complete: "面试完成",
 };

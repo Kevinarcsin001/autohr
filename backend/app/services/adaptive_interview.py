@@ -177,7 +177,7 @@ def decide_next_action(
         return {
             "action": "switch",
             "reason": (
-                f"广度守卫：同分支已连问 {branch_consecutive} 题，"
+                f"广度：同分支已连问 {branch_consecutive} 题，"
                 f"强制切换分支保持覆盖面"
             ),
             "difficulty": 0,
@@ -189,7 +189,7 @@ def decide_next_action(
             return {
                 "action": "followup",
                 "reason": (
-                    f"回答优秀（{rating}/5）且证据有可追问点"
+                    f"深度·内容追问：回答优秀（{rating}/5），锚定你的原话深挖"
                     f"（分支追问 {branch_followups}/{_settings.ADAPTIVE_FOLLOWUP_QUOTA}）"
                 ),
                 "difficulty": (theta_d or _DEFAULT_DIFFICULTY) + 1,
@@ -225,14 +225,14 @@ def decide_next_action(
             }
         return {
             "action": "switch",
-            "reason": "回答一般且分支预算用尽，切换下一分支",
+            "reason": "广度：回答一般且分支预算用尽，切换下一分支",
             "difficulty": 0,
         }
 
     # rating <= 2：标记薄弱止损
     return {
         "action": "switch",
-        "reason": f"回答较弱（{rating}/5），标记薄弱分支，切换下一分支",
+        "reason": f"止损：回答较弱（{rating}/5），标记薄弱分支，切换下一分支（广度）",
         "difficulty": 0,
         "weak": True,
     }
@@ -509,16 +509,10 @@ class AdaptiveInterviewService:
         turn.answered_at = datetime.now(timezone.utc)
         if session.status == "scheduled":
             session.status = "in_progress"
-
-        rating_error: str | None = None
-        try:
-            await self._rate_and_decide(session=session, turn=turn)
-        except AdaptiveInterviewError as exc:
-            # 回答已保存；评分由 /next 自动重试
-            rating_error = str(exc)[:300]
+        # v2.1 异步评分：此处只落回答（毫秒级返回），评分+决策在 /next 里进行。
+        # 面试官无需等 LLM——体验：提交即出下一题，评分后台完成，终局再看结果。
         await self._db.flush()
-        return AdaptiveAnswerOut(turn=TurnOut.model_validate(turn), rating_error=rating_error)
-
+        return AdaptiveAnswerOut(turn=TurnOut.model_validate(turn), rating_error=None)
     async def _rate_and_decide(
         self, *, session: InterviewSession, turn: InterviewTurn
     ) -> None:
@@ -809,11 +803,16 @@ class AdaptiveInterviewService:
                 decision={"action": "switch", "reason": "面试官指定分支出题", "override": True},
             )
 
+        # 异步评分收口：补评所有「已回答但未评分」的回合（正常 1 个，音频/连发场景可能多个）
+        for t in turns:
+            if t.answer_text is not None and t.rating is None:
+                try:
+                    await self._rate_and_decide(session=session, turn=t)
+                except AdaptiveInterviewError:
+                    continue  # 单题评分失败不阻塞流程
+        await self._db.flush()
+        turns = await self._list_turns(session_id)
         last = turns[-1]
-        if last.rating is None:
-            # submit 时评分失败的回合：此处自动重试
-            await self._rate_and_decide(session=session, turn=last)
-            await self._db.flush()
 
         decision = last.next_decision or {}
         if decision.get("action") == "complete":
