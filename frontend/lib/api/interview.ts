@@ -441,3 +441,41 @@ export async function createSessionApi(
   );
   return data;
 }
+
+/** 面试官自然语言指挥：「问问他 RAG」「来道简单的」→ 解析并直接出题。 */
+export async function adaptiveDirectApi(
+  sessionId: string,
+  text: string,
+): Promise<{
+  parsed: { category_id?: string; category_name?: string; difficulty?: number; matched_signal?: number };
+  result: AdaptiveNextResponse;
+}> {
+  const { data } = await apiClient.post(
+    `/api/interview/sessions/${sessionId}/adaptive/direct`,
+    { text },
+  );
+  return data;
+}
+
+export interface PreviewItem {
+  id: string;
+  category_id: string;
+  category_name: string;
+  question: string;
+  difficulty: number | null;
+  points: number;
+  relevance: number;
+  tags: string[];
+}
+
+/** 候选题预览（当前难度+信号相关度排序的备选）。 */
+export async function adaptivePreviewApi(
+  sessionId: string,
+  categoryId?: string,
+): Promise<PreviewItem[]> {
+  const { data } = await apiClient.get(
+    `/api/interview/sessions/${sessionId}/adaptive/preview`,
+    { params: categoryId ? { category_id: categoryId } : {} },
+  );
+  return data;
+}

@@ -5,6 +5,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   adaptiveAnswerApi,
   adaptiveAudioApi,
+  adaptiveDirectApi,
+  adaptivePreviewApi,
   adaptiveMarkOffsetApi,
   adaptiveNextApi,
   adaptiveProcessRecordingApi,
@@ -90,4 +92,23 @@ export function useRecordingReplay(sessionId: string) {
     onSuccess: () => qc.invalidateQueries({ queryKey: ADAPTIVE_KEY(sessionId) }),
   });
   return { upload, process, markOffset };
+}
+
+/** 自然语言指挥出题。 */
+export function useAdaptiveDirect(sessionId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (text: string) => adaptiveDirectApi(sessionId, text),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ADAPTIVE_KEY(sessionId) }),
+  });
+}
+
+/** 候选题预览。 */
+export function useAdaptivePreview(sessionId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ["interview-adaptive-preview", sessionId],
+    queryFn: () => adaptivePreviewApi(sessionId),
+    enabled: enabled && !!sessionId,
+    staleTime: 10_000,
+  });
 }

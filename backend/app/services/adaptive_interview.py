@@ -619,6 +619,113 @@ class AdaptiveInterviewService:
         return any(it.id not in asked for it in items)
 
     # ------------------------------------------------------------------
+    # 面试官自然语言指挥 + 候选题预览（v2.2）
+    # ------------------------------------------------------------------
+
+    async def parse_directive(
+        self, *, team_id: uuid.UUID, session_id: uuid.UUID, text: str
+    ) -> dict:
+        """解析面试官自然语言指令 → 选题参数。
+
+        支持：
+        - 分支指定：「问问他微服务/RAG/项目经历」→ 信号匹配分类(slug/name/tags)
+        - 难度调整：「简单点/来道难题」→ difficulty ±1
+        - 组合：「换个简单的 Python 题」
+        Returns: {category_id?, category_name?, difficulty?, matched_signal?}
+        """
+        await self._load_session(team_id=team_id, session_id=session_id)
+        categories = await self._qbs.list_categories(team_id=team_id, active_only=True)
+
+        t = text.strip().lower()
+        out: dict = {}
+
+        # 1) 难度调整
+        if any(k in t for k in ("简单", "基础", "容易")):
+            out["difficulty"] = 2
+        if any(k in t for k in ("难点", "难题", "深", "高难度")):
+            out["difficulty"] = 4
+
+        # 2) 分支匹配（信号引擎复用：子串+Dice）
+        best_cat, best_score = None, 0.0
+        for c in categories:
+            score = max(
+                _signal_match_strength(text, w) for w in (c.slug, c.name)
+            )
+            if score > best_score:
+                best_cat, best_score = c, score
+        if best_cat is not None and best_score >= 0.5:
+            out["category_id"] = str(best_cat.id)
+            out["category_name"] = best_cat.name
+            out["matched_signal"] = best_score
+
+        # 3) 行为类（英文别名补充）
+        if "project" in t or "项目" in t:
+            out["dimension"] = "project"
+        return out
+
+    async def preview_candidates(
+        self,
+        *,
+        team_id: uuid.UUID,
+        session_id: uuid.UUID,
+        category_id: uuid.UUID | None = None,
+        limit: int = 8,
+    ) -> list[dict]:
+        """候选题预览：当前分支（或全部分支前几道）按「信号相关度+难度接近」排序。"""
+        session = await self._load_session(team_id=team_id, session_id=session_id)
+        plan = session.adaptive_plan or {}
+        signals = [(s["signal"], float(s["weight"])) for s in plan.get("signals", [])]
+        turns = await self._list_turns(session_id)
+        asked = {t.question_item_id for t in turns if t.question_item_id}
+
+        if category_id is not None:
+            cats = [await self._qbs.get_category(team_id=team_id, category_id=category_id)]
+        else:
+            cats = await self._ordered_categories(plan)
+        # 当前分支能力 → 目标难度
+        theta = None
+        if turns:
+            b_turns = [t for t in turns if t.category_id == (cats[0].id if cats else None)]
+            theta = await self._branch_theta(b_turns)
+        target_d = target_difficulty(theta)
+
+        out: list[dict] = []
+        for c in cats[:6]:
+            items = await self._qbs.list_items(team_id=team_id, category_id=c.id, active_only=True)
+            cands = [it for it in items if it.id not in asked]
+
+            def relevance(it) -> int:
+                return sum(
+                    1
+                    for tg in it.tags or []
+                    if any(_signal_match_strength(sig, tg) > 0 for sig, _w in signals)
+                )
+
+            cands.sort(
+                key=lambda it: (
+                    abs((it.difficulty or 3) - target_d),
+                    -relevance(it),
+                    it.points,
+                )
+            )
+            for it in cands[: (limit if category_id else 3)]:
+                out.append(
+                    {
+                        "id": str(it.id),
+                        "category_id": str(c.id),
+                        "category_name": c.name,
+                        "question": it.question,
+                        "difficulty": it.difficulty,
+                        "points": it.points,
+                        "relevance": relevance(it),
+                        "tags": it.tags or [],
+                    }
+                )
+            if category_id:
+                break
+        return out
+
+    # ------------------------------------------------------------------
     # 内容追问生成（v2：锚定候选人原话，LLM 现场出题；失败回退题库）
     # ------------------------------------------------------------------
 
@@ -738,6 +845,7 @@ class AdaptiveInterviewService:
         session_id: uuid.UUID,
         force_category_id: uuid.UUID | None = None,
         skip_current: bool = False,
+        difficulty_override: int | None = None,
     ) -> AdaptiveNextOut:
         """获取下一题。
 
@@ -754,9 +862,13 @@ class AdaptiveInterviewService:
         plan = session.adaptive_plan or {}
         signals = [(s["signal"], float(s["weight"])) for s in plan.get("signals", [])]
 
-        pending = next(
-            (t for t in turns if t.answer_text is None and not _is_skipped(t)), None
-        )
+        # 指挥/强制分支优先于 pending 幂等（面试官指令 = 弃当前题换方向）
+        if force_category_id is None:
+            pending = next(
+                (t for t in turns if t.answer_text is None and not _is_skipped(t)), None
+            )
+        else:
+            pending = None
         if pending is not None:
             if skip_current:
                 # 面试官跳过：当前题作废（不计分，标记 skipped），同分支换考点重新出题
@@ -778,6 +890,21 @@ class AdaptiveInterviewService:
         if force_category_id is not None:
             # 面试官手动指定分支（无视上一题决策；仅受回合上限约束）
 
+            # 存在待答题先作废（面试官指挥 = 弃当前题换方向）
+            pending0 = next(
+                (t for t in turns if t.answer_text is None and not _is_skipped(t)), None
+            )
+            if pending0 is not None:
+                pending0.rating = None
+                pending0.rating_evidence = {
+                    **(pending0.rating_evidence or {}),
+                    "skipped": True,
+                    "skipped_at": utc_now_iso(),
+                    "skip_reason": "面试官指挥出题",
+                }
+                pending0.answer_text = None
+                await self._db.flush()
+
             if len(turns) >= _max_turns():
                 if session.status != "completed":
                     session.status = "completed"
@@ -790,7 +917,8 @@ class AdaptiveInterviewService:
             next_turn = await self._create_turn(
                 session=session, turns=turns, team_id=team_id,
                 category_id=force_category_id, ordered=None,
-                difficulty=_DEFAULT_DIFFICULTY, signals=signals,
+                difficulty=difficulty_override or _DEFAULT_DIFFICULTY,
+                signals=signals,
             )
             if session.status == "completed":
                 session.status = "in_progress"  # 手动出题重新打开

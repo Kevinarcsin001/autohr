@@ -984,6 +984,49 @@ async def adaptive_process_recording(
     }
 
 
+@router.post("/sessions/{session_id}/adaptive/direct")
+async def adaptive_direct(
+    session_id: UUID,
+    payload: dict,
+    user: CurrentUser,
+    db: DbSession,
+) -> dict:
+    """面试官自然语言指挥：「问问他 RAG」「来道简单的」「换个微服务题」→ 解析后直接出题。"""
+    team_id = _require_team(user)
+    text = str(payload.get("text") or "").strip()
+    if not text:
+        raise AppValidationError("指令不能为空", field="text")
+    svc = AdaptiveInterviewService(db)
+    parsed = await svc.parse_directive(team_id=team_id, session_id=session_id, text=text)
+    if not parsed.get("category_id") and not parsed.get("difficulty"):
+        raise AppValidationError(
+            "无法识别指令——试试包含分支关键词(如 RAG/Python/微服务)或难度词(简单/难点)",
+            field="text",
+        )
+    result = await svc.next_question(
+        team_id=team_id,
+        session_id=session_id,
+        force_category_id=uuid.UUID(parsed["category_id"]) if parsed.get("category_id") else None,
+        difficulty_override=parsed.get("difficulty"),
+    )
+    await db.commit()
+    return {"parsed": parsed, "result": result.model_dump()}
+
+
+@router.get("/sessions/{session_id}/adaptive/preview")
+async def adaptive_preview(
+    session_id: UUID,
+    user: CurrentUser,
+    db: DbSession,
+    category_id: UUID | None = Query(default=None),
+) -> list[dict]:
+    """候选题预览：当前目标难度+信号相关度排序的备选题（未问过的）。"""
+    team_id = _require_team(user)
+    return await AdaptiveInterviewService(db).preview_candidates(
+        team_id=team_id, session_id=session_id, category_id=category_id
+    )
+
+
 @router.get(
     "/sessions/{session_id}/adaptive/next",
     response_model=AdaptiveNextOut,

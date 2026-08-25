@@ -21,7 +21,9 @@ import { ContinuousRecorder } from "@/components/ContinuousRecorder";
 import {
   useAdaptiveAnswer,
   useAdaptiveAudio,
+  useAdaptiveDirect,
   useAdaptiveNext,
+  useAdaptivePreview,
   useAdaptiveStart,
   useAdaptiveState,
   useRecordingReplay,
@@ -50,7 +52,10 @@ export default function AdaptiveInterviewPage() {
   const answer = useAdaptiveAnswer(sessionId);
   const audio = useAdaptiveAudio(sessionId);
   const next = useAdaptiveNext(sessionId);
+  const direct = useAdaptiveDirect(sessionId);
+  const { data: previewItems } = useAdaptivePreview(sessionId, !!data && !data.done);
   const replay = useRecordingReplay(sessionId);
+  const [directive, setDirective] = useState("");
 
   const [answerText, setAnswerText] = useState("");
   const [autoMode, setAutoMode] = useState(true);
@@ -62,6 +67,22 @@ export default function AdaptiveInterviewPage() {
   } | null>(null);
   const startError = start.error as unknown as { response?: { data?: { error?: { message?: string } } } } | null;
   const startErrorMsg = startError?.response?.data?.error?.message ?? null;
+
+  const onDirect = useCallback(() => {
+    if (!directive.trim()) return;
+    direct.mutate(directive.trim(), {
+      onSuccess: (res) => {
+        setDirective("");
+        setNextResult({
+          reason: `指挥已执行：${res.parsed.category_name ?? "难度调整"}${
+            res.parsed.difficulty ? ` d${res.parsed.difficulty}` : ""
+          }`,
+          done: res.result.done,
+          doneReason: res.result.done_reason,
+        });
+      },
+    });
+  }, [directive, direct]);
 
   // 当前待答题 = 最后一个未回答的回合
   const currentTurn = useMemo(
@@ -291,6 +312,33 @@ export default function AdaptiveInterviewPage() {
             </div>
           ) : currentTurn ? (
             <>
+              {/* 指挥输入：自然语言控制选题 */}
+              <div className="flex gap-2">
+                <input
+                  className="min-w-0 flex-1 rounded-md border px-3 py-2 text-sm"
+                  placeholder="指挥出题：「问问他 RAG 细节」「来道简单的」「换个微服务题」…"
+                  value={directive}
+                  onChange={(e) => setDirective(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && onDirect()}
+                  disabled={direct.isPending}
+                />
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={onDirect}
+                  disabled={direct.isPending || !directive.trim()}
+                >
+                  {direct.isPending ? "解析中…" : "⚡ 执行"}
+                </Button>
+              </div>
+              {direct.error && (
+                <Alert variant="destructive">
+                  <AlertDescription>
+                    {(direct.error as { response?: { data?: { error?: { message?: string } } } })
+                      ?.response?.data?.error?.message ?? "指令无法识别"}
+                  </AlertDescription>
+                </Alert>
+              )}
               <div className="rounded-md border p-4">
                 <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
                   <Badge variant="outline">第 {currentTurn.seq} 题</Badge>
@@ -390,6 +438,26 @@ export default function AdaptiveInterviewPage() {
             replay={replay}
           />
           <p className="text-[11px] text-muted-foreground">点击任意回合查看完整问答与评分证据</p>
+          {/* 候选题预览：下一题可能考什么 */}
+          {previewItems && previewItems.length > 0 && (
+            <details className="rounded-md border p-2">
+              <summary className="cursor-pointer text-xs font-medium">
+                📋 候选题预览（{previewItems.length} 道，按相关度/目标难度排序）
+              </summary>
+              <div className="mt-1.5 space-y-1">
+                {previewItems.map((p) => (
+                  <div key={p.id} className="rounded border px-2 py-1 text-[11px]">
+                    <div className="flex items-center gap-1.5">
+                      <Badge variant="outline" className="px-1">d{p.difficulty ?? "-"}</Badge>
+                      <span className="text-muted-foreground">{p.category_name}</span>
+                      {p.relevance > 0 && <Badge variant="secondary" className="px-1">相关{p.relevance}</Badge>}
+                    </div>
+                    <p className="mt-0.5 line-clamp-2">{p.question}</p>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
           <div className="max-h-[70vh] space-y-1.5 overflow-y-auto rounded-md border p-2">
             {data.turns.length === 0 && (
               <p className="text-xs text-muted-foreground">尚未开始</p>
