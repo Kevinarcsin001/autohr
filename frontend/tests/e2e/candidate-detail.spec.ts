@@ -225,10 +225,16 @@ test.describe("候选人详情页（任务 24）", () => {
     ).toBeVisible();
 
     await page.getByRole("tab", { name: "理由" }).click();
-    await expect(page.getByText("推荐理由")).toBeVisible();
+    // 卡片标题 h3 与空态文案「暂无推荐理由」子串重名，用 heading 角色精确匹配
+    await expect(
+      page.getByRole("heading", { name: "推荐理由" })
+    ).toBeVisible();
 
     await page.getByRole("tab", { name: "面试" }).click();
-    await expect(page.getByText("面试问题")).toBeVisible();
+    // 标题 h3 与空态文案「尚未生成面试问题」子串重名，同用 heading 精确匹配
+    await expect(
+      page.getByRole("heading", { name: "面试问题" })
+    ).toBeVisible();
   });
 
   test("推荐理由 + 查看依据高亮", async ({ page }) => {

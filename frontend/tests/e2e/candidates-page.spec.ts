@@ -152,7 +152,7 @@ test.describe("候选人列表页（任务 23）", () => {
         total: 1,
         page: 1,
         page_size: 50,
-        group_counts: { passed: 1, disqualified: 0, pending: 0 },
+        group_counts: { passed: 1, disqualified: 0, needs_review: 0, pending: 0 },
       },
     });
 
@@ -174,7 +174,7 @@ test.describe("候选人列表页（任务 23）", () => {
     await expect(page.getByRole("button", { name: /^列$/ })).toBeVisible();
   });
 
-  test("三分组数字显示", async ({ page }) => {
+  test("分组数字显示（三态 + 未完成）", async ({ page }) => {
     await mockApi({
       page,
       candidates: {
@@ -185,18 +185,20 @@ test.describe("候选人列表页（任务 23）", () => {
         group_counts: {
           passed: 3,
           disqualified: 2,
-          pending: 1,
+          needs_review: 1,
+          pending: 0,
         },
       },
     });
 
     await page.goto(`/jobs/${FAKE_JOB_ID}/candidates`);
 
-    // 全部 tab 显示总数 6
+    // 全部 tab 显示总数 6；待复核 = needs_review 组（三态筛选）
     await expect(page.getByRole("tab", { name: /全部.*6/ })).toBeVisible();
     await expect(page.getByRole("tab", { name: /通过.*3/ })).toBeVisible();
     await expect(page.getByRole("tab", { name: /淘汰.*2/ })).toBeVisible();
     await expect(page.getByRole("tab", { name: /待复核.*1/ })).toBeVisible();
+    await expect(page.getByRole("tab", { name: /未完成.*0/ })).toBeVisible();
   });
 
   test("筛选条件写入 URL query（持久化）", async ({ page }) => {
