@@ -23,7 +23,9 @@ jobs:
     timeout-minutes: 15
 
     env:
-      DATABASE_URL: postgresql+asyncpg://autohr:autohr_dev@localhost:5432/autohr
+      # 库名必须为 autohr_test（临时库）：conftest 开发库防护门会拒绝
+      # 库名为 autohr（开发库）的集成测试（TRUNCATE 防误清真实数据）
+      DATABASE_URL: postgresql+asyncpg://autohr:autohr_dev@localhost:5432/autohr_test
       REDIS_URL: redis://localhost:6379/0
       MINIO_ENDPOINT: localhost:9000
       MINIO_ACCESS_KEY: autohr
@@ -72,7 +74,7 @@ jobs:
             -p 5432:5432 \
             -e POSTGRES_USER=autohr \
             -e POSTGRES_PASSWORD=autohr_dev \
-            -e POSTGRES_DB=autohr \
+            -e POSTGRES_DB=autohr_test \
             postgres:15-alpine
 
           docker run -d --name ci-redis --network ci-net \
