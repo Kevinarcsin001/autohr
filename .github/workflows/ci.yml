@@ -307,6 +307,11 @@ jobs:
         id: tag
         run: echo "value=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
+      # GHCR 仓库名必须全小写（github.repository 保留原始大小写）
+      - name: Lowercase repo name
+        id: repo
+        run: echo "value=${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
       - name: Build & push backend
         uses: docker/build-push-action@v6
         with:
@@ -315,8 +320,8 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}/backend:${{ steps.tag.outputs.value }}
-            ghcr.io/${{ github.repository }}/backend:latest
+            ghcr.io/${{ steps.repo.outputs.value }}/backend:${{ steps.tag.outputs.value }}
+            ghcr.io/${{ steps.repo.outputs.value }}/backend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -328,8 +333,8 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}/frontend:${{ steps.tag.outputs.value }}
-            ghcr.io/${{ github.repository }}/frontend:latest
+            ghcr.io/${{ steps.repo.outputs.value }}/frontend:${{ steps.tag.outputs.value }}
+            ghcr.io/${{ steps.repo.outputs.value }}/frontend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -341,8 +346,8 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}/mineru:${{ steps.tag.outputs.value }}
-            ghcr.io/${{ github.repository }}/mineru:latest
+            ghcr.io/${{ steps.repo.outputs.value }}/mineru:${{ steps.tag.outputs.value }}
+            ghcr.io/${{ steps.repo.outputs.value }}/mineru:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -353,7 +358,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}/asr:${{ steps.tag.outputs.value }}
-            ghcr.io/${{ github.repository }}/asr:latest
+            ghcr.io/${{ steps.repo.outputs.value }}/asr:${{ steps.tag.outputs.value }}
+            ghcr.io/${{ steps.repo.outputs.value }}/asr:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
