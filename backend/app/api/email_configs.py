@@ -41,7 +41,11 @@ def _to_out(cfg) -> EmailConfigOut:
 
 def _to_status(cfg) -> EmailConfigStatus:
     now = datetime.now(timezone.utc)
-    is_paused = bool(cfg.paused_until and cfg.paused_until > now)
+    # SQLite 返回 naive（按 UTC 补齐），asyncpg 返回 aware
+    paused = cfg.paused_until
+    if paused is not None and paused.tzinfo is None:
+        paused = paused.replace(tzinfo=timezone.utc)
+    is_paused = bool(paused and paused > now)
     next_in: int | None = None
     if cfg.enabled and not is_paused:
         # 简单估算：用 poll_interval_min 作为下次窗口

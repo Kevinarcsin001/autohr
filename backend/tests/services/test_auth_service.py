@@ -20,6 +20,7 @@ import pytest
 from app.core.db import AsyncSessionLocal
 from app.core.middleware.error_handler import ConflictError, NotFoundError, UnauthorizedError
 from app.services import auth_service
+from tests.db_utils import purge_database
 
 # ============================================================================
 # 工具：清表
@@ -35,17 +36,7 @@ async def _purge() -> None:
     async with AsyncSessionLocal() as session:
         from sqlalchemy import text
 
-        await session.execute(
-            text(
-                "TRUNCATE users, teams, team_invites, jobs, candidates, "
-                "candidate_resumes, candidate_sources, parsed_structures, "
-                "screening_results, scores, score_reasons, "
-                "interview_questions, interview_feedbacks, dedup_matches, "
-                "manual_overrides, llm_calls, async_jobs, audit_logs, "
-                "email_configs, job_versions, job_hard_requirements "
-                "RESTART IDENTITY CASCADE"
-            )
-        )
+        await purge_database(session)
         await session.commit()
 
 
@@ -204,16 +195,79 @@ async def test_refresh_token_returns_new_access(rsa_keys) -> None:  # noqa: F811
                 password="Pass1234",
             )
         async with AsyncSessionLocal() as session:
-            new_access = await auth_service.refresh_access_token(
+            user2, new_access, new_refresh = await auth_service.refresh_access_token(
                 session,
                 refresh_token=refresh,
             )
-            assert new_access
-            # 解析 access，sub 应该是 user.id
+            assert new_access and new_refresh
+            assert user2.id == user.id
+            # 新 refresh 与旧的是不同凭据（轮换），且都能解码为 refresh 类型
             from app.core.security import decode_token
 
-            payload = decode_token(new_access, expected_type="access")
-            assert payload["sub"] == str(user.id)
+            assert decode_token(new_refresh, expected_type="refresh")["sub"] == str(user.id)
+            access_payload = decode_token(new_access, expected_type="access")
+            assert access_payload["sub"] == str(user.id)
+    finally:
+        await _purge()
+
+
+@pytest.mark.asyncio
+async def test_refresh_rotation_revokes_old_token(rsa_keys, monkeypatch) -> None:
+    """轮换语义端到端：refresh 后旧 jti 进 denylist，重放旧 token 被拒。
+
+    用内存 dict 替代 Redis（不依赖外部服务）；denylist 模块的接口契约不变。
+    """
+    revoked: dict[str, int] = {}
+
+    import app.core.token_denylist as denylist
+
+    async def fake_revoke(jti: str, remaining_seconds: int) -> None:
+        if remaining_seconds > 0:
+            revoked[jti] = remaining_seconds
+
+    async def fake_is_revoked(jti: str) -> bool:
+        return jti in revoked
+
+    monkeypatch.setattr(denylist, "revoke", fake_revoke)
+    monkeypatch.setattr(denylist, "is_revoked", fake_is_revoked)
+
+    await _purge()
+    try:
+        async with AsyncSessionLocal() as session:
+            await auth_service.register(
+                session,
+                email="rot@example.com",
+                password="Pass1234",
+                name="R",
+            )
+            await session.commit()
+            _, _, refresh_v1 = await auth_service.authenticate(
+                session,
+                email="rot@example.com",
+                password="Pass1234",
+            )
+        # 第一次刷新：成功并轮换
+        async with AsyncSessionLocal() as session:
+            _, _, refresh_v2 = await auth_service.refresh_access_token(
+                session, refresh_token=refresh_v1
+            )
+            assert refresh_v2 != refresh_v1
+
+        # 重放 v1：被吊销拒绝（reuse detection）
+        async with AsyncSessionLocal() as session:
+            try:
+                await auth_service.refresh_access_token(session, refresh_token=refresh_v1)
+                raised = False
+            except Exception:
+                raised = True
+            assert raised, "旧 refresh token 应已吊销"
+
+        # v2 仍然可用（轮换链正常延续）
+        async with AsyncSessionLocal() as session:
+            _, access3, _ = await auth_service.refresh_access_token(
+                session, refresh_token=refresh_v2
+            )
+            assert access3
     finally:
         await _purge()
 

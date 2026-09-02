@@ -28,8 +28,9 @@ import hashlib
 import uuid
 from dataclasses import dataclass
 
+import sqlalchemy as sa
 from pydantic import ValidationError
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.llm import (
@@ -42,6 +43,8 @@ from app.adapters.llm import (
 from app.core.logging import get_logger
 from app.core.middleware.error_handler import NotFoundError
 from app.core.middleware.error_handler import ValidationError as AppValidationError
+from app.core.pii_mask import mask_pii_text
+from app.core.prompt_guard import wrap_untrusted
 from app.models.candidate import (
     Candidate,
     CandidateResume,
@@ -254,6 +257,11 @@ class InterviewService:
 
         structure, parsed_text = await self._fetch_structure_and_text(candidate_id)
         snippet = self._truncate(parsed_text or "", _MAX_RESUME_CHARS)
+        # PII 不出境第三方 LLM（姓名 → 通用称谓，联系方式掩码）
+        snippet = wrap_untrusted(
+            mask_pii_text(snippet, name=structure.name if structure else None),
+            label="简历内容",
+        )
         weakness_hint = self._build_weakness_hint(structure)
 
         temperature = _REGENERATE_TEMPERATURE if is_regeneration else _FIRST_TEMPERATURE
@@ -342,7 +350,7 @@ class InterviewService:
                 InterviewQuestion.candidate_id == candidate_id,
                 InterviewQuestion.job_id == job_id,
             )
-            .order_by(InterviewQuestion.created_at.desc())
+            .order_by(InterviewQuestion.created_at.desc(), InterviewQuestion.id.desc())
             .limit(1)
         )
         if latest_batch is None:
@@ -384,15 +392,20 @@ class InterviewService:
         candidate_id: uuid.UUID,
         job_id: uuid.UUID,
     ) -> tuple[list[uuid.UUID], uuid.UUID | None, int]:
-        """列出所有 batch（按 created_at 倒序）+ 当前 batch + 总题数。"""
+        """列出所有 batch（按各 batch 最新题目时间倒序）+ 当前 batch + 总题数。"""
+        # 按 batch 分组取 max(created_at) 排序：distinct(batch_id, created_at)
+        # 在微秒精度下同 batch 各行时间不同 → 去重失效，必须显式分组
         result = await self._db.execute(
-            select(InterviewQuestion.batch_id, InterviewQuestion.created_at)
+            select(
+                InterviewQuestion.batch_id,
+                func.max(InterviewQuestion.created_at).label("last_at"),
+            )
             .where(
                 InterviewQuestion.candidate_id == candidate_id,
                 InterviewQuestion.job_id == job_id,
             )
-            .order_by(InterviewQuestion.created_at.desc())
-            .distinct()
+            .group_by(InterviewQuestion.batch_id)
+            .order_by(sa.desc("last_at"))
         )
         rows = result.all()
         if not rows:
@@ -465,7 +478,7 @@ class InterviewService:
         result = await self._db.execute(
             select(InterviewFeedback)
             .where(InterviewFeedback.question_id == question_id)
-            .order_by(InterviewFeedback.created_at.desc())
+            .order_by(InterviewFeedback.created_at.desc(), InterviewFeedback.id.desc())
         )
         return list(result.scalars().all())
 
@@ -667,7 +680,7 @@ class InterviewService:
                 InterviewQuestion.candidate_id == candidate_id,
                 InterviewQuestion.job_id == job_id,
             )
-            .order_by(InterviewQuestion.created_at.desc())
+            .order_by(InterviewQuestion.created_at.desc(), InterviewQuestion.id.desc())
         )
         for q in batch_result.scalars().all():
             if q.session_id is None:

@@ -21,6 +21,8 @@ export interface ScreeningResultOut {
   job_id: string;
   candidate_id: string;
   disqualified: boolean;
+  /** 三态筛选：字段缺失/无法判定 → 待复核（与 disqualified 互斥，HR 改判后清 false） */
+  needs_review: boolean;
   reasons: string[] | null;
   manually_overridden: boolean;
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import {
   ArrowRight,
@@ -25,6 +26,7 @@ import {
 } from "@/components/ui/card";
 import { useAuthStore } from "@/stores/authStore";
 import { useDashboardStats } from "@/hooks/useDashboardStats";
+import { getFunnelApi } from "@/lib/api/outcome";
 
 const WORKFLOW_STEPS = [
   {
@@ -65,6 +67,10 @@ export default function DashboardPage() {
   const user = useAuthStore((s) => s.user);
   const status = useAuthStore((s) => s.status);
   const { data: stats } = useDashboardStats();
+  const { data: funnel } = useQuery({
+    queryKey: ["funnel"],
+    queryFn: () => getFunnelApi(),
+  });
 
   if (status === "loading") {
     return <div className="p-8">加载中...</div>;
@@ -130,6 +136,48 @@ export default function DashboardPage() {
           </Link>
         ))}
       </div>
+
+      {/* 招聘漏斗（效果回流） */}
+      {funnel && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">招聘漏斗</CardTitle>
+            <CardDescription>
+              筛选池 → 通过 → 评分 → 面试 → 录用（团队汇总）
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              {[
+                { label: "筛选池", value: funnel.total_pool },
+                { label: "通过", value: funnel.screened_pass },
+                { label: "已评分", value: funnel.scored },
+                { label: "已面试", value: funnel.interviewed },
+                { label: "已录用", value: funnel.hired },
+              ].map(({ label, value }, i) => (
+                <span key={label} className="flex items-center gap-2">
+                  {i > 0 && <span className="text-muted-foreground">→</span>}
+                  <span className="rounded-lg border px-2.5 py-1">
+                    <span className="font-semibold tabular-nums">{value}</span>{" "}
+                    <span className="text-xs text-muted-foreground">{label}</span>
+                  </span>
+                </span>
+              ))}
+            </div>
+            {funnel.channels.length > 0 && (
+              <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+                {funnel.channels.map((ch) => (
+                  <span key={ch.source_type}>
+                    {ch.source_type}：{ch.total} 人 · 通过率{" "}
+                    {ch.pass_rate === null ? "-" : `${(ch.pass_rate * 100).toFixed(0)}%`}
+                    · 录用 {ch.hired}
+                  </span>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* 工作流指引 */}
       <div>

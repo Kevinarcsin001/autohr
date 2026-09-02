@@ -37,19 +37,11 @@ from app.services.screening_orchestrator import progress_store
 
 
 async def _purge_db() -> None:
+    # 双方言清库 + 幂等建表（均已内聚到 tests.db_utils）
+    from tests.db_utils import purge_database
+
     async with AsyncSessionLocal() as session:
-        await session.execute(
-            text(
-                "TRUNCATE users, teams, team_invites, jobs, candidates, "
-                "candidate_resumes, candidate_sources, parsed_structures, "
-                "screening_results, scores, score_reasons, "
-                "interview_questions, interview_feedbacks, dedup_matches, "
-                "manual_overrides, llm_calls, async_jobs, audit_logs, "
-                "email_configs, job_versions, job_hard_requirements "
-                "RESTART IDENTITY CASCADE"
-            )
-        )
-        await session.commit()
+        await purge_database(session)
 
 
 @pytest.fixture
@@ -450,17 +442,11 @@ class TestPipelineSSE:
     async def test_sse_unknown_run_returns_empty(
         self, client: AsyncClient, monkeypatch
     ) -> None:
-        """未知 run_id → SSE 立即结束（progress_store.has_run=False 早退）。"""
+        """未知 run_id → 404（run 归属校验：未注册 run 不暴露存在性）。"""
         admin = await _register_admin(client)
 
-        async with client.stream(
-            "GET",
+        response = await client.get(
             f"/api/screening/pipeline/{uuid.uuid4()}/events",
             headers=_auth(admin["token"]),
-        ) as response:
-            assert response.status_code == 200
-            lines: list[str] = []
-            async for line in response.aiter_lines():
-                lines.append(line)
-            # 未知 run_id 立即关闭流，无任何事件 / ping
-            assert lines == []
+        )
+        assert response.status_code == 404

@@ -121,6 +121,11 @@ strict = true
 plugins = ["pydantic.mypy"]
 exclude = ["alembic/versions/"]
 
+# 无类型 stub 的第三方库：openpyxl（Excel 解析，platform_import 使用）
+[[tool.mypy.overrides]]
+module = "openpyxl.*"
+ignore_missing_imports = true
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

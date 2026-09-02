@@ -76,6 +76,31 @@ class TestCircuitBreaker:
         b._states["zhipu"].cooling_until = _time.monotonic() - 1
         assert b.is_cooling("zhipu") is False
 
+    def test_failures_outside_window_do_not_accumulate(self) -> None:
+        """窗口外的间歇性失败不累计连续次数（熔断器窗口语义）。"""
+        import time as _time
+
+        b = _CircuitBreaker(
+            failure_threshold=3, cooldown_seconds=300, failure_window_seconds=300
+        )
+        b.record_failure("zhipu")
+        # 把上次失败时间拨回 10 分钟前（窗口外）
+        b._states["zhipu"].last_failure_at = _time.monotonic() - 600
+        b.record_failure("zhipu")
+        # 窗口外失败被重置，本次为第 1 次 → 未熔断
+        assert b._states["zhipu"].consecutive_failures == 1
+        assert b.is_cooling("zhipu") is False
+
+    def test_failures_inside_window_accumulate(self) -> None:
+        """窗口内的密集失败正常累计并熔断。"""
+        b = _CircuitBreaker(
+            failure_threshold=3, cooldown_seconds=300, failure_window_seconds=300
+        )
+        for _ in range(3):
+            b.record_failure("zhipu")
+        assert b._states["zhipu"].consecutive_failures == 3
+        assert b.is_cooling("zhipu") is True
+
 
 # ============================================================================
 # 路由链解析

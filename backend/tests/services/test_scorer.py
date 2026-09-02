@@ -13,7 +13,7 @@ from decimal import Decimal
 from typing import Any
 
 import pytest
-from sqlalchemy import select, text
+from sqlalchemy import select
 
 from app.adapters.llm import (
     LLMError,
@@ -39,8 +39,10 @@ from app.services.scorer import (
     ScorerService,
     ScoringInput,
     build_scoring_snippet,
+    compute_total,
     score_sort_key,
 )
+from tests.db_utils import purge_database
 
 # ============================================================================
 # 常量
@@ -220,7 +222,9 @@ class TestScoreHappyPath:
             ))
             await session.commit()
 
-        assert result.dimensions.total == 85
+        assert result.dimensions.total == compute_total(
+            skill=90, experience=80, education=75, stability=80, potential=85
+        )
         assert result.dimensions.skill == 90
         assert result.model_used == "mock-model"
         # mock 只调一次
@@ -234,7 +238,11 @@ class TestScoreHappyPath:
                 )
             )
         assert score is not None
-        assert score.total == 85
+        # total 由代码按固定权重重算（P0-2），不采信 LLM 输出的 85
+        assert score.total == compute_total(
+            skill=90, experience=80, education=75, stability=80, potential=85
+        )
+        assert score.total != 85  # LLM 原始 total 已被覆盖
         assert score.skill == 90
         assert score.model_used == "mock-model"
 
@@ -295,7 +303,9 @@ class TestScoreHappyPath:
 
         prompt_text = captured[0]
         assert "JD 关键词：Python 微服务架构" in prompt_text
-        assert "张三" in prompt_text  # 结构化字段 name
+        # PII 不出境（P0-1）：真实姓名不得出现在 prompt，替换为通用称谓
+        assert "张三" not in prompt_text
+        assert "该候选人" in prompt_text
         assert "Python, FastAPI" in prompt_text  # skills
         assert "master" in prompt_text  # education
 
@@ -472,17 +482,7 @@ class TestListByJob:
 
 async def _purge_db() -> None:
     async with AsyncSessionLocal() as session:
-        await session.execute(
-            text(
-                "TRUNCATE users, teams, team_invites, jobs, candidates, "
-                "candidate_resumes, candidate_sources, parsed_structures, "
-                "screening_results, scores, score_reasons, "
-                "interview_questions, interview_feedbacks, dedup_matches, "
-                "manual_overrides, llm_calls, async_jobs, audit_logs, "
-                "email_configs, job_versions, job_hard_requirements "
-                "RESTART IDENTITY CASCADE"
-            )
-        )
+        await purge_database(session)
         await session.commit()
 
 

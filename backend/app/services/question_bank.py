@@ -305,12 +305,24 @@ class QuestionBankService:
         team_id: uuid.UUID,
         category_id: uuid.UUID | None = None,
         active_only: bool = True,
+        approved_only: bool = False,
+        review_status: str | None = None,
     ) -> list[QuestionBankItem]:
+        """列出题目。
+
+        ``approved_only``：出题/组卷路径必须为 True —— pending（AI 沉淀待审核）
+        与 rejected 的题不允许进入正式卷子；管理后台列表不传以查看全量。
+        ``review_status``：精确过滤某一状态（审核台用）。
+        """
         stmt = select(QuestionBankItem).where(QuestionBankItem.team_id == team_id)
         if category_id is not None:
             stmt = stmt.where(QuestionBankItem.category_id == category_id)
         if active_only:
             stmt = stmt.where(QuestionBankItem.is_active.is_(True))
+        if approved_only:
+            stmt = stmt.where(QuestionBankItem.review_status == "approved")
+        if review_status is not None:
+            stmt = stmt.where(QuestionBankItem.review_status == review_status)
         stmt = stmt.order_by(QuestionBankItem.category_id, QuestionBankItem.points)
         return list((await self._db.execute(stmt)).scalars().all())
 
@@ -388,7 +400,7 @@ class QuestionBankService:
             cat = cat_by_id[cat_id]
             items = [
                 it
-                for it in await self.list_items(team_id=team_id, category_id=cat_id, active_only=True)
+                for it in await self.list_items(team_id=team_id, category_id=cat_id, active_only=True, approved_only=True)
                 if it.id not in exclude
             ]
             picked, actual = subset_sum_dp(items, target, tolerance=tolerance)
@@ -523,7 +535,7 @@ class QuestionBankService:
             items_tags: dict[uuid.UUID, list[list[str]]] = {}
             for c in categories:
                 cat_items = await self.list_items(
-                    team_id=team_id, category_id=c.id, active_only=True
+                    team_id=team_id, category_id=c.id, active_only=True, approved_only=True
                 )
                 items_tags[c.id] = [it.tags or [] for it in cat_items]
             quotas, scores = compute_dynamic_quotas(
@@ -558,7 +570,7 @@ class QuestionBankService:
             cat_items = [
                 it
                 for it in await self.list_items(
-                    team_id=team_id, category_id=cat_id, active_only=True
+                    team_id=team_id, category_id=cat_id, active_only=True, approved_only=True
                 )
                 if it.id not in exclude
             ]

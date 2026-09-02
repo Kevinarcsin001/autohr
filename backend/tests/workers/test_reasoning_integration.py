@@ -28,7 +28,9 @@ from app.models.score import Score, ScoreReason
 from app.models.screening import ScreeningResult
 from app.models.team import Team
 from app.models.user import User
+from app.services.scorer import compute_total
 from app.workers.scorer_task import run_score
+from tests.db_utils import purge_database
 
 # ============================================================================
 # DB 清理
@@ -37,17 +39,7 @@ from app.workers.scorer_task import run_score
 
 async def _purge_db() -> None:
     async with AsyncSessionLocal() as session:
-        await session.execute(
-            text(
-                "TRUNCATE users, teams, team_invites, jobs, candidates, "
-                "candidate_resumes, candidate_sources, parsed_structures, "
-                "screening_results, scores, score_reasons, "
-                "interview_questions, interview_feedbacks, dedup_matches, "
-                "manual_overrides, llm_calls, async_jobs, audit_logs, "
-                "email_configs, job_versions, job_hard_requirements "
-                "RESTART IDENTITY CASCADE"
-            )
-        )
+        await purge_database(session)
         await session.commit()
 
 
@@ -236,7 +228,10 @@ class TestRunScoreAutoReason:
             await session.commit()
 
         assert summary["reason_status"] == "recommend_generated"
-        assert summary["total"] == 85
+        # total 代码重算（P0-2）：LLM 给 85，落库为固定加权值
+        assert summary["total"] == compute_total(
+            skill=90, experience=80, education=75, stability=80, potential=85
+        )
 
         async with AsyncSessionLocal() as session:
             score = await session.scalar(
@@ -336,7 +331,10 @@ class TestRunScoreAutoReason:
             )
             await session.commit()
 
-        assert summary["total"] == 85  # score 已写入
+        # score 已写入（total 为代码重算值，P0-2）
+        assert summary["total"] == compute_total(
+            skill=90, experience=80, education=75, stability=80, potential=85
+        )
         assert "reasoning_failed" in summary["reason_status"]
 
         async with AsyncSessionLocal() as session:

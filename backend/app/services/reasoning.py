@@ -40,6 +40,8 @@ from app.adapters.llm import (
     Message,
 )
 from app.core.logging import get_logger
+from app.core.pii_mask import mask_pii_text
+from app.core.prompt_guard import wrap_untrusted
 from app.models.score import Score, ScoreReason
 from app.schemas.reason import RecommendReasons
 
@@ -129,7 +131,7 @@ class FactValidator:
         bullet: str,
         raw_text: str,
         *,
-        evidence: list[str] | None = None,
+        evidence: list[str] | str | None = None,
         min_hits: int = 1,
     ) -> bool:
         """检查 bullet 是否有原文支持。
@@ -378,11 +380,13 @@ class ReasoningService:
         snippet = self._truncate(resume_text, _MAX_RESUME_CHARS)
         self._log_safe_summary(score, snippet)
 
+        # prompt 用脱敏版（PII 不出境第三方 LLM）；事实校验仍用原文片段，
+        # 掩码不影响 evidence 关键词（技能词）匹配
         messages = self._build_messages(
             job_title=job_title,
             jd_text=self._truncate(jd_text, 800),
             score=score,
-            snippet=snippet,
+            snippet=wrap_untrusted(mask_pii_text(snippet), label="简历内容"),
         )
 
         router = self._get_router()

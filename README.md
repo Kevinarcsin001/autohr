@@ -107,12 +107,26 @@ make gen-keys
 # 3. 拉取镜像并启动
 docker compose -f docker-compose.prod.yml up -d
 
-# 4. 执行数据库迁移
+# 4. 数据库迁移：backend 容器启动命令自带 alembic upgrade head，无需手动执行。
+#    手动补偿场景（迁移失败排查等）：
 docker compose -f docker-compose.prod.yml exec backend alembic upgrade head
 
 # 5. 健康检查
 curl http://localhost/healthz        # nginx：{"status":"ok"}
-curl http://localhost/api/health     # backend：/health
+curl http://localhost/api/health     # backend 存活探针（liveness）
+curl http://localhost/api/health/ready   # 就绪探针：探测 DB + Redis，异常返回 503
+```
+
+### 数据备份
+
+候选人 PII 与面试录音都在宿主机数据卷上，**部署完成当天必须配好备份**：
+
+```bash
+# 手动备份（输出 backups/autohr-YYYYmmdd-HHMMSS.sql.gz）
+make backup-db
+
+# 自动化：宿主机 crontab 加一条（每天 03:17 备份，保留 14 天由脚本内轮转处理）
+#   17 3 * * * cd /path/to/autohr && make backup-db >> backups/backup.log 2>&1
 ```
 
 ### CI/CD
@@ -123,7 +137,7 @@ GitHub Actions 三条流水线（见 `.github/workflows/ci.yml`）：
 2. **frontend-test** — ESLint + tsc + Vitest + Next build
 3. **e2e** — 完整 docker-compose 起栈 + Playwright 4 场景
 
-`main` 分支合并后自动构建并推送 backend/frontend 镜像到 GHCR，多平台（amd64 + arm64）。
+`main` 分支合并后自动构建并推送 backend / frontend / mineru / asr 四个镜像到 GHCR，多平台（amd64 + arm64）。
 
 ### 部署清单（上线前确认）
 
@@ -131,8 +145,10 @@ GitHub Actions 三条流水线（见 `.github/workflows/ci.yml`）：
 - [ ] `backend/keys/{private,public}.pem` 已生成且权限 600
 - [ ] `POSTGRES_PASSWORD` 与 `MINIO_SECRET_KEY` 至少 32 字节
 - [ ] 服务器开放端口 80（如需 HTTPS，前置一层 Caddy / Traefik 自动签证书）
-- [ ] 首次部署执行 `alembic upgrade head`
-- [ ] `/healthz` 与 `/api/health` 均返回 200
+- [ ] 迁移随 backend 启动自动执行（`docker logs` 确认无 `alembic` 报错）
+- [ ] `make backup-db` 已验证产出备份文件，crontab 定时任务已配置
+- [ ] `/healthz` 与 `/api/health` 均返回 200，`/api/health/ready` 返回 `{"status":"ready"}`
+- [ ] 监控告警订阅 `/api/health/ready`（非 200 即告警）；容器 restart 策略保持挂在 liveness 上
 - [ ] CORS_ALLOWED_ORIGINS 配置为正式域名
 
 ### 升级流程
@@ -141,11 +157,8 @@ GitHub Actions 三条流水线（见 `.github/workflows/ci.yml`）：
 # 拉取最新镜像
 docker compose -f docker-compose.prod.yml pull
 
-# 滚动重启
+# 滚动重启（backend 启动时自动执行新迁移）
 docker compose -f docker-compose.prod.yml up -d
-
-# 执行新迁移（如有）
-docker compose -f docker-compose.prod.yml exec backend alembic upgrade head
 
 # 回滚（如需）
 docker compose -f docker-compose.prod.yml rollback   # 等价 docker compose up -d --no-deps backend@sha256:<prev>

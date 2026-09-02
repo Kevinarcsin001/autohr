@@ -50,6 +50,8 @@ class CandidateDetailResponse(BaseModel):
     score: ScoreOut | None = None
     parsed_structure: CandidateStructure | None = None
     resume: CandidateResumeOut | None = None
+    # 时间线真实性核验（纯规则；只提示不定罪，HR 参考）
+    timeline_warnings: list[str] = Field(default_factory=list)
 
 
 class CandidateSummary(BaseModel):

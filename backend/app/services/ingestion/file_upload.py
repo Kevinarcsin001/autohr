@@ -312,7 +312,10 @@ class FileUploadService:
         dedup_key = f"upload:{item.file_key}"
         try:
             existing = await self.db.scalar(
-                select(Candidate).where(Candidate.dedup_key == dedup_key)
+                select(Candidate).where(
+                    Candidate.team_id == team_id,
+                    Candidate.dedup_key == dedup_key,
+                )
             )
             if existing is not None:
                 # 重复 confirm 同一 file_key：直接复用现有记录，不重复入队
@@ -379,7 +382,23 @@ class FileUploadService:
 
             # 关联职位：创建 screening_result（待筛选状态）
             if job_id:
+                from app.models.job import Job
                 from app.models.screening import ScreeningResult
+
+                # job 归属校验：客户端可提交任意 job_id，跨 team 的 job
+                # 不允许建立筛选关联（防止污染他队职位漏斗/统计）
+                job = await self.db.get(Job, job_id)
+                if job is None or job.team_id != team_id:
+                    logger.warning(
+                        "confirm_job_cross_team",
+                        actor_team=str(team_id),
+                        job_id=str(job_id),
+                    )
+                    return UploadConfirmResponseItem(
+                        upload_id=item.upload_id,
+                        status="rejected",
+                        reject_reason="job_not_found",
+                    )
                 existing_sr = await self.db.scalar(
                     select(ScreeningResult).where(
                         ScreeningResult.job_id == job_id,

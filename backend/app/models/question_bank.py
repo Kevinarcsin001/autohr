@@ -75,6 +75,14 @@ class QuestionBankItem(UUIDPKMixin, TimestampMixin, Base):
         nullable=True,
     )
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # 题目来源：seed（种子脚本）/ ai_followup（面试中 LLM 追问题沉淀）
+    source: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="seed", server_default="seed"
+    )
+    # 审核状态：approved 可进动态组卷；pending 待管理员审核；rejected 已否决
+    review_status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="approved", server_default="approved"
+    )
 
 
 __all__ = ["QuestionCategory", "QuestionBankItem"]

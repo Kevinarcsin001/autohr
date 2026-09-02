@@ -17,12 +17,13 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Query, status
 
-from app.core.deps import CurrentUser, DbSession
+from app.core.deps import AdminUser, CurrentUser, DbSession
 from app.core.middleware.error_handler import ForbiddenError, NotFoundError
 from app.models.candidate import Candidate
 from app.models.interview import InterviewSession
+from app.models.user import User
 from app.schemas.question_bank import (
     AssemblePlan,
     AssembleRequest,
@@ -33,6 +34,7 @@ from app.schemas.question_bank import (
     CategoryUpdate,
     ItemCreate,
     ItemOut,
+    ItemReviewRequest,
     ItemUpdate,
 )
 from app.services.question_bank import QuestionBankService
@@ -40,7 +42,7 @@ from app.services.question_bank import QuestionBankService
 router = APIRouter(prefix="/question-bank", tags=["question-bank"])
 
 
-def _require_team(user) -> UUID:
+def _require_team(user: User) -> UUID:
     if user.team_id is None:
         raise ForbiddenError("当前用户未加入任何团队")
     return UUID(str(user.team_id))
@@ -95,14 +97,47 @@ async def delete_category(user: CurrentUser, db: DbSession, category_id: UUID) -
 
 @router.get("/categories/{category_id}/items", response_model=list[ItemOut])
 async def list_items_by_category(
-    user: CurrentUser, db: DbSession, category_id: UUID
+    user: CurrentUser,
+    db: DbSession,
+    category_id: UUID,
+    review_status: str | None = Query(default=None),
+    source: str | None = Query(default=None),
 ) -> list[ItemOut]:
+    """按分类列题；审核台传 ``review_status=pending`` 看待审的 AI 沉淀题。"""
     team_id = _require_team(user)
     # 校验 category 属本 team（不存在则 404）
     svc = QuestionBankService(db)
     await svc.get_category(team_id=team_id, category_id=category_id)
-    items = await svc.list_items(team_id=team_id, category_id=category_id, active_only=False)
+    items = await svc.list_items(
+        team_id=team_id,
+        category_id=category_id,
+        active_only=False,
+        review_status=review_status,
+    )
+    if source:
+        items = [it for it in items if it.source == source]
     return [ItemOut.model_validate(it) for it in items]
+
+
+@router.post("/items/{item_id}/review", response_model=ItemOut)
+async def review_item(
+    user: AdminUser,
+    db: DbSession,
+    item_id: UUID,
+    payload: ItemReviewRequest,
+) -> ItemOut:
+    """审核 AI 沉淀的题：approved 后进入组卷池，rejected 永久排除。
+
+    第一性：决定"什么题能进正式卷子"是团队管理职责 —— 仅 admin 可审核
+    （普通成员仍可上传题，见 create_item）。
+    """
+    team_id = _require_team(user)
+    svc = QuestionBankService(db)
+    item = await svc.get_item(team_id=team_id, item_id=item_id)
+    item.review_status = payload.status
+    await db.commit()
+    await db.refresh(item)
+    return ItemOut.model_validate(item)
 
 
 @router.post("/items", response_model=ItemOut, status_code=status.HTTP_201_CREATED)

@@ -37,7 +37,9 @@ services:
     image: redis:7-alpine
     container_name: autohr-prod-redis
     restart: always
-    command: ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    # noeviction 而非 allkeys-lru：Redis 兼任 Celery broker，
+    # 内存压力下逐出 = 队列任务静默丢失；写满报错可接受、丢任务不可接受
+    command: ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "noeviction"]
     volumes:
       - redis_data:/data
     healthcheck:
@@ -100,7 +102,7 @@ services:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379/0
       MINIO_ENDPOINT: minio:9000
-      MINIO_USE_SSL: "false"
+      MINIO_SECURE: "false"
       JWT_PRIVATE_KEY_PATH: /app/keys/private.pem
       JWT_PUBLIC_KEY_PATH: /app/keys/public.pem
       ENVIRONMENT: production
@@ -113,6 +115,11 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+    # 迁移前置：schema 落后会导致 API 半绿半红且健康检查发现不了；
+    # 仅 backend 执行（worker/beat 共用镜像但不需要重复跑）
+    command: >
+      sh -c "alembic upgrade head
+      && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4"
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:8000/health"]
       interval: 15s
@@ -135,7 +142,7 @@ services:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379/0
       MINIO_ENDPOINT: minio:9000
-      MINIO_USE_SSL: "false"
+      MINIO_SECURE: "false"
       ENVIRONMENT: production
     depends_on:
       postgres:
@@ -183,7 +190,6 @@ services:
     container_name: autohr-prod-frontend
     restart: always
     environment:
-      NEXT_PUBLIC_API_BASE_URL: ""
       NODE_ENV: production
       PORT: "3000"
     depends_on:
@@ -195,6 +201,54 @@ services:
       resources:
         limits:
           memory: 512M
+
+  # MinerU PDF 解析微服务（仅内网；backend 经 http://mineru:8001 访问）
+  mineru:
+    image: ghcr.io/${GITHUB_REPO:-autohr/autohr}/mineru:latest
+    container_name: autohr-prod-mineru
+    restart: always
+    environment:
+      MINERU_MODEL_DIR: /app/models
+    volumes:
+      - mineru_models:/app/models
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    networks:
+      - internal
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+
+  # ASR 转写微服务（faster-whisper CPU int8；backend 经 http://asr:8010 访问）
+  asr:
+    image: ghcr.io/${GITHUB_REPO:-autohr/autohr}/asr:latest
+    container_name: autohr-prod-asr
+    restart: always
+    environment:
+      ASR_MODEL: ${ASR_MODEL:-small}
+      ASR_DEVICE: cpu
+      ASR_COMPUTE_TYPE: int8
+      ASR_VAD_ENABLED: "true"
+    volumes:
+      - asr_models:/app/models
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8010/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      # 与镜像内置 HEALTHCHECK 一致：faster-whisper 冷启动加载模型需要数分钟
+      start_period: 180s
+    networks:
+      - internal
+    deploy:
+      resources:
+        limits:
+          memory: 4G
 
   nginx:
     build: ./nginx
@@ -227,3 +281,5 @@ volumes:
   postgres_data:
   redis_data:
   minio_data:
+  mineru_models:
+  asr_models:

@@ -42,6 +42,11 @@ class ScreeningResult(UUIDPKMixin, CreatedAtMixin, Base):
         index=True,
     )
     disqualified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # 三态筛选（迁移 0015）：字段缺失/无法判定 → 待复核，与 disqualified 互斥；
+    # HR 改判后自动清 False
+    needs_review: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
     reasons: Mapped[list[str] | None] = mapped_column(JSONB_COMPAT, nullable=True)
     manually_overridden: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False

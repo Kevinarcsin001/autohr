@@ -97,6 +97,15 @@ class ItemOut(ItemBase):
     id: uuid.UUID
     team_id: uuid.UUID
     is_active: bool
+    # 题目来源与审核状态（ai_followup 沉淀的题需审核后才进组卷池）
+    source: str = "seed"
+    review_status: str = "approved"
+
+
+class ItemReviewRequest(BaseModel):
+    """题目审核动作：approved（进组卷池）/ rejected（永久排除）。"""
+
+    status: Literal["approved", "rejected"]
 
 
 # ============================================================================

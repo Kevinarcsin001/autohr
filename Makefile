@@ -1,4 +1,4 @@
-.PHONY: help install up down logs ps build rebuild migrate makemigrations test test-backend test-frontend lint format backend-shell frontend-shell db-shell redis-cli gen-keys gen-fernet clean
+.PHONY: help install up down logs ps build rebuild migrate makemigrations test test-backend test-frontend lint format backend-shell frontend-shell db-shell redis-cli gen-keys gen-fernet backup-db clean
 
 # 默认从 .env 加载变量（首次 cp .env.example .env 前 .env 不存在，需用 -include）
 -include .env
@@ -78,6 +78,9 @@ gen-keys: ## 生成 JWT RS256 密钥对
 
 gen-fernet: ## 生成 Fernet 加密密钥并输出（追加到 .env）
 	@python3 -c "from cryptography.fernet import Fernet; print('FERNET_KEY=' + Fernet.generate_key().decode())"
+
+backup-db: ## 备份数据库（自动选 prod/dev compose；backups/ 下 gzip，默认保留 14 份）
+	bash scripts/db_backup.sh
 
 db-dev-reset: ## 删除开发环境 SQLite 库（重启 backend 自动重建表）
 	@rm -f data/autohr.db data/autohr.db-wal data/autohr.db-shm

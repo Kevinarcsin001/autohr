@@ -33,6 +33,7 @@ from app.models.invite import TeamInvite
 from app.models.job import Job, JobHardRequirement, JobVersion
 from app.models.llm_call import LLMCall
 from app.models.llm_config import LLMConfig
+from app.models.outcome import FINAL_STATUS_VALUES, CandidateJobOutcome
 from app.models.question_bank import QuestionBankItem, QuestionCategory
 from app.models.score import Score, ScoreReason
 from app.models.screening import ManualOverride, ScreeningResult
@@ -55,6 +56,9 @@ __all__ = [
     "ParsedStructure",
     # screening
     "ScreeningResult",
+    # outcomes（效果回流）
+    "CandidateJobOutcome",
+    "FINAL_STATUS_VALUES",
     "ManualOverride",
     # scores
     "Score",

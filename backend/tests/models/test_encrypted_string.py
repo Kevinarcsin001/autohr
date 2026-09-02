@@ -59,7 +59,8 @@ class TestEncryptedString:
         async with AsyncSessionLocal() as session:
             raw = await session.execute(
                 text("SELECT value FROM _test_encrypted_probe WHERE id = :id"),
-                {"id": str(probe_id)},
+                # GUID 列在 SQLite 存 hex（无连字符），str() 带连字符永不匹配
+                {"id": probe_id.hex},
             )
             raw_value = raw.scalar_one()
             assert raw_value != "13812345678"

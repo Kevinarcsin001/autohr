@@ -14,12 +14,14 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from time import time as _time
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.logging import get_logger
 from app.core.middleware.error_handler import (
     ConflictError,
     NotFoundError,
@@ -45,6 +47,8 @@ from app.models.user import User
 INVITE_EXPIRES_HOURS = 48
 DEFAULT_TEAM_NAME = "我的团队"
 
+logger = get_logger(__name__)
+
 
 # ============================================================================
 # 内部工具
@@ -66,8 +70,10 @@ def _make_token_pair(user: User) -> tuple[str, str]:
 
 
 async def _get_user_by_email(db: AsyncSession, email: str) -> User | None:
-    """按 email 查 user（CITEXT 自动大小写不敏感）。"""
-    result = await db.execute(select(User).where(User.email == email))
+    """按 email 查 user（lower 比较：PG CITEXT 与 SQLite 语义对齐）。"""
+    result = await db.execute(
+        select(User).where(func.lower(User.email) == email.lower().strip())
+    )
     return result.scalar_one_or_none()
 
 
@@ -103,7 +109,14 @@ async def register(
     """
     existing = await _get_user_by_email(db, email)
     if existing is not None:
-        raise ConflictError("邮箱已注册", email=email)
+        # 邮箱枚举防护：对外文案不透露"该邮箱已存在"，仅记日志供运维排查。
+        # 状态码仍为 409（浏览器客户端据此引导去登录），配合注册端点限流
+        # 把批量枚举压到不可实用
+        logger.warning(
+            "register_conflict_email_taken",
+            email_hint=str(email)[:3] + "***",
+        )
+        raise ConflictError("无法完成注册，该邮箱可能已被使用，请直接登录或联系管理员")
 
     is_first = await _is_first_user(db)
 
@@ -163,28 +176,50 @@ async def refresh_access_token(
     db: AsyncSession,
     *,
     refresh_token: str,
-) -> str:
-    """refresh token → 新的 access token。
+) -> tuple[User, str, str]:
+    """refresh token 轮换：校验旧 token → 吊销旧 jti → 签发全新 (access, refresh)。
+
+    轮换 + denylist 使泄漏的 refresh token 在下一次合法刷新后立即作废
+    （重放检测）；旧的长期凭据不再"7 天内持续有效"。
+
+    Returns:
+        (user, access_token, new_refresh_token)
 
     Raises:
-        UnauthorizedError: refresh token 无效/过期/类型错误/用户不存在
+        UnauthorizedError: refresh token 无效/过期/类型错误/已吊销/用户不存在
     """
+    from app.core.token_denylist import is_revoked, revoke
+
     try:
         payload = decode_token(refresh_token, expected_type="refresh")
     except Exception as exc:
         raise UnauthorizedError("Refresh token 无效或已过期") from exc
 
+    jti = payload.get("jti")
+    if jti and await is_revoked(str(jti)):
+        raise UnauthorizedError("Refresh token 已吊销")
+
     user_id = payload.get("sub")
     if not user_id:
         raise UnauthorizedError("Refresh token 缺少 sub")
 
-    result = await db.execute(select(User).where(User.id == user_id))
+    try:
+        # 与 core/deps.get_current_user 一致：sub 为 str，需转 UUID 再作主键绑定
+        user_pk = UUID(str(user_id))
+    except ValueError as exc:
+        raise UnauthorizedError("Refresh token 无效或已过期") from exc
+    result = await db.execute(select(User).where(User.id == user_pk))
     user = result.scalar_one_or_none()
     if user is None:
         raise UnauthorizedError("用户不存在")
 
-    # 重新签发 access（包含最新的 role/team_id）
-    return create_access_token(
+    # 旧 refresh 立即吊销（TTL = 剩余有效期；校验通过后执行，先查后吊防竞态窗口放大）
+    exp = payload.get("exp")
+    if jti and isinstance(exp, (int, float)):
+        remaining = int(float(exp) - _time())
+        await revoke(str(jti), remaining)
+
+    access = create_access_token(
         subject=user.id,
         extra_claims={
             "team_id": str(user.team_id) if user.team_id else None,
@@ -192,6 +227,8 @@ async def refresh_access_token(
             "email": user.email,
         },
     )
+    new_refresh = create_refresh_token(subject=user.id)
+    return user, access, new_refresh
 
 
 async def invite_member(
@@ -221,12 +258,12 @@ async def invite_member(
     if existing_user is not None and existing_user.team_id == team_id:
         raise ConflictError("该用户已是团队成员", email=email)
 
-    # 是否已有 pending 邀请
+    # 是否已有 pending 邀请（lower 比较：与 CITEXT 语义在两个方言下保持一致）
     result = await db.execute(
         select(TeamInvite)
         .where(
             TeamInvite.team_id == team_id,
-            TeamInvite.email == email,
+            func.lower(TeamInvite.email) == email.lower().strip(),
             TeamInvite.status == "pending",
         )
         .limit(1)
@@ -282,7 +319,12 @@ async def accept_invite(
         raise UnauthorizedError("该邀请链接已被使用")
     if invite.status == "revoked":
         raise UnauthorizedError("该邀请已被撤销")
-    if invite.expires_at <= datetime.now(timezone.utc):
+    # 双方言兼容：asyncpg(PG) 返回 tz-aware，SQLite/aiosqlite 返回 naive；
+    # naive 一律按 UTC 补齐后再比较（写入侧本就存 UTC）
+    expires_at = invite.expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if expires_at <= datetime.now(timezone.utc):
         raise UnauthorizedError("该邀请已过期")
 
     # email 已注册为其他账户？允许复用（用户已有账号加入新团队）—— 本任务 5

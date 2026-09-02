@@ -303,7 +303,11 @@ class ExtractorService:
     def _build_messages(
         self, truncated_text: str, *, retry_feedback: str | None
     ) -> list[Message]:
-        user_content = _USER_PROMPT_TEMPLATE.format(resume_text=truncated_text)
+        from app.core.prompt_guard import wrap_untrusted
+
+        user_content = _USER_PROMPT_TEMPLATE.format(
+            resume_text=wrap_untrusted(truncated_text, label="简历文本")
+        )
         if retry_feedback:
             user_content += _RETRY_SUFFIX_TEMPLATE.format(error=retry_feedback)
         return [

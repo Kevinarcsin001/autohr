@@ -92,10 +92,17 @@ class ProgressStore:
         self._conditions: dict[uuid.UUID, asyncio.Condition] = {}
         self._lock = asyncio.Lock()
 
-    async def create(self, run_id: uuid.UUID, *, total: int) -> None:
+    async def create(
+        self,
+        run_id: uuid.UUID,
+        *,
+        total: int,
+        team_id: uuid.UUID | None = None,
+    ) -> None:
+        """注册一个 run；team_id 用于 SSE/summary 读取端做归属校验。"""
         async with self._lock:
             self._events[run_id] = []
-            self._meta[run_id] = {"total": total, "done": False}
+            self._meta[run_id] = {"total": total, "done": False, "team_id": team_id}
             self._conditions[run_id] = asyncio.Condition()
         await self.append_started(run_id, total=total)
 
@@ -155,6 +162,11 @@ class ProgressStore:
 
     async def _append(self, run_id: uuid.UUID, event: ProgressEvent) -> None:
         cond = self._conditions.get(run_id)
+        if cond is None:
+            # run 未创建或已 drop：无 waiter 可唤醒，直接落内存列表
+            # （asyncio.Condition 为 None 时 async with 会 AttributeError 崩溃）
+            self._events.setdefault(run_id, []).append(event)
+            return
         async with cond:
             self._events.setdefault(run_id, []).append(event)
             cond.notify_all()
@@ -170,6 +182,11 @@ class ProgressStore:
     def has_run(self, run_id: uuid.UUID) -> bool:
         """run_id 是否在本进程注册过（用于 SSE 早退判断）。"""
         return run_id in self._events
+
+    def get_team(self, run_id: uuid.UUID) -> uuid.UUID | None:
+        """返回 run 的触发团队；未注册的 run 返回 None（读取端按 404 处理）。"""
+        team = self._meta.get(run_id, {}).get("team_id")
+        return team if isinstance(team, uuid.UUID) else None
 
     async def wait_next_event(
         self,
@@ -219,6 +236,8 @@ class RunSummary:
 
     total: int = 0
     passed: int = 0
+    needs_review: int = 0
+    """三态筛选：字段缺失/无法判定的待复核计数（不计入 passed）。"""
     disqualified: int = 0
     failed: int = 0
     """score 或 interview 抛错的候选人计数（不影响 filter 淘汰）。"""
@@ -230,6 +249,7 @@ class RunSummary:
         return {
             "total": self.total,
             "passed": self.passed,
+            "needs_review": self.needs_review,
             "disqualified": self.disqualified,
             "failed": self.failed,
             "failed_reasons": self.failed_reasons,
@@ -333,6 +353,10 @@ class ScreeningOrchestrator:
                     )
                     return
 
+                # 三态：待复核不进 passed 口径（继续后续评分阶段，HR 复核硬筛结论）
+                if sr.needs_review:
+                    summary.needs_review += 1
+
                 # Stage 2: score（幂等：已有评分则跳过，避免重复 LLM 调用）
                 existing_score = await session.scalar(
                     select(Score).where(
@@ -398,7 +422,7 @@ class ScreeningOrchestrator:
                 # Stage 3: 生成面试题（与 Celery auto-chain 保持一致）
                 try:
                     from app.services.interview import InterviewService
-                    svc = InterviewService(db=session)
+                    svc = InterviewService(db=session, router=self._router)
                     await svc.generate(
                         candidate_id=cid,
                         job_id=job_id,
@@ -406,11 +430,21 @@ class ScreeningOrchestrator:
                     await session.commit()
                     logger.info("orchestrator_interview_generated", candidate_id=str(cid))
                 except Exception as exc:  # noqa: BLE001
+                    # interview 失败计入 failed（score 已保留），不得静默计成 passed
                     logger.warning(
                         "orchestrator_interview_failed",
                         candidate_id=str(cid),
                         error=str(exc)[:200],
                     )
+                    await self._record_failure(
+                        run_id=run_id,
+                        cid=cid,
+                        name=name,
+                        summary=summary,
+                        stage="interview",
+                        exc=exc,
+                    )
+                    return
 
                 summary.passed += 1
                 await progress_store.append_progress(

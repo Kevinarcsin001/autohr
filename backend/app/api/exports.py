@@ -11,6 +11,7 @@
 """
 from __future__ import annotations
 
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Query
@@ -18,6 +19,7 @@ from fastapi import APIRouter, Query
 from app.core.deps import CurrentUser, DbSession
 from app.core.middleware.error_handler import ForbiddenError, NotFoundError
 from app.models.async_job import AsyncJob
+from app.models.user import User
 from app.schemas.export import (
     ExportRequest,
     ExportResultQuery,
@@ -27,7 +29,7 @@ from app.services.export import ExportService
 router = APIRouter(prefix="/exports", tags=["exports"])
 
 
-def _require_team(user) -> UUID:
+def _require_team(user: User) -> UUID:
     if user.team_id is None:
         raise ForbiddenError("当前用户未加入任何团队")
     return UUID(str(user.team_id))
@@ -43,7 +45,7 @@ async def request_export(
     payload: ExportRequest,
     user: CurrentUser,
     db: DbSession,
-) -> dict:
+) -> dict[str, Any]:
     """请求导出；自动判断同步 vs 异步。
 
     - 行数 ≤ 5000 → 同步生成，返回 ``download_url``
@@ -83,9 +85,10 @@ async def get_export_status(
         raise NotFoundError(
             f"export job {job_id} 不存在", resource="export_job"
         )
-    # team 隔离：payload 内的 team_id 必须匹配
+    # team 隔离：payload 内的 team_id 缺失或不匹配一律 404
+    # （老数据可能缺该字段；防御纵深不允许"缺字段=放行"的条件校验）
     payload_team_id = (job.payload or {}).get("team_id")
-    if payload_team_id and UUID(str(payload_team_id)) != user.team_id:
+    if not payload_team_id or UUID(str(payload_team_id)) != user.team_id:
         raise NotFoundError(
             f"export job {job_id} 不存在或无权访问", resource="export_job"
         )
@@ -116,7 +119,7 @@ async def get_download_url(
     user: CurrentUser,
     db: DbSession,
     file_key: str = Query(...),
-) -> dict:
+) -> dict[str, Any]:
     """取 5min 签名下载 URL；校验 file_key 前缀归属 team。"""
     team_id = _require_team(user)
     service = ExportService(db)

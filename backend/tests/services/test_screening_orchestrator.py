@@ -42,6 +42,7 @@ from app.services.screening_orchestrator import (
     ScreeningOrchestrator,
     progress_store,
 )
+from tests.db_utils import purge_database
 
 # ============================================================================
 # DB 清理
@@ -50,17 +51,7 @@ from app.services.screening_orchestrator import (
 
 async def _purge_db() -> None:
     async with AsyncSessionLocal() as session:
-        await session.execute(
-            text(
-                "TRUNCATE users, teams, team_invites, jobs, candidates, "
-                "candidate_resumes, candidate_sources, parsed_structures, "
-                "screening_results, scores, score_reasons, "
-                "interview_questions, interview_feedbacks, dedup_matches, "
-                "manual_overrides, llm_calls, async_jobs, audit_logs, "
-                "email_configs, job_versions, job_hard_requirements "
-                "RESTART IDENTITY CASCADE"
-            )
-        )
+        await purge_database(session)
         await session.commit()
 
 
@@ -485,10 +476,12 @@ class TestOrchestratorInterviewFailure:
         )
         router = _make_smart_router()
 
-        # interview 第 1 次失败（candidate 1 的 interview）
+        # interview 失败注入：按 response_schema 独立计数。旧写法依赖
+        # 「score(1)+reason(2)+interview(3)」的全局调用序数，run_score 内部
+        # 调用次数波动时错位打中被吞错的 reasoning → failed=0 假阴性
         original_chat = router.adapters["mock"].chat
 
-        call_count = {"n": 0}
+        interview_calls = {"n": 0}
 
         class _FailInterviewAdapter:
             name = "mock"
@@ -497,11 +490,12 @@ class TestOrchestratorInterviewFailure:
             async def chat(
                 self, *, messages, response_schema, temperature, timeout, model
             ):
-                call_count["n"] += 1
-                # candidate 1: score(1) + reason(2) + interview(3) → 第 3 次失败
-                if response_schema is InterviewQuestions and call_count["n"] == 3:
-                    from app.adapters.llm import LLMSchemaError
-                    raise LLMSchemaError("forced interview failure")
+                if response_schema is InterviewQuestions:
+                    interview_calls["n"] += 1
+                    # candidate 1 的 interview（首个 InterviewQuestions 调用）→ 失败
+                    if interview_calls["n"] == 1:
+                        from app.adapters.llm import LLMSchemaError
+                        raise LLMSchemaError("forced interview failure")
                 return await original_chat(
                     messages=messages,
                     response_schema=response_schema,

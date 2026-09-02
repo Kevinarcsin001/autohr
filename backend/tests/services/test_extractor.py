@@ -255,7 +255,9 @@ class TestRetryOnSchemaError:
     async def test_retry_still_fails_returns_partial(self) -> None:
         """两次都 schema 不合 → status=partial_extracted + 空 structure。"""
         router, _ = _make_router_with_mock(
-            failure_exc=LLMSchemaError("always fails")
+            # MockAdapter 默认 failures_before_success=0，必须显式指定大数才会持续抛
+            failures_before_success=10,
+            failure_exc=LLMSchemaError("always fails"),
         )
         service = ExtractorService(router=router)
 

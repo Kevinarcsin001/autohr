@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import uuid
 from pathlib import Path
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, File, Form, Query, UploadFile, status
@@ -39,6 +40,7 @@ from app.models.candidate import Candidate
 from app.models.interview import (
     InterviewFeedback,
     InterviewQuestion,
+    InterviewSession,
     InterviewTurn,
 )
 from app.models.job import Job
@@ -120,6 +122,27 @@ def _require_team(user) -> UUID:
     if user.team_id is None:
         raise ForbiddenError("当前用户未加入任何团队")
     return UUID(str(user.team_id))
+
+
+async def _validate_session_in_team(db, session_id: UUID, team_id: UUID) -> InterviewSession:
+    """校验 session 归属当前 team（session→candidate→team 链）；跨 team 一律 404。
+
+    adaptive 的音频上传 / 打点等写路径必须先经此校验再触碰存储或 DB 写，
+    防止持有他队 turn_id/session_id 的用户跨租户写入。
+    """
+    session_obj = await db.get(InterviewSession, session_id)
+    if session_obj is None:
+        raise NotFoundError(
+            f"interview session {session_id} 不存在或无权访问",
+            resource="interview_session",
+        )
+    candidate = await db.get(Candidate, session_obj.candidate_id)
+    if candidate is None or candidate.team_id != team_id:
+        raise NotFoundError(
+            f"interview session {session_id} 不存在或无权访问",
+            resource="interview_session",
+        )
+    return session_obj
 
 
 async def _validate_candidate_in_team(db, candidate_id: UUID, team_id: UUID) -> Candidate:
@@ -820,34 +843,43 @@ async def adaptive_upload_audio(
     db: DbSession,
     turn_id: UUID = Form(...),
     audio: UploadFile = File(...),
-) -> dict:
+) -> dict[str, Any]:
     """上传本题音频（M2a）：存 MinIO + 入队 Celery 转写 → 转写完成自动评分。
 
     返回 {transcription_status, storage_key}；前端轮询 /adaptive/state 或等 SSE。
     """
     team_id = _require_team(user)
+    # 归属校验前置：先证明 session 属于当前团队，再读文件、写存储
+    await _validate_session_in_team(db, session_id, team_id)
     if audio.content_type and not audio.content_type.startswith("audio/"):
         raise AppValidationError("仅接受音频文件", field="audio")
-    data = await audio.read()
-    if not data:
+    # 体积校验用 seek/tell（Spooled 文件 >1MB 已落盘，read() 会全量进内存）
+    audio.file.seek(0, 2)
+    audio_size = audio.file.tell()
+    if audio_size == 0:
         raise AppValidationError("音频为空", field="audio")
-    if len(data) > 50 * 1024 * 1024:
+    if audio_size > 50 * 1024 * 1024:
         raise AppValidationError("音频超过 50MB 上限", field="audio")
+    audio.file.seek(0)
+
+    # 回合存在性与归属（turn 必须属于 path 中已验证归属的 session）
+    turn = await db.get(InterviewTurn, turn_id)
+    if turn is None or turn.session_id != session_id:
+        raise NotFoundError(f"turn {turn_id} not found", resource="interview_turn")
 
     from app.adapters.storage import get_storage
 
     storage = get_storage()
     suffix = Path(audio.filename or "audio.webm").suffix or ".webm"
     storage_key = f"interview-audio/turns/{turn_id}{suffix}"
-    await storage.put(
-        storage_key, data, mime=audio.content_type or "audio/webm", encrypt=False
+    # 全部校验通过后才落存储（原实现 put 先于校验，可向任意 turn_id 写入对象）
+    await storage.put_fileobj(
+        storage_key,
+        audio.file,
+        size=audio_size,
+        mime=audio.content_type or "audio/webm",
+        encrypt=False,
     )
-
-    # 回合标记转写中
-    turn = await db.get(InterviewTurn, turn_id)
-    if turn is None or turn.session_id != session_id:
-        raise NotFoundError(f"turn {turn_id} not found", resource="interview_turn")
-    _ = team_id  # 归属校验：turn 属于 path 中的 session，session 归属已在查询链验证
     if turn.transcription_status in ("pending", "processing"):
         # 超时自愈：pending/processing 超过 2 分钟视为任务丢失，允许重传覆盖
         # （turn 表无 updated_at，用 rating_evidence 里的时间戳或 created_at 近似）
@@ -898,7 +930,8 @@ async def adaptive_mark_offset(
     db: DbSession,
 ) -> None:
     """M2b 打点：标注本题在整场录制中的起始时间（毫秒或 mm:ss 字符串）。"""
-    _require_team(user)
+    team_id = _require_team(user)
+    await _validate_session_in_team(db, session_id, team_id)
     turn = await db.get(InterviewTurn, turn_id)
     if turn is None or turn.session_id != session_id:
         raise NotFoundError(f"turn {turn_id} not found", resource="interview_turn")
@@ -928,7 +961,7 @@ async def adaptive_upload_recording(
     user: CurrentUser,
     db: DbSession,
     audio: UploadFile = File(...),
-) -> dict:
+) -> dict[str, Any]:
     """M2b 上传整场会议录制（钉钉/腾讯会议云录制下载或本地录制）。
 
     上传后可继续 PATCH 各题起点打点，然后 POST …/recording/process 触发回捞。
@@ -941,18 +974,25 @@ async def adaptive_upload_recording(
         audio.content_type.startswith("audio/") or audio.content_type.startswith("video/")
     ):
         raise AppValidationError("仅接受音视频文件", field="audio")
-    data = await audio.read()
-    if not data:
+    # 500MB 整场录制：seek/tell 校验 + 流式分片上传（整读会叠爆 2G 容器内存）
+    audio.file.seek(0, 2)
+    audio_size = audio.file.tell()
+    if audio_size == 0:
         raise AppValidationError("文件为空", field="audio")
-    if len(data) > 500 * 1024 * 1024:
+    if audio_size > 500 * 1024 * 1024:
         raise AppValidationError("录制超过 500MB 上限", field="audio")
+    audio.file.seek(0)
 
     from app.adapters.storage import get_storage
 
     suffix = Path(audio.filename or "rec.mp4").suffix or ".mp4"
     key = f"interview-audio/recordings/{session_id}{suffix}"
-    await get_storage().put(
-        key, data, mime=audio.content_type or "video/mp4", encrypt=False
+    await get_storage().put_fileobj(
+        key,
+        audio.file,
+        size=audio_size,
+        mime=audio.content_type or "video/mp4",
+        encrypt=False,
     )
     session.recording_storage_key = key
     session.recording_status = "uploaded"
@@ -968,7 +1008,7 @@ async def adaptive_process_recording(
     session_id: UUID,
     user: CurrentUser,
     db: DbSession,
-) -> dict:
+) -> dict[str, Any]:
     """触发会后回捞：按各题打点区间转写 + 自动评分（异步）。"""
     team_id = _require_team(user)
     await AdaptiveInterviewService(db)._load_session(  # noqa: SLF001
@@ -984,13 +1024,115 @@ async def adaptive_process_recording(
     }
 
 
+@router.get("/sessions/{session_id}/report")
+async def session_report(
+    session_id: UUID,
+    user: CurrentUser,
+    db: DbSession,
+) -> dict[str, Any]:
+    """会后报告：逐题轨迹 + 分支能力画像 + 完成度 + 录用建议（若已生成）。
+
+    面试官一屏复盘；recommendation 为 null 时前端引导单独触发生成。
+    """
+    team_id = _require_team(user)
+    return await AdaptiveInterviewService(db).build_report(
+        team_id=team_id, session_id=session_id
+    )
+
+
+@router.post("/sessions/{session_id}/adaptive/turns/{turn_id}/promote")
+async def promote_turn_to_bank(
+    session_id: UUID,
+    turn_id: UUID,
+    user: CurrentUser,
+    db: DbSession,
+) -> dict[str, Any]:
+    """把本场 AI 现场生成的追问题沉淀为题库候选（source=ai_followup，待审核）。
+
+    面试官点「好问题，收进题库」→ 管理员审核通过后进入组卷池。
+    幂等：重复点击返回已沉淀条目。
+    """
+    team_id = _require_team(user)
+    item = await AdaptiveInterviewService(db).promote_turn_to_bank(
+        team_id=team_id,
+        session_id=session_id,
+        turn_id=turn_id,
+        user_id=user.id,
+    )
+    await db.commit()
+    return {
+        "id": str(item.id),
+        "question": item.question,
+        "source": item.source,
+        "review_status": item.review_status,
+        "category_id": str(item.category_id),
+        "reference_answer": item.reference_answer,
+    }
+
+
+@router.post("/sessions/{session_id}/adaptive/direct/audio")
+async def adaptive_direct_audio(
+    session_id: UUID,
+    user: CurrentUser,
+    db: DbSession,
+    audio: UploadFile = File(...),
+) -> dict[str, Any]:
+    """面试官语音指挥（「问问他 RAG」「来道简单的」）→ ASR 转写 → 语义出题。
+
+    面试中面试官双手忙于记录，语音是指挥的自然形态。同步转写
+    （短指令 1-3s），失败返回 422 带转写错误，不打断面试节奏。
+    """
+    team_id = _require_team(user)
+    await _validate_session_in_team(db, session_id, team_id)
+    if audio.content_type and not audio.content_type.startswith("audio/"):
+        raise AppValidationError("仅接受音频文件", field="audio")
+    data = await audio.read()
+    if not data:
+        raise AppValidationError("音频为空", field="audio")
+    if len(data) > 25 * 1024 * 1024:
+        raise AppValidationError("指令音频超过 25MB 上限", field="audio")
+
+    from app.adapters.asr_client import ASRClient
+
+    text = ""
+    try:
+        result = await ASRClient().transcribe(
+            audio_bytes=data,
+            filename=audio.filename or "command.webm",
+        )
+        text = str(result.get("text") or "").strip()
+    except Exception as exc:  # noqa: BLE001 - ASR 故障不升级为 500
+        logger.warning("adaptive_direct_asr_failed", error=str(exc)[:150])
+        raise AppValidationError(
+            "语音转写失败，请重试或改用文字指令", field="audio"
+        ) from exc
+    if not text:
+        raise AppValidationError("未能识别出指令内容，请靠近麦克风重试", field="audio")
+
+    svc = AdaptiveInterviewService(db)
+    parsed = await svc.parse_directive(team_id=team_id, session_id=session_id, text=text)
+    if not parsed.get("category_id") and not parsed.get("difficulty"):
+        raise AppValidationError(
+            f"无法识别指令「{text[:40]}」——试试包含分支关键词(如 RAG/Python/微服务)或难度词(简单/难点)",
+            field="text",
+        )
+    result_out = await svc.next_question(
+        team_id=team_id,
+        session_id=session_id,
+        force_category_id=uuid.UUID(parsed["category_id"]) if parsed.get("category_id") else None,
+        difficulty_override=parsed.get("difficulty"),
+    )
+    await db.commit()
+    return {"text": text, "parsed": parsed, "result": result_out.model_dump()}
+
+
 @router.post("/sessions/{session_id}/adaptive/direct")
 async def adaptive_direct(
     session_id: UUID,
     payload: dict,
     user: CurrentUser,
     db: DbSession,
-) -> dict:
+) -> dict[str, Any]:
     """面试官自然语言指挥：「问问他 RAG」「来道简单的」「换个微服务题」→ 解析后直接出题。"""
     team_id = _require_team(user)
     text = str(payload.get("text") or "").strip()

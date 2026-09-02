@@ -99,6 +99,11 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _aware(dt: datetime) -> datetime:
+    """DB 取出的 naive 时间按 UTC 补齐（SQLite 无 tz；asyncpg 返回 aware）。"""
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+
+
 def _compute_backoff_until(failures: int) -> datetime | None:
     """根据当前连续失败次数，返回下次可重试时间。
 
@@ -183,7 +188,7 @@ class EmailFetcherService:
 
         失败时记录退避状态，不抛出（调用方拿 0 + 状态）。
         """
-        if config.paused_until is not None and config.paused_until > _now():
+        if config.paused_until is not None and _aware(config.paused_until) > _now():
             logger.info(
                 "email_fetch_skipped_paused",
                 config_id=str(config.id),
@@ -355,7 +360,10 @@ class EmailFetcherService:
         # 否则 IMAP 重抓同一封邮件会重复入库
         dedup_key = f"email:{config.id}:{att.message_id}:{att.filename}"
         existing = await self.db.scalar(
-            select(Candidate).where(Candidate.dedup_key == dedup_key)
+            select(Candidate).where(
+                Candidate.team_id == config.team_id,
+                Candidate.dedup_key == dedup_key,
+            )
         )
         if existing is not None:
             return False

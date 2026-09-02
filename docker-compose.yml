@@ -43,8 +43,9 @@ services:
       # 格式：<key-name>:<32-byte base64>
       MINIO_KMS_SECRET_KEY: ${MINIO_KMS_SECRET_KEY:-autohr-dev-kms-key:P35h6DBJhqXxPWi2u+WXwLF2ehdi+1XpDuXhAyb1gJM=}
     ports:
-      - "${MINIO_API_PORT:-9000}:9000"
-      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+      # 仅绑定回环：简历桶含 PII，不向局域网暴露（签名 URL 由 backend 经内网 minio:9000 签发）
+      - "127.0.0.1:${MINIO_API_PORT:-9000}:9000"
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
     volumes:
       - minio_data:/data
     healthcheck:
@@ -64,7 +65,7 @@ services:
       sleep 2;
       mc alias set autohr http://minio:9000 ${MINIO_ROOT_USER:-autohr} ${MINIO_ROOT_PASSWORD:-autohr_dev_secret};
       mc mb autohr/${MINIO_BUCKET:-resumes} --ignore-existing;
-      mc anonymous set download autohr/${MINIO_BUCKET:-resumes} || true;
+      # 桶保持 private：读取一律走 backend 签发的短期签名 URL，禁止匿名 download
       exit 0;
       "
     restart: "no"

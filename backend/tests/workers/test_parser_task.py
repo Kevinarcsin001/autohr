@@ -14,7 +14,7 @@ import uuid
 from typing import Any
 
 import pytest
-from sqlalchemy import select, text
+from sqlalchemy import select
 
 from app.core.db import AsyncSessionLocal
 from app.models.async_job import AsyncJob
@@ -31,6 +31,7 @@ from app.workers.parser_task import (
     StorageObjectMissing,
     run_parse,
 )
+from tests.db_utils import purge_database
 
 # ============================================================================
 # Fake
@@ -96,17 +97,7 @@ def _make_scanned_pdf() -> bytes:
 
 async def _purge_db() -> None:
     async with AsyncSessionLocal() as session:
-        await session.execute(
-            text(
-                "TRUNCATE users, teams, team_invites, jobs, candidates, "
-                "candidate_resumes, candidate_sources, parsed_structures, "
-                "screening_results, scores, score_reasons, "
-                "interview_questions, interview_feedbacks, dedup_matches, "
-                "manual_overrides, llm_calls, async_jobs, audit_logs, "
-                "email_configs, job_versions, job_hard_requirements "
-                "RESTART IDENTITY CASCADE"
-            )
-        )
+        await purge_database(session)
         await session.commit()
 
 

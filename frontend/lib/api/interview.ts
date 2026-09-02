@@ -457,6 +457,68 @@ export async function adaptiveDirectApi(
   return data;
 }
 
+/** 面试官语音指挥：录一段话 → ASR 转写 → 语义出题（面试中双手忙时的形态）。 */
+export async function adaptiveDirectAudioApi(
+  sessionId: string,
+  audio: Blob,
+): Promise<{
+  text: string;
+  parsed: { category_id?: string; category_name?: string; difficulty?: number; matched_signal?: number };
+  result: AdaptiveNextResponse;
+}> {
+  const form = new FormData();
+  form.append("audio", audio, "command.webm");
+  const { data } = await apiClient.post(
+    `/api/interview/sessions/${sessionId}/adaptive/direct/audio`,
+    form,
+    { headers: { "Content-Type": "multipart/form-data" }, timeout: 60_000 },
+  );
+  return data;
+}
+
+/** 把本场 AI 现场生成的追问题沉淀为题库候选（待审核）。幂等。 */
+export async function promoteTurnApi(
+  sessionId: string,
+  turnId: string,
+): Promise<{ id: string; question: string; review_status: string }> {
+  const { data } = await apiClient.post(
+    `/api/interview/sessions/${sessionId}/adaptive/turns/${turnId}/promote`,
+  );
+  return data;
+}
+
+/** 会后报告：逐题轨迹 + 分支画像 + 完成度 + 录用建议（若已生成）。 */
+export async function sessionReportApi(sessionId: string): Promise<{
+  status: string;
+  progress: {
+    total_turns: number;
+    answered: number;
+    followups: number;
+    expected_range: [number, number];
+    branches_covered: number;
+  };
+  profile: { category_name: string; theta: number | null; n: number; avg_rating: number | null }[];
+  timeline: {
+    seq: number;
+    type: string;
+    category: string | null;
+    question: string;
+    rating?: number | null;
+    answer_excerpt?: string;
+  }[];
+  recommendation: null | {
+    decision: string;
+    reasons: string[] | null;
+    risks: string[] | null;
+    probation_focus: string[] | null;
+  };
+}> {
+  const { data } = await apiClient.get(
+    `/api/interview/sessions/${sessionId}/report`,
+  );
+  return data;
+}
+
 export interface PreviewItem {
   id: string;
   category_id: string;

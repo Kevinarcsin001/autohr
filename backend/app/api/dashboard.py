@@ -1,11 +1,16 @@
 """仪表盘统计 API。"""
 from __future__ import annotations
 
-from fastapi import APIRouter
+from uuid import UUID
+
+from fastapi import APIRouter, Query
 from pydantic import BaseModel
 from sqlalchemy import text
 
 from app.core.deps import CurrentUser, DbSession
+from app.core.middleware.error_handler import ForbiddenError
+from app.schemas.outcome import FunnelStats
+from app.services.outcome_service import OutcomeService
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
@@ -29,8 +34,6 @@ async def get_dashboard_stats(
     team_id = user.team_id
     if not team_id:
         return DashboardStats()
-
-    team_id_str = str(team_id)
 
     # 候选人总数
     result = await db.execute(
@@ -105,3 +108,25 @@ async def get_dashboard_stats(
         total_jobs=total_jobs,
         pending_reviews=pending_reviews,
     )
+
+
+# ============================================================================
+# 招聘漏斗 + 渠道质量（评估报告 P1-4 最小闭环）
+# ============================================================================
+
+
+@router.get("/funnel", response_model=FunnelStats)
+async def get_funnel_stats(
+    user: CurrentUser,
+    db: DbSession,
+    job_id: UUID | None = Query(default=None),
+) -> FunnelStats:
+    """招聘漏斗：筛选池 → 通过 → 评分 → 面试 → 录用 + 渠道质量。
+
+    ``job_id`` 缺省时输出 team 全部职位的汇总口径。
+    """
+    team_id = user.team_id
+    if not team_id:
+        raise ForbiddenError("当前用户未加入任何团队")
+    service = OutcomeService(db)
+    return await service.funnel_stats(team_id=team_id, job_id=job_id)

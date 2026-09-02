@@ -203,4 +203,39 @@ async def get_stats(
     )
 
 
+@router.get("/async-jobs/failed")
+async def list_failed_jobs(
+    admin: AdminUser,
+    db: DbSession,
+    limit: int = 50,
+) -> list[dict[str, str]]:
+    """最近失败的异步任务（运维告警入口：监控/巡检轮询此端点即闭环）。
+
+    第一性：告警的本质是"失败可见"，不依赖外部 SaaS。
+    """
+
+    from sqlalchemy import select
+
+    from app.models.async_job import AsyncJob
+
+    stmt = (
+        select(AsyncJob)
+        .where(AsyncJob.status == "failed")
+        .order_by(AsyncJob.finished_at.desc())
+        .limit(max(1, min(limit, 200)))
+    )
+    rows = (await db.execute(stmt)).scalars().all()
+    return [
+        {
+            "id": str(j.id),
+            "task_type": str(j.task_type),
+            "target_id": str(j.target_id) if j.target_id else "",
+            "error": (j.error or "")[:300],
+            "finished_at": j.finished_at.isoformat() if j.finished_at else "",
+        }
+        for j in rows
+    ]
+
+
+
 __all__ = ["router", "LLMConfigListResponse"]

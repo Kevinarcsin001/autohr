@@ -49,6 +49,18 @@ def _guard_dev_database() -> None:
 _guard_dev_database()
 
 # ============================================================================
+# 测试环境 FERNET_KEY：本地与 CI 口径对齐
+# ============================================================================
+# EncryptedString 在 FERNET_KEY 为空时设计上明文降级（开发期脚手架行为），
+# 本地 .env 通常没有 key → 加密相关断言（PII encrypted at rest 等）必然失败。
+# 这里 setdefault 注入与 CI 相同的测试 key（用户已有值时不覆盖），让
+# 「本地裸跑」与「CI testcontainers」验证同一加密行为。
+
+os.environ.setdefault(
+    "FERNET_KEY", "ZDnD3sL8r6M5hV9kq2bC7fXw4pJ1aG0yY7uS8tE5oRk="
+)
+
+# ============================================================================
 # pytest-asyncio 1.x: 让所有 async 测试共享 session 级 event loop
 # ============================================================================
 
@@ -133,3 +145,13 @@ def reset_structlog_context() -> Any:
     structlog.contextvars.clear_contextvars()
     yield
     structlog.contextvars.clear_contextvars()
+
+
+@pytest.fixture(autouse=True)
+def reset_rate_limit_buckets() -> Any:
+    """每个测试前后清空认证限流计数（否则同 IP 连续注册的用例会误中 429）。"""
+    from app.core import rate_limit
+
+    rate_limit.reset()
+    yield
+    rate_limit.reset()

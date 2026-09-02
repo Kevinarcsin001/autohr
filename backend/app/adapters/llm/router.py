@@ -55,11 +55,14 @@ class _CircuitState:
 
     consecutive_failures: int = 0
     cooling_until: float = 0.0  # timestamp (monotonic)
+    last_failure_at: float = 0.0  # 失败窗口判定基准 (monotonic)
 
 
 class _CircuitBreaker:
-    """熔断器：5min 内连续 N 次失败 → cooling 5min。
+    """熔断器：失败窗口内连续 N 次失败 → cooling 5min。
 
+    「连续」以失败窗口（默认 5min）界定——窗口外失败不累计
+    （间歇性偶发失败 ≠ 服务不可用，不应触发降级）。
     所有 adapter 共享一个实例（进程级）。
     """
 
@@ -67,9 +70,11 @@ class _CircuitBreaker:
         self,
         failure_threshold: int = 3,
         cooldown_seconds: int = 300,
+        failure_window_seconds: float = 300.0,
     ) -> None:
         self._failure_threshold = failure_threshold
         self._cooldown_seconds = cooldown_seconds
+        self._failure_window = failure_window_seconds
         self._states: dict[str, _CircuitState] = {}
 
     def is_cooling(self, adapter_name: str) -> bool:
@@ -85,9 +90,17 @@ class _CircuitBreaker:
 
     def record_failure(self, adapter_name: str) -> None:
         s = self._states.setdefault(adapter_name, _CircuitState())
+        now = time.monotonic()
+        # 窗口外的历史失败不再算「连续」：重置后按本次重新累计
+        if (
+            s.consecutive_failures
+            and now - s.last_failure_at > self._failure_window
+        ):
+            s.consecutive_failures = 0
         s.consecutive_failures += 1
+        s.last_failure_at = now
         if s.consecutive_failures >= self._failure_threshold:
-            s.cooling_until = time.monotonic() + self._cooldown_seconds
+            s.cooling_until = now + self._cooldown_seconds
             _logger.warning(
                 "llm_circuit_opened",
                 adapter=adapter_name,
@@ -133,6 +146,9 @@ class LLMRouter:
     cooldown_seconds: int = field(
         default_factory=lambda: settings.LLM_CIRCUIT_BREAKER_COOLDOWN_SECONDS
     )
+    failure_window_seconds: float = field(
+        default_factory=lambda: settings.LLM_CIRCUIT_BREAKER_WINDOW_SECONDS
+    )
     max_retries: int = field(default_factory=lambda: settings.LLM_MAX_RETRIES)
     scope_policies: dict[str, RoutePolicy] = field(default_factory=dict)
     _breaker: _CircuitBreaker = field(init=False)
@@ -142,6 +158,7 @@ class LLMRouter:
         self._breaker = _CircuitBreaker(
             failure_threshold=self.failure_threshold,
             cooldown_seconds=self.cooldown_seconds,
+            failure_window_seconds=self.failure_window_seconds,
         )
 
     def set_team_context(self, team_id: uuid.UUID | None) -> None:

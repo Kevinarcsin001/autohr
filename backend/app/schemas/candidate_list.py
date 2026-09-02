@@ -1,7 +1,7 @@
 """候选人列表 schema（任务 23）。
 
 聚合 Candidate + ScreeningResult + Score + ParsedStructure + Source
-为前端三分组列表所需的一次性响应。
+为前端分组列表所需的一次性响应。
 """
 from __future__ import annotations
 
@@ -15,10 +15,11 @@ from pydantic import BaseModel, ConfigDict, Field
 # ============================================================================
 
 
-CandidateGroup = Literal["all", "passed", "disqualified", "pending"]
-"""三分组：
-- ``passed``：未淘汰（disqualified=false）
-- ``disqualified``：已淘汰（disqualified=true）
+CandidateGroup = Literal["all", "passed", "disqualified", "needs_review", "pending"]
+"""四分组（三态筛选，迁移 0015）：
+- ``passed``：通过（disqualified=false 且 needs_review=false）
+- ``disqualified``：已淘汰（disqualified=true，有明确不达标证据）
+- ``needs_review``：待复核（字段缺失/无法判定，需 HR 人工裁决）
 - ``pending``：尚未筛选（无 screening_result 行）
 - ``all``：全部（默认）
 """
@@ -52,6 +53,8 @@ class CandidateListItem(BaseModel):
     screening_id: uuid.UUID | None = None
     disqualified: bool | None = None
     """None = 尚未筛选（pending 组）；true/false = 已筛选"""
+    needs_review: bool = False
+    """三态筛选：字段缺失/无法判定 → 待复核（与 disqualified 互斥）"""
     screening_reasons: list[str] | None = None
     manually_overridden: bool = False
 
@@ -84,9 +87,14 @@ class CandidateListResponse(BaseModel):
     page: int
     page_size: int
 
-    # 三分组各自的总数（不受 group 过滤影响，前端 tab 显示）
+    # 各分组各自的总数（不受 group 过滤影响，前端 tab 显示）
     group_counts: dict[str, int] = Field(
-        default_factory=lambda: {"passed": 0, "disqualified": 0, "pending": 0}
+        default_factory=lambda: {
+            "passed": 0,
+            "disqualified": 0,
+            "needs_review": 0,
+            "pending": 0,
+        }
     )
 
 

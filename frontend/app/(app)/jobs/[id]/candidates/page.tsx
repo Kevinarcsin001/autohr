@@ -307,6 +307,7 @@ function JobCandidatesContent() {
     (summary?: {
       total: number;
       passed: number;
+      needs_review?: number;
       disqualified: number;
       failed: number;
     }) => {
@@ -316,6 +317,7 @@ function JobCandidatesContent() {
       }
       setPipelineMessage(
         `筛选完成：通过 ${summary.passed}，淘汰 ${summary.disqualified}` +
+        (summary.needs_review ? `，待复核 ${summary.needs_review}` : "") +
           (summary.failed ? `，失败 ${summary.failed}` : ""),
       );
       // 触发列表刷新
@@ -383,6 +385,7 @@ function JobCandidatesContent() {
   const groupCounts = candidatesQuery.data?.group_counts ?? {
     passed: 0,
     disqualified: 0,
+    needs_review: 0,
     pending: 0,
   };
   const total = candidatesQuery.data?.total ?? 0;
@@ -453,8 +456,13 @@ function JobCandidatesContent() {
               count: groupCounts.disqualified,
             },
             {
-              value: "pending",
+              value: "needs_review",
               label: "待复核",
+              count: groupCounts.needs_review,
+            },
+            {
+              value: "pending",
+              label: "未完成",
               count: groupCounts.pending,
             },
           ]}

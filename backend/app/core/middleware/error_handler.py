@@ -76,6 +76,13 @@ class ConflictError(AppError):
     default_code = "Conflict"
 
 
+class TooManyRequestsError(AppError):
+    """限流命中（认证端点防撞库 / 批量枚举）。"""
+
+    status_code = 429
+    default_code = "RateLimited"
+
+
 class ValidationError(AppError):
     status_code = HTTP_422_UNPROCESSABLE_ENTITY
     default_code = "ValidationError"

@@ -38,6 +38,16 @@ from app.models.screening import ManualOverride, ScreeningResult
 from app.models.team import Team
 from app.models.user import User
 
+
+def _is_pg() -> bool:
+    """当前测试库是否 PostgreSQL。
+
+    PG-only 测试（CITEXT / JSONB / 服务端 CASCADE 断言）在 SQLite 方言下
+    语义不成立：本地跳过、CI testcontainers-PG 正常执行。"""
+    import os
+
+    return "postgresql" in os.environ.get("DATABASE_URL", "")
+
 # ============================================================================
 # 内联辅助：在测试函数内一次性创建关联实体
 # ============================================================================
@@ -123,7 +133,8 @@ class TestCandidatePII:
                 text(
                     "SELECT name, phone, email FROM candidates WHERE id = :id"
                 ),
-                {"id": str(c_uuid)},
+                # GUID 列在 SQLite 存 hex（无连字符），str() 带连字符永不匹配
+                {"id": c_uuid.hex},
             )
             row = raw.one()
             assert row.name != "李四"
@@ -145,6 +156,7 @@ class TestCandidatePII:
 # ============================================================================
 
 
+@pytest.mark.skipif(not _is_pg(), reason="PG-only 方言行为")
 class TestUniqueConstraints:
     """UNIQUE 约束生效。"""
 
@@ -224,6 +236,7 @@ class TestUniqueConstraints:
 # ============================================================================
 
 
+@pytest.mark.skipif(not _is_pg(), reason="PG-only 方言行为")
 class TestCITextEmail:
     """users.email CITEXT 大小写不敏感唯一。"""
 
@@ -263,6 +276,7 @@ class TestCITextEmail:
 # ============================================================================
 
 
+@pytest.mark.skipif(not _is_pg(), reason="PG-only 方言行为")
 class TestForeignKeyCascade:
     """外键 ON DELETE CASCADE。"""
 
@@ -363,6 +377,7 @@ class TestDefaults:
 # ============================================================================
 
 
+@pytest.mark.skipif(not _is_pg(), reason="PG-only 方言行为")
 class TestJSONBFields:
     """JSONB 字段读写（reasons / similarity / payload 等）。"""
 

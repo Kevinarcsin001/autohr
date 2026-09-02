@@ -137,6 +137,7 @@ class CandidateListService:
                 latest_source_sq.c.source_type.label("source_type"),
                 ScreeningResult.id.label("screening_id"),
                 ScreeningResult.disqualified.label("disqualified"),
+                ScreeningResult.needs_review.label("needs_review"),
                 ScreeningResult.reasons.label("screening_reasons"),
                 ScreeningResult.manually_overridden.label("manually_overridden"),
                 Score.id.label("score_id"),
@@ -165,11 +166,14 @@ class CandidateListService:
             .where(Candidate.team_id == team_id)
         )
 
-        # group 过滤
+        # group 过滤（三态：passed 排除待复核，避免字段缺失候选人混进通过组）
         if filters.group == "passed":
             stmt = stmt.where(ScreeningResult.disqualified.is_(False))
+            stmt = stmt.where(ScreeningResult.needs_review.is_(False))
         elif filters.group == "disqualified":
             stmt = stmt.where(ScreeningResult.disqualified.is_(True))
+        elif filters.group == "needs_review":
+            stmt = stmt.where(ScreeningResult.needs_review.is_(True))
         elif filters.group == "pending":
             stmt = stmt.where(Score.id.is_(None))
 
@@ -277,8 +281,11 @@ class CandidateListService:
 
         if filters.group == "passed":
             stmt = stmt.where(ScreeningResult.disqualified.is_(False))
+            stmt = stmt.where(ScreeningResult.needs_review.is_(False))
         elif filters.group == "disqualified":
             stmt = stmt.where(ScreeningResult.disqualified.is_(True))
+        elif filters.group == "needs_review":
+            stmt = stmt.where(ScreeningResult.needs_review.is_(True))
         elif filters.group == "pending":
             stmt = stmt.where(Score.id.is_(None))
 
@@ -293,17 +300,24 @@ class CandidateListService:
     async def _count_groups(
         self, team_id: uuid.UUID, job_id: uuid.UUID
     ) -> dict[str, int]:
-        """三分组各自总数（按 job 维度；不受其他过滤影响）。"""
+        """各分组总数（按 job 维度；不受其他过滤影响）。"""
         passed = await self._db.scalar(
             select(func.count(ScreeningResult.id)).where(
                 ScreeningResult.job_id == job_id,
                 ScreeningResult.disqualified.is_(False),
+                ScreeningResult.needs_review.is_(False),
             )
         )
         disqualified = await self._db.scalar(
             select(func.count(ScreeningResult.id)).where(
                 ScreeningResult.job_id == job_id,
                 ScreeningResult.disqualified.is_(True),
+            )
+        )
+        needs_review = await self._db.scalar(
+            select(func.count(ScreeningResult.id)).where(
+                ScreeningResult.job_id == job_id,
+                ScreeningResult.needs_review.is_(True),
             )
         )
         total_candidates = await self._db.scalar(
@@ -321,6 +335,7 @@ class CandidateListService:
         return {
             "passed": int(passed or 0),
             "disqualified": int(disqualified or 0),
+            "needs_review": int(needs_review or 0),
             "pending": pending,
         }
 
@@ -331,6 +346,8 @@ class CandidateListService:
             group = "pending"
         elif row.disqualified:
             group = "disqualified"
+        elif row.needs_review:
+            group = "needs_review"
         else:
             group = "passed"
 
@@ -343,6 +360,7 @@ class CandidateListService:
             source_id=row.source_id,
             screening_id=row.screening_id,
             disqualified=row.disqualified,
+            needs_review=bool(row.needs_review),
             screening_reasons=row.screening_reasons,
             manually_overridden=bool(row.manually_overridden),
             score_id=row.score_id,

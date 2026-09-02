@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -24,7 +24,18 @@ class Settings(BaseSettings):
     # === General ===
     ENVIRONMENT: str = Field(default="development", description="运行环境")
     LOG_LEVEL: str = Field(default="INFO", description="日志级别")
-    SECRET_KEY: str = Field(default="change-me", min_length=16)
+    # JWT 时代的历史遗留：当前 RS256 不再使用对称密钥，仅作配置完整性占位。
+    # 默认值必须通过 min_length 使"零 .env 裸跑开发"可用；
+    # production 由 _enforce_production_secrets 拒绝一切占位值
+    SECRET_KEY: str = Field(default="dev-only-placeholder-not-a-real-secret", min_length=16)
+
+    # === 认证限流（进程内滑窗；多实例部署需换 Redis 后端） ===
+    AUTH_RATE_LIMIT_LOGIN: int = Field(
+        default=5, ge=1, le=100, description="每 IP 每分钟登录尝试上限"
+    )
+    AUTH_RATE_LIMIT_REGISTER: int = Field(
+        default=3, ge=1, le=50, description="每 IP 每分钟注册尝试上限"
+    )
 
     # === Database ===
     # 开发环境默认 SQLite（免装 PG，裸跑自动建表）；生产/容器化栈用 PG URL 覆盖。
@@ -43,7 +54,38 @@ class Settings(BaseSettings):
     JWT_PUBLIC_KEY_PATH: str = Field(default="./keys/public.pem")
 
     # === Fernet (PII 列加密) ===
+    # 生产环境缺失时在 _enforce_production_secrets 中 fail-fast 拒启，
+    # 绝不允许"无密钥静默明文入库"
     FERNET_KEY: str = Field(default="")
+
+    @model_validator(mode="after")
+    def _enforce_production_secrets(self) -> Settings:
+        """生产启动即校验敏感配置，缺失/弱默认直接拒绝启动。"""
+        if self.ENVIRONMENT != "production":
+            return self
+
+        if (
+            not self.SECRET_KEY
+            or "change-me" in self.SECRET_KEY.lower()
+            or self.SECRET_KEY.startswith("dev-only")
+        ):
+            raise ValueError(
+                "ENVIRONMENT=production 禁止使用 SECRET_KEY 默认值/占位符"
+            )
+
+        if not self.FERNET_KEY:
+            raise ValueError(
+                "ENVIRONMENT=production 必须配置 FERNET_KEY "
+                "（make gen-fernet 生成后追加到 .env.prod），"
+                "否则候选人 PII 将明文入库"
+            )
+        from cryptography.fernet import Fernet
+
+        try:
+            Fernet(self.FERNET_KEY.encode())
+        except Exception as exc:  # noqa: BLE001 - 转换为可读的配置错误
+            raise ValueError(f"FERNET_KEY 不是合法的 Fernet 密钥: {exc}") from exc
+        return self
 
     # === MinIO / S3 ===
     MINIO_ENDPOINT: str = Field(default="localhost:9000")
@@ -75,6 +117,14 @@ class Settings(BaseSettings):
     ADAPTIVE_FOLLOWUP_TEMPERATURE: float = Field(
         default=0.4, ge=0.0, le=1.0, description="追问生成 temperature"
     )
+
+    # === 评分权重(total 固定加权,保证候选人横向可比;运行时归一化) ===
+    SCORE_WEIGHT_SKILL: float = Field(default=0.35, ge=0.0, le=1.0, description="技能匹配权重")
+    SCORE_WEIGHT_EXPERIENCE: float = Field(default=0.25, ge=0.0, le=1.0, description="经验相关性权重")
+    SCORE_WEIGHT_EDUCATION: float = Field(default=0.15, ge=0.0, le=1.0, description="学历匹配权重")
+    SCORE_WEIGHT_STABILITY: float = Field(default=0.15, ge=0.0, le=1.0, description="稳定性权重")
+    SCORE_WEIGHT_POTENTIAL: float = Field(default=0.10, ge=0.0, le=1.0, description="成长潜力权重")
+
     MINIO_ACCESS_KEY: str = Field(default="autohr")
     MINIO_SECRET_KEY: str = Field(default="autohr_dev_secret")
     MINIO_BUCKET: str = Field(default="resumes")
@@ -95,6 +145,9 @@ class Settings(BaseSettings):
     LLM_MAX_RETRIES: int = Field(default=1)
     LLM_CIRCUIT_BREAKER_FAILURES: int = Field(default=3)
     LLM_CIRCUIT_BREAKER_COOLDOWN_SECONDS: int = Field(default=300)
+    LLM_CIRCUIT_BREAKER_WINDOW_SECONDS: float = Field(
+        default=300.0, description="失败判定窗口:窗口外失败不累计连续次数"
+    )
 
     # === Upload ===
     MAX_UPLOAD_FILE_SIZE_MB: int = Field(default=20)

@@ -29,6 +29,7 @@ from app.schemas.candidate_structure import (
     WorkHistoryEntry,
 )
 from app.services.filter import EDUCATION_RANK, FilterService
+from tests.db_utils import purge_database
 
 # ============================================================================
 # 纯函数：evaluate
@@ -90,20 +91,24 @@ class TestEvaluateEducation:
         assert v.disqualified
         assert any("学历不达标" in r for r in v.reasons)
 
-    def test_missing_education_disqualified(self) -> None:
+    def test_missing_education_needs_review(self) -> None:
+        """三态筛选：字段缺失 → 待复核（非直接淘汰，P0-3）。"""
         v = FilterService.evaluate(
             requirements=_req(min_education="bachelor"),
             structure=_struct(education=None),
         )
-        assert v.disqualified
+        assert not v.disqualified
+        assert v.needs_review
         assert any("字段缺失：学历" in r for r in v.reasons)
 
     def test_other_education_treated_as_missing(self) -> None:
+        """学历 other（专升本/非全/海外等抽取不出）→ 待复核而非错杀。"""
         v = FilterService.evaluate(
             requirements=_req(min_education="bachelor"),
             structure=_struct(education="other"),
         )
-        assert v.disqualified
+        assert not v.disqualified
+        assert v.needs_review
         assert any("字段缺失" in r for r in v.reasons)
 
 
@@ -123,12 +128,13 @@ class TestEvaluateYears:
         assert v.disqualified
         assert any("工作年限不足" in r for r in v.reasons)
 
-    def test_missing_years_disqualified(self) -> None:
+    def test_missing_years_needs_review(self) -> None:
         v = FilterService.evaluate(
             requirements=_req(min_years=3),
             structure=_struct(years_of_experience=None),
         )
-        assert v.disqualified
+        assert not v.disqualified
+        assert v.needs_review
         assert any("字段缺失：工作年限" in r for r in v.reasons)
 
 
@@ -155,12 +161,30 @@ class TestEvaluateSkills:
         )
         assert not v.disqualified
 
-    def test_empty_skills_disqualified_as_missing(self) -> None:
+    def test_synonym_equivalence_passes(self) -> None:
+        """同义词等价归一："js" ≡ "JavaScript"、"golang" ≡ "Go"（P0-3）。"""
+        v = FilterService.evaluate(
+            requirements=_req(required_skills=["js", "golang"]),
+            structure=_struct(skills=["JavaScript", "Go"]),
+        )
+        assert not v.disqualified
+        assert not v.needs_review
+
+    def test_synonym_chinese_alias_passes(self) -> None:
+        v = FilterService.evaluate(
+            requirements=_req(required_skills=["大模型"]),
+            structure=_struct(skills=["LLM", "RAG"]),
+        )
+        assert not v.disqualified
+
+    def test_empty_skills_needs_review(self) -> None:
+        """技能全空（疑似抽取失败）→ 待复核而非直接淘汰。"""
         v = FilterService.evaluate(
             requirements=_req(required_skills=["Python"]),
             structure=_struct(skills=[]),
         )
-        assert v.disqualified
+        assert not v.disqualified
+        assert v.needs_review
         assert any("字段缺失：技能" in r for r in v.reasons)
 
 
@@ -230,17 +254,7 @@ class TestEducationRank:
 
 async def _purge_db() -> None:
     async with AsyncSessionLocal() as session:
-        await session.execute(
-            text(
-                "TRUNCATE users, teams, team_invites, jobs, candidates, "
-                "candidate_resumes, candidate_sources, parsed_structures, "
-                "screening_results, scores, score_reasons, "
-                "interview_questions, interview_feedbacks, dedup_matches, "
-                "manual_overrides, llm_calls, async_jobs, audit_logs, "
-                "email_configs, job_versions, job_hard_requirements "
-                "RESTART IDENTITY CASCADE"
-            )
-        )
+        await purge_database(session)
         await session.commit()
 
 
@@ -438,7 +452,9 @@ class TestRunForCandidates:
                     ScreeningResult.candidate_id == cand_id,
                 )
             )
-        assert sr.disqualified
+        # 三态筛选：structure 缺失 = 字段全缺 → 待复核而非直接淘汰（P0-3）
+        assert not sr.disqualified
+        assert sr.needs_review
         assert all("字段缺失" in r for r in sr.reasons)
 
     async def test_no_hard_requirements_passes_all(self) -> None:
@@ -481,10 +497,54 @@ class TestRunForCandidates:
             ).scalars().all()
         assert len(rows) == 1
 
-    async def test_empty_candidate_ids_returns_zero(self) -> None:
+    async def test_rerun_preserves_manual_override(self) -> None:
+        """HR 改判后重跑筛选 → 人工结论不被机器覆盖（改判保护）。"""
+        job_id, cand_id, user_id = await _make_team_job_and_candidate(
+            min_education="bachelor",
+            structure_data=_default_structure(education="bachelor"),  # 本应通过
+        )
+        async with AsyncSessionLocal() as session:
+            service = FilterService(session)
+            await service.run_for_candidates(
+                job_id=job_id, candidate_ids=[cand_id]
+            )
+            await session.commit()
+            sr = await session.scalar(
+                select(ScreeningResult).where(
+                    ScreeningResult.job_id == job_id,
+                    ScreeningResult.candidate_id == cand_id,
+                )
+            )
+            # HR 改判为淘汰
+            await service.override(
+                screening_result_id=sr.id,
+                actor_id=user_id,
+                new_disqualified=True,
+                new_reasons=["人工判断不合适"],
+                reason="面试观察",
+            )
+            await session.commit()
+
+        # 重跑筛选：AI 认为达标，但人工结论必须保留
         async with AsyncSessionLocal() as session:
             summary = await FilterService(session).run_for_candidates(
-                job_id=uuid.uuid4(), candidate_ids=[]
+                job_id=job_id, candidate_ids=[cand_id]
+            )
+            await session.commit()
+            sr = await session.scalar(
+                select(ScreeningResult).where(
+                    ScreeningResult.job_id == job_id,
+                    ScreeningResult.candidate_id == cand_id,
+                )
+            )
+        assert sr.disqualified is True
+        assert sr.manually_overridden is True
+        assert sr.reasons == ["人工判断不合适"]
+        assert summary["disqualified"] == 1  # 按人工结论计数
+
+    async def test_empty_candidate_ids_returns_zero(self) -> None:
+        async with AsyncSessionLocal() as session:
+            summary = await FilterService(session).run_for_candidates(                job_id=uuid.uuid4(), candidate_ids=[]
             )
         assert summary == {"processed": 0, "disqualified": 0, "passed": 0}
 

@@ -30,6 +30,7 @@ from app.models.score import Score
 from app.models.screening import ScreeningResult
 from app.models.team import Team
 from app.models.user import User
+from tests.db_utils import purge_database
 
 # ============================================================================
 # DB 清理 / fixtures
@@ -38,17 +39,7 @@ from app.models.user import User
 
 async def _purge_db() -> None:
     async with AsyncSessionLocal() as session:
-        await session.execute(
-            text(
-                "TRUNCATE users, teams, team_invites, jobs, candidates, "
-                "candidate_resumes, candidate_sources, parsed_structures, "
-                "screening_results, scores, score_reasons, "
-                "interview_questions, interview_feedbacks, dedup_matches, "
-                "manual_overrides, llm_calls, async_jobs, audit_logs, "
-                "email_configs, job_versions, job_hard_requirements "
-                "RESTART IDENTITY CASCADE"
-            )
-        )
+        await purge_database(session)
         await session.commit()
 
 
@@ -251,7 +242,7 @@ class TestThreeGroups:
         # 3 passed + 1 disqualified + 2 pending = 6
         assert body["total"] == 6
         assert body["group_counts"] == {
-            "passed": 3, "disqualified": 1, "pending": 2,
+            "passed": 3, "disqualified": 1, "needs_review": 0, "pending": 2,
         }
         groups_in_items = {it["group"] for it in body["items"]}
         assert groups_in_items == {"passed", "disqualified", "pending"}

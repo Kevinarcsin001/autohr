@@ -10,10 +10,12 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.api.admin import router as admin_router
 from app.api.audit_logs import router as audit_logs_router
@@ -36,14 +38,17 @@ from app.api.teams import router as teams_router
 from app.api.uploads import router as uploads_router
 from app.core.config import settings
 from app.core.db import engine, init_dev_schema
+from app.core.deps import DbSession
 from app.core.logging import configure_logging, get_logger
 from app.core.middleware.audit import AuditMiddleware
 from app.core.middleware.error_handler import install_error_handlers
 from app.core.middleware.request_id import RequestIdMiddleware
 
+logger = get_logger(__name__)
+
 
 @asynccontextmanager
-async def lifespan(_app: FastAPI):
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """Application lifespan handler."""
     configure_logging()
     logger = get_logger(__name__)
@@ -111,12 +116,55 @@ def create_app() -> FastAPI:
 
     @app.get("/health", tags=["system"])
     async def health() -> dict[str, str]:
-        """Health check endpoint."""
+        """存活探针（liveness）：进程在即返回 200，不探测任何依赖。
+
+        容器 healthcheck / LB 用；依赖是否可用看 /health/ready。
+        """
         return {
             "status": "ok",
             "service": "autohr-backend",
             "version": "0.1.0",
         }
+
+    @app.get("/health/ready", tags=["system"])
+    async def health_ready(db: DbSession) -> JSONResponse:
+        """就绪探针（readiness）：逐一探测 DB / Redis，任一不可达即 503。
+
+        供运维与告警消费（容器重启策略不要挂它——启动早期依赖可能未就绪，
+        挂上会形成重启循环）。
+        """
+        checks: dict[str, str] = {}
+
+        # DB：SELECT 1（异步 engine 直接复用请求会话绑定的连接池）
+        try:
+            from sqlalchemy import text as _sql_text
+
+            await db.execute(_sql_text("SELECT 1"))
+            checks["database"] = "ok"
+        except Exception as exc:  # noqa: BLE001 - 探针必须吞掉任何异常并如实上报
+            logger.warning("ready_check_db_failed", error=str(exc)[:120])
+            checks["database"] = f"error: {str(exc)[:80]}"
+
+        # Redis：PING（Celery broker 同一实例；单连接短超时避免探针被拖死）
+        redis_url = settings.REDIS_URL
+        try:
+            import redis.asyncio as aioredis
+
+            client = aioredis.from_url(redis_url, socket_timeout=1.0)  # type: ignore[no-untyped-call]
+            try:
+                await client.ping()
+                checks["redis"] = "ok"
+            finally:
+                await client.aclose()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("ready_check_redis_failed", error=str(exc)[:120])
+            checks["redis"] = f"error: {str(exc)[:80]}"
+
+        ok = all(v == "ok" for v in checks.values())
+        return JSONResponse(
+            status_code=status.HTTP_200_OK if ok else status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={"status": "ready" if ok else "degraded", **checks},
+        )
 
     @app.get("/", tags=["system"])
     async def root() -> dict[str, str]:

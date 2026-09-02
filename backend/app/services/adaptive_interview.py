@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
+from typing import Any
 
 from pydantic import ValidationError
 from sqlalchemy import select
@@ -80,14 +81,12 @@ _MAX_ANSWER_CHARS: int = 6000
 
 
 def utc_now_iso() -> str:
-    pass
+    return datetime.now(timezone.utc).isoformat()
 
 
 def _is_skipped(turn: InterviewTurn) -> bool:
     """回合是否被面试官跳过（不计分、不再视为待答）。"""
     return bool((turn.rating_evidence or {}).get("skipped"))
-
-    return datetime.now(timezone.utc).isoformat()
 
 
 class AdaptiveInterviewError(Exception):
@@ -146,7 +145,7 @@ def decide_next_action(
     branch_consecutive: int = 0,
     branch_followups: int = 0,
     followup_anchor: str | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """根据最新回合评分决定下一步。
 
     Args:
@@ -192,7 +191,7 @@ def decide_next_action(
                     f"深度·内容追问：回答优秀（{rating}/5），锚定你的原话深挖"
                     f"（分支追问 {branch_followups}/{_settings.ADAPTIVE_FOLLOWUP_QUOTA}）"
                 ),
-                "difficulty": (theta_d or _DEFAULT_DIFFICULTY) + 1,
+                "difficulty": min(5, (theta_d or _DEFAULT_DIFFICULTY) + 1),
                 "followup": True,
                 **({"theta": branch_theta} if branch_theta is not None else {}),
             }
@@ -332,7 +331,7 @@ class AdaptiveInterviewService:
         items_tags: dict[uuid.UUID, list[list[str]]] = {}
         for c in categories:
             cat_items = await self._qbs.list_items(
-                team_id=team_id, category_id=c.id, active_only=True
+                team_id=team_id, category_id=c.id, active_only=True, approved_only=True
             )
             items_tags[c.id] = [it.tags or [] for it in cat_items]
         _quotas, scores = compute_dynamic_quotas(cat_tuples, items_tags, signal_pairs)
@@ -614,7 +613,7 @@ class AdaptiveInterviewService:
         if category_id is None:
             return False
         items = await self._qbs.list_items(
-            team_id=team_id, category_id=category_id, active_only=True
+            team_id=team_id, category_id=category_id, active_only=True, approved_only=True
         )
         return any(it.id not in asked for it in items)
 
@@ -624,7 +623,7 @@ class AdaptiveInterviewService:
 
     async def parse_directive(
         self, *, team_id: uuid.UUID, session_id: uuid.UUID, text: str
-    ) -> dict:
+    ) -> dict[str, Any]:
         """解析面试官自然语言指令 → 选题参数。
 
         支持：
@@ -637,7 +636,7 @@ class AdaptiveInterviewService:
         categories = await self._qbs.list_categories(team_id=team_id, active_only=True)
 
         t = text.strip().lower()
-        out: dict = {}
+        out: dict[str, Any] = {}
 
         # 1) 难度调整
         if any(k in t for k in ("简单", "基础", "容易")):
@@ -670,7 +669,7 @@ class AdaptiveInterviewService:
         session_id: uuid.UUID,
         category_id: uuid.UUID | None = None,
         limit: int = 8,
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         """候选题预览：当前分支（或全部分支前几道）按「信号相关度+难度接近」排序。"""
         session = await self._load_session(team_id=team_id, session_id=session_id)
         plan = session.adaptive_plan or {}
@@ -689,12 +688,12 @@ class AdaptiveInterviewService:
             theta = await self._branch_theta(b_turns)
         target_d = target_difficulty(theta)
 
-        out: list[dict] = []
+        out: list[dict[str, Any]] = []
         for c in cats[:6]:
-            items = await self._qbs.list_items(team_id=team_id, category_id=c.id, active_only=True)
+            items = await self._qbs.list_items(team_id=team_id, category_id=c.id, active_only=True, approved_only=True)
             cands = [it for it in items if it.id not in asked]
 
-            def relevance(it) -> int:
+            def relevance(it: QuestionBankItem) -> int:
                 return sum(
                     1
                     for tg in it.tags or []
@@ -772,7 +771,7 @@ class AdaptiveInterviewService:
             return None
         return text
 
-    async def _llm_rate(self, *, session: InterviewSession, turn: InterviewTurn) -> dict:
+    async def _llm_rate(self, *, session: InterviewSession, turn: InterviewTurn) -> dict[str, Any]:
         reference = ""
         if turn.question_item_id is not None:
             item = await self._db.get(QuestionBankItem, turn.question_item_id)
@@ -780,11 +779,15 @@ class AdaptiveInterviewService:
         job = await self._db.get(Job, session.job_id)
         job_title = job.title if job else "-"
 
+        from app.core.prompt_guard import wrap_untrusted
+
         messages = self._build_rating_messages(
             job_title=job_title,
             question=turn.question_text,
             reference=reference or "（无参考答案：按技术面试通用标准评估正确性与深度）",
-            answer=(turn.answer_text or "")[:_MAX_ANSWER_CHARS],
+            answer=wrap_untrusted(
+                (turn.answer_text or "")[:_MAX_ANSWER_CHARS], label="考生回答"
+            ),
         )
         router = self._get_router()
         try:
@@ -920,11 +923,11 @@ class AdaptiveInterviewService:
                 difficulty=difficulty_override or _DEFAULT_DIFFICULTY,
                 signals=signals,
             )
+            if next_turn is None:
+                # 无题可出：不改会话状态，先报错（避免已把 completed 重开却无题出的半途状态）
+                raise AppValidationError("该分支没有可出的题目")
             if session.status == "completed":
                 session.status = "in_progress"  # 手动出题重新打开
-                await self._db.flush()
-            if next_turn is None:
-                raise AppValidationError("该分支没有可出的题目")
             await self._db.flush()
             return AdaptiveNextOut(
                 turn=TurnOut.model_validate(next_turn),
@@ -1008,7 +1011,7 @@ class AdaptiveInterviewService:
         await self._db.flush()
         return AdaptiveNextOut(turn=TurnOut.model_validate(next_turn), decision=decision)
 
-    async def _ordered_categories(self, plan: dict) -> list[QuestionCategory]:
+    async def _ordered_categories(self, plan: dict[str, Any]) -> list[QuestionCategory]:
         cats: list[QuestionCategory] = []
         for b in plan.get("branches", []):
             c = await self._db.get(QuestionCategory, uuid.UUID(b["category_id"]))
@@ -1096,7 +1099,7 @@ class AdaptiveInterviewService:
     ) -> QuestionBankItem | None:
         """分支内选题：难度最接近 → 信号相关优先 → 5 分题优先（同分题多）。"""
         items = await self._qbs.list_items(
-            team_id=team_id, category_id=category_id, active_only=True
+            team_id=team_id, category_id=category_id, active_only=True, approved_only=True
         )
         cands = [it for it in items if it.id not in asked]
         if not cands:
@@ -1117,6 +1120,187 @@ class AdaptiveInterviewService:
             )
         )
         return cands[0]
+
+    # ==================================================================
+    # 题库自增长：面试追问题沉淀 + 会后报告聚合
+    # ==================================================================
+
+    async def promote_turn_to_bank(
+        self,
+        *,
+        team_id: uuid.UUID,
+        session_id: uuid.UUID,
+        turn_id: uuid.UUID,
+        user_id: uuid.UUID | None = None,
+    ) -> QuestionBankItem:
+        """把面试中 LLM 现场生成的追问题沉淀为题库候选（source=ai_followup，待审核）。
+
+        「题库不断丰富」的回流通道：面试越多，好追问越多；管理员审核通过后
+        即可被动态组卷选中（组卷路径全部 approved_only=True）。
+        幂等：同团队 + 同分类 + 同题面已存在时返回已有条目。
+        """
+        session = await self._load_session(team_id=team_id, session_id=session_id)
+        turn = await self._db.get(InterviewTurn, turn_id)
+        if turn is None or turn.session_id != session.id:
+            raise NotFoundError(f"turn {turn_id} not found", resource="interview_turn")
+        if turn.question_item_id is not None:
+            raise AppValidationError(
+                "题库选题无需沉淀，仅 AI 现场生成的追问题可入库",
+                field="turn_id",
+            )
+        if not turn.question_text:
+            raise AppValidationError("该回合没有题面文本", field="turn_id")
+        if turn.category_id is None:
+            raise AppValidationError(
+                "追问题缺少分类归属，无法入库（请联系管理员检查会话数据）",
+                field="category_id",
+            )
+
+        # 幂等查重：同团队 + 同分类 + 同题面
+        existing = await self._db.scalar(
+            select(QuestionBankItem).where(
+                QuestionBankItem.team_id == team_id,
+                QuestionBankItem.category_id == turn.category_id,
+                QuestionBankItem.question == turn.question_text,
+            )
+        )
+        if existing is not None:
+            return existing
+
+        # 用评分证据合成参考答案素材：评分要点 + 常见遗漏 + 本场表现
+        evidence = turn.rating_evidence or {}
+        parts: list[str] = []
+        strengths = [s for s in (evidence.get("strengths") or []) if s]
+        misses = [m for m in (evidence.get("misses") or []) if m]
+        if strengths:
+            parts.append("【优秀回答要点】\n- " + "\n- ".join(strengths[:6]))
+        if misses:
+            parts.append("【常见遗漏】\n- " + "\n- ".join(misses[:6]))
+        if turn.answer_text:
+            parts.append(f"【本场考生回答摘录】{turn.answer_text[:300]}")
+        if evidence.get("anchor_quote"):
+            parts.append(f"【提问锚点】{str(evidence['anchor_quote'])[:200]}")
+
+        item = QuestionBankItem(
+            team_id=team_id,
+            category_id=turn.category_id,
+            dimension=turn.dimension,
+            question=turn.question_text,
+            points=10,
+            difficulty=None,
+            tags=[f"session:{str(session.id)[:8]}"],
+            reference_answer="\n\n".join(parts) or None,
+            created_by=user_id,
+            source="ai_followup",
+            review_status="pending",
+            is_active=True,
+        )
+        self._db.add(item)
+        await self._db.flush()
+        return item
+
+    async def build_report(
+        self, *, team_id: uuid.UUID, session_id: uuid.UUID
+    ) -> dict[str, Any]:
+        """会后报告聚合：逐题轨迹 + 分支能力画像 + 完成度 + 录用建议（若已生成）。
+
+        面试官一屏复盘入口，不必拼 state / turns / recommendation 三个端点。
+        """
+        from app.models.hiring import HiringRecommendation
+
+        session = await self._load_session(team_id=team_id, session_id=session_id)
+        turns = await self._list_turns(session.id)
+
+        answered: list[InterviewTurn] = []
+        branch_ratings: dict[uuid.UUID, list[tuple[int, int]]] = {}
+        timeline: list[dict[str, Any]] = []
+        for t in turns:
+            if _is_skipped(t):
+                timeline.append({
+                    "seq": t.seq,
+                    "type": "skipped",
+                    "category": t.category_name,
+                    "question": (t.question_text or "")[:200],
+                })
+                continue
+            if t.answer_text is None:
+                timeline.append({
+                    "seq": t.seq,
+                    "type": "unanswered",
+                    "category": t.category_name,
+                    "question": (t.question_text or "")[:200],
+                    "is_followup": t.question_item_id is None,
+                })
+                continue
+            answered.append(t)
+            rating = t.rating
+            if rating is not None and t.category_id is not None:
+                difficulty = int(
+                    (t.rating_evidence or {}).get("difficulty") or _DEFAULT_DIFFICULTY
+                )
+                branch_ratings.setdefault(t.category_id, []).append(
+                    (rating, difficulty)
+                )
+            timeline.append({
+                "seq": t.seq,
+                "type": "followup" if t.question_item_id is None else "bank",
+                "category": t.category_name,
+                "question": (t.question_text or "")[:200],
+                "rating": rating,
+                "answer_excerpt": (t.answer_text or "")[:300],
+                "strengths": (t.rating_evidence or {}).get("strengths") or [],
+                "misses": (t.rating_evidence or {}).get("misses") or [],
+            })
+
+        name_by_cat = {
+            t.category_id: t.category_name
+            for t in turns
+            if t.category_id is not None
+        }
+        profile = [
+            {
+                "category_id": str(cid),
+                "category_name": name_by_cat.get(cid, ""),
+                "theta": estimate_branch_ability(ratings),
+                "n": len(ratings),
+                "avg_rating": (
+                    round(sum(r for r, _d in ratings) / len(ratings), 2)
+                    if ratings
+                    else None
+                ),
+            }
+            for cid, ratings in sorted(branch_ratings.items(), key=lambda kv: -len(kv[1]))
+        ]
+
+        rec = await self._db.scalar(
+            select(HiringRecommendation).where(
+                HiringRecommendation.session_id == session.id
+            )
+        )
+
+        return {
+            "session_id": str(session.id),
+            "status": session.status,
+            "progress": {
+                "total_turns": len(turns),
+                "answered": len(answered),
+                "followups": sum(1 for t in answered if t.question_item_id is None),
+                "expected_range": [_settings.ADAPTIVE_MIN_TURNS, _settings.ADAPTIVE_MAX_TURNS],
+                "branches_covered": len(profile),
+            },
+            "profile": profile,
+            "timeline": timeline,
+            "recommendation": (
+                {
+                    "decision": rec.recommendation,
+                    "reasons": rec.reasons,
+                    "risks": rec.risks,
+                    "probation_focus": rec.probation_focus,
+                }
+                if rec is not None
+                else None
+            ),
+        }
 
 
 __all__ = ["AdaptiveInterviewError", "AdaptiveInterviewService", "decide_next_action"]

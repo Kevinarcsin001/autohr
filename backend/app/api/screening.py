@@ -128,10 +128,11 @@ async def list_results(
     db: DbSession,
     job_id: UUID = Query(...),
     disqualified: bool | None = Query(default=None),
+    needs_review: bool | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
 ) -> ScreeningResultListResponse:
-    """列出 job 的筛选结果。"""
+    """列出 job 的筛选结果（三态：通过 / 淘汰 / 待复核）。"""
     team_id = _require_team(user)
     await _validate_job_in_team(db, job_id, team_id)
 
@@ -141,6 +142,7 @@ async def list_results(
     rows, total = await service.list_results(
         job_id=job_id,
         only_disqualified=disqualified,
+        only_needs_review=needs_review,
         limit=limit,
         offset=offset,
     )
@@ -150,14 +152,19 @@ async def list_results(
             candidate_id=r.candidate_id,
             candidate_name=name,
             disqualified=r.disqualified,
+            needs_review=r.needs_review,
             reasons=r.reasons,
             manually_overridden=r.manually_overridden,
         )
         for r, name in rows
     ]
     disqualified_count = sum(1 for it in items if it.disqualified)
+    needs_review_count = sum(1 for it in items if it.needs_review)
     return ScreeningResultListResponse(
-        items=items, total=total, disqualified_count=disqualified_count
+        items=items,
+        total=total,
+        disqualified_count=disqualified_count,
+        needs_review_count=needs_review_count,
     )
 
 
@@ -234,7 +241,7 @@ async def trigger_pipeline(
     valid_ids = [c.id for c in result.scalars().all()]
 
     run_id = uuid.uuid4()
-    await progress_store.create(run_id, total=len(valid_ids))
+    await progress_store.create(run_id, total=len(valid_ids), team_id=team_id)
 
     background_tasks.add_task(
         _run_pipeline_in_background,
@@ -266,7 +273,10 @@ async def stream_pipeline_events(
     - 流式输出 ``text/event-stream``；done 后自动断开。
     - 客户端可重连，server 端 events 保留在内存（run 结束后仍可读取 summary）。
     """
-    _require_team(user)
+    team_id = _require_team(user)
+    # run 归属校验：run 只对触发它的团队可见（未注册的 run 同样 404，不暴露存在性）
+    if progress_store.get_team(run_id) != team_id:
+        raise NotFoundError(f"pipeline run {run_id} not found", resource="pipeline_run")
 
     last_id = -1
     if last_event_id is not None:
@@ -335,7 +345,9 @@ async def get_pipeline_summary(
     user: CurrentUser,
 ) -> PipelineSummary:
     """取 run 的 summary（轮询备用）；run 未完成返回当前累计快照。"""
-    _require_team(user)
+    team_id = _require_team(user)
+    if progress_store.get_team(run_id) != team_id:
+        raise NotFoundError(f"pipeline run {run_id} not found", resource="pipeline_run")
     events = progress_store.get_events_after(uuid.UUID(str(run_id)), -1)
     # 最后一个 done 事件含完整 summary
     for e in reversed(events):

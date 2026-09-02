@@ -32,7 +32,6 @@ async def enqueue_transcription(*, turn_id: uuid.UUID) -> uuid.UUID | None:
     """创建 AsyncJob 并投递 Celery 任务（幂等：同 idempotency_key 复用）。"""
     from app.workers.transcription_task import transcribe_turn_handler
 
-    from app.workers.transcription_task import transcribe_turn_handler
 
     idem = f"transcribe:{turn_id}"
     async with AsyncSessionLocal() as session:
@@ -124,11 +123,16 @@ async def transcribe_turn_handler(
                 iv_session.status = "in_progress"
 
             rating_error: str | None = None
-            try:
-                svc = AdaptiveInterviewService(session)
-                await svc._rate_and_decide(session=iv_session, turn=turn)  # noqa: SLF001
-            except AdaptiveInterviewError as exc:
-                rating_error = str(exc)[:300]  # 转写成功但评分失败 → /next 重试
+            if iv_session is None:
+                # DB 层 turn.session_id CASCADE 使该路径通常不可达；
+                # 保留为 ORM 级并发删除竞态的兜底（防 AttributeError 任务重试）
+                rating_error = "interview session 不存在，跳过自动评分"
+            else:
+                try:
+                    svc = AdaptiveInterviewService(session)
+                    await svc._rate_and_decide(session=iv_session, turn=turn)  # noqa: SLF001
+                except AdaptiveInterviewError as exc:
+                    rating_error = str(exc)[:300]  # 转写成功但评分失败 → /next 重试
 
             await session.commit()
             return {

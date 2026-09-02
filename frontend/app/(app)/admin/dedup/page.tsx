@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { GitMerge, ShieldAlert } from "lucide-react";
 
+import { API_BASE_URL } from "@/lib/api/client";
 import { EmptyState } from "@/components/EmptyState";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -40,7 +41,7 @@ export default function DedupPage() {
       setDeciding(id);
       const { default: axios } = await import("axios");
       await axios.patch(
-        `${process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000"}/api/candidates/dedup-matches/${id}`,
+        `${API_BASE_URL}/api/candidates/dedup-matches/${id}`,
         { decision },
         { withCredentials: true },
       );

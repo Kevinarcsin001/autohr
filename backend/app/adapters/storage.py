@@ -107,6 +107,22 @@ class BaseStorageAdapter(Protocol):
 
     async def put(self, key: str, data: bytes, *, mime: str, encrypt: bool = True) -> None: ...
 
+    async def put_fileobj(
+        self,
+        key: str,
+        fileobj: Any,
+        *,
+        size: int,
+        mime: str,
+        encrypt: bool = True,
+    ) -> None:
+        """流式上传文件对象（大文件路径：不整读进内存）。
+
+        默认实现回退到读全量（小存储后端兜底）；S3 实现走 upload_fileobj 分片。
+        """
+        data = fileobj.read()
+        await self.put(key, data, mime=mime, encrypt=encrypt)
+
     async def get(self, key: str) -> bytes: ...
 
     async def delete(self, key: str) -> None: ...
@@ -284,6 +300,33 @@ class S3StorageAdapter:
     ) -> None:
         try:
             await asyncio.to_thread(self._put_sync, key, data, mime, encrypt)
+        except (ClientError, EndpointConnectionError, TimeoutError) as exc:
+            raise _map_boto_error(exc) from exc
+
+    async def put_fileobj(
+        self,
+        key: str,
+        fileobj: Any,
+        *,
+        size: int,
+        mime: str,
+        encrypt: bool = True,
+    ) -> None:
+        """流式上传（boto3 multipart 分片，内存占用 O(分片) 而非 O(文件)）。
+
+        大文件路径专用（面试整场录制 500MB）；并发多个上传不叠爆容器内存。
+        """
+        params: dict[str, Any] = {"ContentType": mime}
+        if encrypt:
+            params["ServerSideEncryption"] = "AES256"
+        try:
+            await asyncio.to_thread(
+                self._client.upload_fileobj,
+                fileobj,
+                self.bucket,
+                key,
+                ExtraArgs=params,
+            )
         except (ClientError, EndpointConnectionError, TimeoutError) as exc:
             raise _map_boto_error(exc) from exc
 

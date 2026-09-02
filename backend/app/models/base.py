@@ -2,13 +2,23 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 import sqlalchemy as sa
-from sqlalchemy import DateTime, func
+from sqlalchemy import DateTime
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
+
+
+def _utcnow() -> datetime:
+    """时间戳统一来源：Python 端 UTC 微秒精度。
+
+    取代 server_default=now()：SQLite 的 CURRENT_TIMESTAMP 仅秒级，
+    同秒插入的多行在 ORDER BY created_at 下顺序不确定（latest batch /
+    feedback 排序类测试与真实业务的根因）；Python 端 default 双方言一致。
+    """
+    return datetime.now(timezone.utc)
 
 
 class UUIDPKMixin:
@@ -22,21 +32,17 @@ class UUIDPKMixin:
 
 
 class TimestampMixin:
-    """创建/更新时间戳 mixin。
-
-    created_at 由 DB 默认值 ``now()`` 写入；
-    updated_at 由应用层 ORM 的 ``onupdate=func.now()`` 触发，避免遗漏。
-    """
+    """创建/更新时间戳 mixin（Python 端 UTC 微秒 default，见 _utcnow）。"""
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        server_default=func.now(),
+        default=_utcnow,
         nullable=False,
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        server_default=func.now(),
-        onupdate=func.now(),
+        default=_utcnow,
+        onupdate=_utcnow,
         nullable=False,
     )
 
@@ -46,7 +52,7 @@ class CreatedAtMixin:
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        server_default=func.now(),
+        default=_utcnow,
         nullable=False,
     )
 

@@ -330,3 +330,28 @@ jobs:
             ghcr.io/${{ github.repository }}/frontend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # 生产栈的 PDF 解析 / ASR 转写依赖这两个镜像（docker-compose.prod.yml）
+      - name: Build & push mineru
+        uses: docker/build-push-action@v6
+        with:
+          context: mineru-service
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/mineru:${{ steps.tag.outputs.value }}
+            ghcr.io/${{ github.repository }}/mineru:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build & push asr
+        uses: docker/build-push-action@v6
+        with:
+          context: asr-service
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/asr:${{ steps.tag.outputs.value }}
+            ghcr.io/${{ github.repository }}/asr:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

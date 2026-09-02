@@ -8,6 +8,8 @@
 """
 from __future__ import annotations
 
+import ipaddress
+import socket
 import uuid
 from datetime import datetime, timezone
 
@@ -18,12 +20,32 @@ from app.core.logging import get_logger
 from app.core.middleware.error_handler import (
     ConflictError,
     NotFoundError,
+    ValidationError,
 )
 from app.models.email_config import EmailConfig
 from app.schemas.email import (
     EmailConfigCreate,
     EmailConfigUpdate,
 )
+
+
+def _validate_public_imap_host(host: str) -> str:
+    """IMAP host 必须解析到公网地址：防把 backend 当内网端口探测跳板。
+
+    白名单式收窄（第一性：邮件服务器天然在公网，内网目标没有合法场景）。
+    """
+    try:
+        infos = socket.getaddrinfo(host.strip(), None)
+    except socket.gaierror as exc:
+        raise ValidationError(f"IMAP 主机无法解析：{host}", field="imap_host") from exc
+    for info in infos:
+        ip = ipaddress.ip_address(info[4][0])
+        if not ip.is_global:
+            raise ValidationError(
+                f"IMAP 主机 {host} 解析到内网/保留地址（{ip}），已拒绝",
+                field="imap_host",
+            )
+    return host.strip()
 
 logger = get_logger(__name__)
 
@@ -66,7 +88,7 @@ class EmailConfigService:
             )
         cfg = EmailConfig(
             team_id=team_id,
-            imap_host=payload.imap_host,
+            imap_host=_validate_public_imap_host(payload.imap_host),
             imap_port=payload.imap_port,
             username=payload.username,
             password_enc=payload.password,  # EncryptedString 自动加密
@@ -95,7 +117,7 @@ class EmailConfigService:
         cfg = await self.get_for_team_required(team_id)
 
         if payload.imap_host is not None:
-            cfg.imap_host = payload.imap_host
+            cfg.imap_host = _validate_public_imap_host(payload.imap_host)
         if payload.imap_port is not None:
             cfg.imap_port = payload.imap_port
         if payload.username is not None:

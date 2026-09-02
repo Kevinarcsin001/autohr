@@ -126,7 +126,7 @@ async def _seed_demo_jobs(session, team: Team) -> int:
                 f"{job['min_years']},'{skills}')"
             )
         )
-        snap = '{{"title":"{}","status":"active"}}'.format(esc)
+        snap = f'{{"title":"{esc}","status":"active"}}'
         await session.execute(
             text(
                 f"INSERT INTO job_versions (id, job_id, version, snapshot, changed_by, "

@@ -134,8 +134,8 @@ class ExportService:
         job = await self._validate_job_in_team(job_id, team_id)
         _ = job  # 仅校验，不使用
 
-        # 估算行数（按 candidate count）
-        row_count = await self._count_candidates(team_id, job_id, filters)
+        # 估算行数（按 candidate count；与 _fetch_rows 的 team 池口径一致）
+        row_count = await self._count_candidates(team_id, job_id, filters or {})
 
         if row_count > EXPORT_ASYNC_THRESHOLD:
             # 异步：入队

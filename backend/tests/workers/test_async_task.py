@@ -25,11 +25,12 @@ from app.core.db import AsyncSessionLocal
 from app.models.async_job import AsyncJob
 from app.services.async_job_service import MAX_ATTEMPTS, AsyncJobService
 from app.workers import tasks as worker_tasks
+from tests.db_utils import purge_database
 
 
 async def _purge_db() -> None:
     async with AsyncSessionLocal() as session:
-        await session.execute(text("TRUNCATE async_jobs RESTART IDENTITY CASCADE"))
+        await purge_database(session)
         await session.commit()
 
 

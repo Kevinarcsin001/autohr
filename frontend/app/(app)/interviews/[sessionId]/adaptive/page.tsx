@@ -29,6 +29,11 @@ import {
   useRecordingReplay,
 } from "@/hooks/useAdaptiveInterview";
 import {
+  adaptiveDirectAudioApi,
+  promoteTurnApi,
+  sessionReportApi,
+} from "@/lib/api/interview";
+import {
   ADAPTIVE_STATUS_LABEL,
   ADAPTIVE_STATUS_VARIANT,
   DECISION_LABEL,
@@ -48,7 +53,7 @@ export default function AdaptiveInterviewPage() {
   const sessionId = params.sessionId;
 
   const start = useAdaptiveStart(sessionId);
-  const { data, isLoading, isError, error } = useAdaptiveState(sessionId, !start.isIdle);
+  const { data, isLoading, isError, error, refetch: refetchState } = useAdaptiveState(sessionId, !start.isIdle);
   const answer = useAdaptiveAnswer(sessionId);
   const audio = useAdaptiveAudio(sessionId);
   const next = useAdaptiveNext(sessionId);
@@ -56,6 +61,16 @@ export default function AdaptiveInterviewPage() {
   const { data: previewItems } = useAdaptivePreview(sessionId, !!data && !data.done);
   const replay = useRecordingReplay(sessionId);
   const [directive, setDirective] = useState("");
+  // 语音指挥：idle → recording（≤15s 自动停）→ transcribing → idle
+  const [voiceCmd, setVoiceCmd] = useState<"idle" | "recording" | "transcribing">("idle");
+  const voiceCmdRef = useRef<{ rec: MediaRecorder; stream: MediaStream } | null>(null);
+  const voiceChunksRef = useRef<Blob[]>([]);
+  // 题库沉淀（幂等接口，重复点击返回同一条）
+  const [promotedTurnIds, setPromotedTurnIds] = useState<Set<string>>(new Set());
+  // 会后报告
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [report, setReport] = useState<Awaited<ReturnType<typeof sessionReportApi>> | null>(null);
 
   const [answerText, setAnswerText] = useState("");
   const [autoMode, setAutoMode] = useState(true);
@@ -83,6 +98,85 @@ export default function AdaptiveInterviewPage() {
       },
     });
   }, [directive, direct]);
+
+  /** 语音指挥：点开始录（≤15s 自动停），再点结束并发送转写 + 语义出题。 */
+  const onVoiceDirect = useCallback(async () => {
+    if (voiceCmd === "transcribing") return;
+
+    if (voiceCmd === "recording") {
+      voiceCmdRef.current?.rec.stop();
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const rec = new MediaRecorder(stream);
+      voiceChunksRef.current = [];
+      rec.ondataavailable = (e) => voiceChunksRef.current.push(e.data);
+      rec.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        setVoiceCmd("transcribing");
+        try {
+          const blob = new Blob(voiceChunksRef.current, {
+            type: rec.mimeType || "audio/webm",
+          });
+          const res = await adaptiveDirectAudioApi(sessionId, blob);
+          setNextResult({
+            reason: `🎙 语音指挥已执行：「${res.text.slice(0, 24)}」→ ${
+              res.parsed.category_name ?? "难度调整"
+            }`,
+            done: res.result.done,
+            doneReason: res.result.done_reason,
+          });
+          void refetchState();
+        } catch (err) {
+          const msg =
+            (err as { response?: { data?: { error?: { message?: string } } } })
+              ?.response?.data?.error?.message ?? "语音识别失败，请重试";
+          setNextResult({ reason: `🎙 ${msg}` });
+        } finally {
+          setVoiceCmd("idle");
+        }
+      };
+      rec.start();
+      voiceCmdRef.current = { rec, stream };
+      setVoiceCmd("recording");
+      // 最长 15s 自动截断（指令不需要长录音）
+      setTimeout(() => {
+        if (rec.state === "recording") rec.stop();
+      }, 15_000);
+    } catch {
+      setVoiceCmd("idle");
+      setNextResult({ reason: "🎙 无法访问麦克风，请检查浏览器权限" });
+    }
+  }, [voiceCmd, sessionId, refetchState]);
+
+  /** 把 AI 追问沉淀为题库候选（幂等）。 */
+  const onPromoteTurn = useCallback(
+    async (turnId: string) => {
+      try {
+        await promoteTurnApi(sessionId, turnId);
+        setPromotedTurnIds((prev) => new Set(prev).add(turnId));
+      } catch {
+        // 失败静默：按钮仍可重试
+      }
+    },
+    [sessionId],
+  );
+
+  /** 会后报告：拉聚合数据并展开面板。 */
+  const onToggleReport = useCallback(async () => {
+    if (reportOpen) {
+      setReportOpen(false);
+      return;
+    }
+    setReportLoading(true);
+    setReportOpen(true);
+    try {
+      setReport(await sessionReportApi(sessionId));
+    } finally {
+      setReportLoading(false);
+    }
+  }, [reportOpen, sessionId]);
 
   // 当前待答题 = 最后一个未回答的回合
   const currentTurn = useMemo(
@@ -306,6 +400,35 @@ export default function AdaptiveInterviewPage() {
                   回合记录与评分已保存，可回到会话详情查看录用建议。
                 </AlertDescription>
               </Alert>
+              <Button variant="secondary" size="sm" onClick={onToggleReport}>
+                {reportOpen ? "收起会后报告" : "📊 查看会后报告"}
+              </Button>
+              {reportOpen &&
+                (reportLoading ? (
+                  <p className="text-xs text-muted-foreground">报告生成中…</p>
+                ) : report ? (
+                  <div className="space-y-2 rounded-md border p-3 text-sm">
+                    <p className="text-xs text-muted-foreground">
+                      共 {report.progress.total_turns} 回合（已答 {report.progress.answered}
+                      ，追问 {report.progress.followups}），覆盖 {report.progress.branches_covered}{" "}
+                      个分支 — 目标区间 {report.progress.expected_range[0]}-
+                      {report.progress.expected_range[1]}
+                    </p>
+                    <div className="flex flex-wrap gap-1">
+                      {report.profile.map((p) => (
+                        <Badge key={p.category_name} variant="outline">
+                          {p.category_name}：θ={p.theta ?? "—"}（{p.n} 题
+                          {p.avg_rating !== null ? `，均分 ${p.avg_rating}` : ""}）
+                        </Badge>
+                      ))}
+                    </div>
+                    {report.recommendation && (
+                      <p>
+                        录用建议：<strong>{report.recommendation.decision}</strong>
+                      </p>
+                    )}
+                  </div>
+                ) : null)}
               <p className="text-xs text-muted-foreground">
                 想继续追问？点击左侧任意分支的「问」可重新出题。
               </p>
@@ -330,7 +453,23 @@ export default function AdaptiveInterviewPage() {
                 >
                   {direct.isPending ? "解析中…" : "⚡ 执行"}
                 </Button>
+                <Button
+                  variant={voiceCmd === "recording" ? "destructive" : "outline"}
+                  size="sm"
+                  onClick={onVoiceDirect}
+                  disabled={voiceCmd === "transcribing"}
+                  title="按住说话：点开始、再点结束（≤15s）"
+                >
+                  {voiceCmd === "recording"
+                    ? "⏹ 结束"
+                    : voiceCmd === "transcribing"
+                      ? "识别中…"
+                      : "🎙 语音指挥"}
+                </Button>
               </div>
+              {nextResult?.reason && (
+                <p className="text-xs text-muted-foreground">{nextResult.reason}</p>
+              )}
               {direct.error && (
                 <Alert variant="destructive">
                   <AlertDescription>
@@ -348,6 +487,18 @@ export default function AdaptiveInterviewPage() {
                   {currentTurn.rating_evidence?.is_followup && (
                     <Badge variant="warning">⤷ 基于你的回答追问</Badge>
                   )}
+                  {currentTurn.rating_evidence?.is_followup &&
+                    currentTurn.id &&
+                    (promotedTurnIds.has(currentTurn.id) ? (
+                      <Badge variant="success">✓ 已收进题库（待审核）</Badge>
+                    ) : (
+                      <button
+                        className="text-xs text-primary underline-offset-2 hover:underline"
+                        onClick={() => onPromoteTurn(currentTurn.id as string)}
+                      >
+                        好问题？收进题库
+                      </button>
+                    ))}
                   {nextResult?.reason && <span>选题理由：{nextResult.reason}</span>}
                 </div>
                 <p className="whitespace-pre-wrap text-[15px] leading-relaxed">

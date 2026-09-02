@@ -19,6 +19,7 @@ from app.core.middleware.error_handler import (
     NotFoundError,
 )
 from app.services import auth_service, team_service
+from tests.db_utils import purge_database
 
 # ============================================================================
 # 工具
@@ -27,17 +28,7 @@ from app.services import auth_service, team_service
 
 async def _purge() -> None:
     async with AsyncSessionLocal() as session:
-        await session.execute(
-            text(
-                "TRUNCATE users, teams, team_invites, jobs, candidates, "
-                "candidate_resumes, candidate_sources, parsed_structures, "
-                "screening_results, scores, score_reasons, "
-                "interview_questions, interview_feedbacks, dedup_matches, "
-                "manual_overrides, llm_calls, async_jobs, audit_logs, "
-                "email_configs, job_versions, job_hard_requirements "
-                "RESTART IDENTITY CASCADE"
-            )
-        )
+        await purge_database(session)
         await session.commit()
 
 

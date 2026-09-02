@@ -18,6 +18,7 @@ from sqlalchemy import select, text
 
 from app.core.db import AsyncSessionLocal
 from app.models.candidate import Candidate, CandidateResume, CandidateSource, ParsedStructure
+from app.models.interview import InterviewQuestion
 from app.models.job import Job, JobHardRequirement
 from app.models.question_bank import QuestionBankItem, QuestionCategory
 from app.models.team import Team
@@ -29,6 +30,7 @@ from app.services.question_bank import (
     compute_dynamic_quotas,
     subset_sum_dp,
 )
+from tests.db_utils import purge_database
 
 # ============================================================================
 # DB 清理
@@ -37,14 +39,7 @@ from app.services.question_bank import (
 
 async def _purge_db() -> None:
     async with AsyncSessionLocal() as session:
-        await session.execute(
-            text(
-                "TRUNCATE users, teams, jobs, job_hard_requirements, candidates, "
-                "candidate_resumes, candidate_sources, parsed_structures, "
-                "question_categories, question_bank_items, interview_questions "
-                "RESTART IDENTITY CASCADE"
-            )
-        )
+        await purge_database(session)
         await session.commit()
 
 
@@ -441,13 +436,14 @@ async def test_instantiate_from_bank_communication_dimension() -> None:
         )
         await session.commit()
 
+        # ORM 表达式查询：batch_id 走 GUID 列类型，双方言存储格式一致
+        # （裸 text SQL 绑 str 带连字符在 SQLite hex 存储下匹配不上）
         rows = (
             await session.execute(
-                text(
-                    "SELECT dimension, generated_by FROM interview_questions "
-                    "WHERE batch_id = :b"
-                ),
-                {"b": str(batch_id)},
+                select(
+                    InterviewQuestion.dimension,
+                    InterviewQuestion.generated_by,
+                ).where(InterviewQuestion.batch_id == batch_id)
             )
         ).all()
         assert len(rows) == 1

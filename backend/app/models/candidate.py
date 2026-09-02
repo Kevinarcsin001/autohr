@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, func
+from sqlalchemy import DateTime, ForeignKey, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models._compat import GUID, JSONB_COMPAT
@@ -17,6 +17,11 @@ class Candidate(UUIDPKMixin, CreatedAtMixin, Base):
     """去重后的候选人（"人"的实体，多个来源合并到此）。"""
 
     __tablename__ = "candidates"
+    # dedup_key 唯一性必须限定在团队内：全局唯一会让 B 团队命中 A 团队的
+    # dedup_key，从而泄漏 candidate_id（存在性预言机）且导入被误拒
+    __table_args__ = (
+        UniqueConstraint("team_id", "dedup_key", name="uq_candidate_dedup_team"),
+    )
 
     team_id: Mapped[uuid.UUID] = mapped_column(
         GUID,
@@ -25,7 +30,10 @@ class Candidate(UUIDPKMixin, CreatedAtMixin, Base):
         index=True,
     )
     dedup_key: Mapped[str] = mapped_column(
-        String, unique=True, nullable=False, index=True
+        # 唯一性由 (team_id, dedup_key) 复合约束保证；此列保留索引供查询
+        String,
+        nullable=False,
+        index=True,
     )
     name: Mapped[str] = mapped_column(EncryptedString, nullable=False)
     phone: Mapped[str | None] = mapped_column(EncryptedString, nullable=True)

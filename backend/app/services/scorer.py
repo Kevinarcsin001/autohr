@@ -9,8 +9,11 @@
 
 约束：
 - 评分必须是 0-100 整数（schema 层校验）
+- **``total`` 一律由代码按固定权重重算**（``compute_total``），不采信 LLM
+  给出的 total —— 权重对所有候选人一致，横向排名才可比（评估报告 P0-2）
 - prompt 显式要求 LLM 引用具体简历片段作为打分依据
-- 不要把简历原文整体塞进 prompt（取关键片段，省 token）
+- 不要把简历原文整体塞进 prompt（关键片段三段取样，省 token）
+- 简历原文与姓名进 prompt 前必须过 ``mask_pii_text``（PII 不出境第三方 LLM）
 - 同分排名二级排序：skill > experience > name（字典序）
 
 ScoringInput 由 caller 准备（避免 service 直接读 raw_text，便于单测）。
@@ -33,7 +36,10 @@ from app.adapters.llm import (
     LLMSchemaError,
     Message,
 )
+from app.core.config import get_settings
 from app.core.logging import get_logger
+from app.core.pii_mask import mask_pii_text
+from app.core.prompt_guard import wrap_untrusted
 from app.models.candidate import Candidate
 from app.models.score import Score
 from app.schemas.candidate_structure import CandidateStructure
@@ -95,14 +101,15 @@ _SYSTEM_PROMPT = """\
 # 输出要求
 
 1. 必须输出**纯 JSON**（不带 markdown 代码块、不带注释）。
-2. JSON 必须能通过下述 schema 校验，**所有 6 个维度都必须给出 0-100 的整数**。
+2. JSON 必须能通过下述 schema 校验，**所有 6 个字段都必须给出 0-100 的整数**。
 3. 评分必须严格基于候选人简历中的具体事实（技能、年限、项目、学历等）；
    不要凭空臆断；找不到依据就给 50 上下的中位分，并尽量给出理由（理由放思考，不输出）。
-4. ``total`` 是综合分（不是其余 5 个维度的平均），需你独立判断加权。
+4. ``total`` 仅为 schema 占位：服务端会按固定权重公式对 5 个子维度重算综合分，
+   你输出的 ``total`` 不会被采用，请直接填 5 个子维度的简单平均值即可。
 
 # 维度定义
 
-- ``total``：综合匹配度（0-100）
+- ``total``：占位字段（填子维度平均值，服务端会重算）
 - ``skill``：技能匹配度（候选人技能集与 JD 必备/加分技能的相关度）
 - ``experience``：经验相关性（年限是否达标 + 项目方向是否对口）
 - ``education``：学历匹配（学校层次 / 专业相关度 / 是否满足最低要求）
@@ -158,6 +165,53 @@ JD 摘要：
 
 class ScorerError(Exception):
     """Scorer 顶层错误。"""
+
+
+# ============================================================================
+# 综合分计算（固定权重，横向可比）
+# ============================================================================
+
+
+def compute_total(
+    *,
+    skill: int,
+    experience: int,
+    education: int,
+    stability: int,
+    potential: int,
+    weights: dict[str, float] | None = None,
+) -> int:
+    """按固定权重对 5 个子维度加权求和 → 综合分（0-100 整数）。
+
+    权重默认取 settings 的 ``SCORE_WEIGHT_*``；权重和 ≠ 1 时先归一化，
+    保证任何配置下输出都落在 [0, 100]。所有候选人用同一权重 → 排名可比。
+
+    Args:
+        skill / experience / education / stability / potential: 子维度分（0-100）。
+        weights: 覆盖权重（单测用）；键为维度名，缺省回退 settings 默认值。
+    """
+    if weights is None:
+        s = get_settings()
+        weights = {
+            "skill": s.SCORE_WEIGHT_SKILL,
+            "experience": s.SCORE_WEIGHT_EXPERIENCE,
+            "education": s.SCORE_WEIGHT_EDUCATION,
+            "stability": s.SCORE_WEIGHT_STABILITY,
+            "potential": s.SCORE_WEIGHT_POTENTIAL,
+        }
+    dims = {
+        "skill": skill,
+        "experience": experience,
+        "education": education,
+        "stability": stability,
+        "potential": potential,
+    }
+    total_weight = sum(weights.get(k, 0.0) for k in dims)
+    if total_weight <= 0:
+        # 全零权重属于配置错误：等权兜底，不让评分链路挂掉
+        return round(sum(dims.values()) / len(dims))
+    weighted = sum(dims[k] * weights.get(k, 0.0) for k in dims) / total_weight
+    return max(0, min(100, round(weighted)))
 
 
 # ============================================================================
@@ -261,6 +315,15 @@ class ScorerService:
             raise ScorerError(
                 f"LLM response.parsed is None; content={response.content[:200]!r}"
             )
+
+        # total 一律代码重算：LLM 的加权逻辑每次可能不同，横向不可比（P0-2）
+        dimensions.total = compute_total(
+            skill=dimensions.skill,
+            experience=dimensions.experience,
+            education=dimensions.education,
+            stability=dimensions.stability,
+            potential=dimensions.potential,
+        )
 
         # upsert scores 行
         llm_call_id = response.extra.get("llm_call_id")
@@ -387,13 +450,18 @@ class ScorerService:
         user_content = _USER_PROMPT_TEMPLATE.format(
             job_title=payload.job_title,
             jd_text=jd_text,
-            name=payload.structure.name or "(未知)",
+            # PII 不出境：姓名 → 通用称谓；正文掩码手机号/邮箱/证件号
+            name=mask_pii_text(payload.structure.name or "", name=payload.structure.name)
+            or "(未知)",
             education=payload.structure.education or "(未知)",
             years_of_experience=payload.structure.years_of_experience or "(未知)",
             skills=", ".join(payload.structure.skills) or "(无)",
             current_company=payload.structure.current_company or "(未知)",
             work_history=self._format_work_history(payload.structure.work_history),
-            resume_snippet=snippet,
+            resume_snippet=wrap_untrusted(
+                mask_pii_text(snippet, name=payload.structure.name),
+                label="简历内容",
+            ),
         )
         return [
             Message(role="system", content=_SYSTEM_PROMPT),
@@ -497,21 +565,23 @@ class ScorerService:
 
 
 def build_scoring_snippet(parsed_text: str | None, max_chars: int = 3000) -> str:
-    """从 parsed_text 中取关键片段（截断头部 + 尾部摘要）。
+    """从 parsed_text 中取关键片段（头 / 中 / 尾三段均匀取样）。
 
     约束（需求 9.2 + Restrictions）：
     - 不把简历原文整体塞进 prompt
-    - 头部通常含基本身份 + 教育背景
-    - 尾部通常含近期项目（更相关）
+    - 头部通常含基本身份 + 教育背景；中段往往是核心项目经历（原「头+尾」
+      取样会整段丢弃中段 → 评分依据不完整，评估报告 P2-7）；尾部含近期项目
     """
     if not parsed_text:
         return ""
     if len(parsed_text) <= max_chars:
         return parsed_text
-    head_len = max_chars - 800
-    head = parsed_text[:head_len]
-    tail = parsed_text[-800:]
-    return f"{head}\n...[truncated]...\n{tail}"
+    seg = max_chars // 3
+    head = parsed_text[:seg]
+    mid_start = (len(parsed_text) - seg) // 2
+    middle = parsed_text[mid_start : mid_start + seg]
+    tail = parsed_text[-seg:]
+    return f"{head}\n...[truncated]...\n{middle}\n...[truncated]...\n{tail}"
 
 
 __all__ = [
@@ -520,5 +590,6 @@ __all__ = [
     "ScoringInput",
     "ScoreResult",
     "score_sort_key",
+    "compute_total",
     "build_scoring_snippet",
 ]

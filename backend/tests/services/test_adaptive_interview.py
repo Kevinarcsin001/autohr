@@ -37,6 +37,7 @@ from app.services.adaptive_interview import (
     estimate_branch_ability,
     target_difficulty,
 )
+from tests.db_utils import purge_database
 
 # ============================================================================
 # DB 清理
@@ -45,16 +46,7 @@ from app.services.adaptive_interview import (
 
 async def _purge_db() -> None:
     async with AsyncSessionLocal() as session:
-        await session.execute(
-            text(
-                "TRUNCATE users, teams, jobs, job_hard_requirements, candidates, "
-                "candidate_resumes, candidate_sources, parsed_structures, "
-                "question_categories, question_bank_items, "
-                "interview_sessions, interview_questions, interview_feedbacks, "
-                "interview_turns "
-                "RESTART IDENTITY CASCADE"
-            )
-        )
+        await purge_database(session)
         await session.commit()
 
 

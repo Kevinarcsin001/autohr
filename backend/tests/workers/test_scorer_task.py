@@ -27,12 +27,14 @@ from app.models.job import Job
 from app.models.score import Score
 from app.models.team import Team
 from app.models.user import User
+from app.services.scorer import compute_total
 from app.workers.scorer_task import (
     CandidateNotFound,
     JobNotFound,
     StructureMissing,
     run_score,
 )
+from tests.db_utils import purge_database
 
 # ============================================================================
 # DB 清理
@@ -41,17 +43,7 @@ from app.workers.scorer_task import (
 
 async def _purge_db() -> None:
     async with AsyncSessionLocal() as session:
-        await session.execute(
-            text(
-                "TRUNCATE users, teams, team_invites, jobs, candidates, "
-                "candidate_resumes, candidate_sources, parsed_structures, "
-                "screening_results, scores, score_reasons, "
-                "interview_questions, interview_feedbacks, dedup_matches, "
-                "manual_overrides, llm_calls, async_jobs, audit_logs, "
-                "email_configs, job_versions, job_hard_requirements "
-                "RESTART IDENTITY CASCADE"
-            )
-        )
+        await purge_database(session)
         await session.commit()
 
 
@@ -195,7 +187,11 @@ class TestRunScoreHappyPath:
             )
             await session.commit()
 
-        assert summary["total"] == 85
+        # total 由代码按固定权重重算（P0-2），不采信 LLM 输出的 85
+        expected_total = compute_total(
+            skill=90, experience=80, education=75, stability=80, potential=85
+        )
+        assert summary["total"] == expected_total
         assert summary["model_used"] == "mock-model"
 
         async with AsyncSessionLocal() as session:
@@ -206,7 +202,7 @@ class TestRunScoreHappyPath:
                 )
             )
         assert score is not None
-        assert score.total == 85
+        assert score.total == expected_total
         assert score.skill == 90
         assert score.model_used == "mock-model"
         # llm_call_id 应被写入（router._log_call 回填）

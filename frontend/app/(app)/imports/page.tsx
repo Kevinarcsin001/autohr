@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { PackageOpen, Upload } from "lucide-react";
 
+import { API_BASE_URL } from "@/lib/api/client";
 import { EmptyState } from "@/components/EmptyState";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -44,7 +45,7 @@ export default function ImportsPage() {
       form.append("file", file);
       const { default: axios } = await import("axios");
       const resp = await axios.post(
-        `${process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000"}/api/platform-imports/detect`,
+        `${API_BASE_URL}/api/platform-imports/detect`,
         form,
         { withCredentials: true },
       );
@@ -65,7 +66,7 @@ export default function ImportsPage() {
       form.append("file", file);
       const { default: axios } = await import("axios");
       await axios.post(
-        `${process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000"}/api/platform-imports/`,
+        `${API_BASE_URL}/api/platform-imports/`,
         form,
         { withCredentials: true },
       );

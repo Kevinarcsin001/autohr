@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 
 import { ActivityLog } from "@/components/ActivityLog";
 import { InterviewQuestions } from "@/components/InterviewQuestions";
+import { OutcomePicker } from "@/components/OutcomePicker";
 import { OverrideDialog } from "@/components/OverrideDialog";
 import { ReasonsList } from "@/components/ReasonsList";
 import { ResumePreview } from "@/components/ResumePreview";
@@ -162,6 +163,7 @@ export default function CandidateDetailPage() {
               HR 改判
             </Button>
           )}
+          <OutcomePicker jobId={jobId} candidateId={candidateId} />
         </div>
       </header>
 

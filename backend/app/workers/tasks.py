@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import re
 import uuid
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -349,7 +350,6 @@ async def extract_structured_handler(
 
                             if (not extracted_name or "mock" in str(extracted_name).lower() or _is_non_name(str(extracted_name))) and resume.parsed_text:
                                 # 从 parsed_text 中寻找 2-4 个汉字的候选人名
-                                import re
                                 parsed = resume.parsed_text
                                 # 尝试匹配 "姓名[：:]?\s*(.+)"
                                 m = re.search(r'姓名[：:]\s*([^\n]{1,20})', parsed)
@@ -373,13 +373,13 @@ async def extract_structured_handler(
                                 candidate.name = extracted_name
                             # 从 parsed_text 解析 email/phone（mock 适配器兜底）
                             if resume.parsed_text and not candidate.email:
-                                import re
                                 emails = re.findall(r'[\w\.-]+@[\w\.-]+\.\w+', resume.parsed_text)
-                                if emails: candidate.email = emails[0]
+                                if emails:
+                                    candidate.email = emails[0]
                             if resume.parsed_text and not candidate.phone:
-                                import re
                                 phones = re.findall(r'1[3-9]\d{9}', resume.parsed_text.replace(' ', '').replace('-', ''))
-                                if phones: candidate.phone = phones[0]
+                                if phones:
+                                    candidate.phone = phones[0]
                             await session.commit()
         except Exception:
             logger.warning("extract_update_candidate_failed", resume_id=str(target_id), exc_info=True)

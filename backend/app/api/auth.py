@@ -17,12 +17,21 @@ refresh token 策略：
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Cookie, Response, status
+import time
+from typing import Literal
+
+from fastapi import APIRouter, Cookie, Request, Response, status
 from sqlalchemy import select
 
+from app.core import rate_limit
+from app.core.config import settings
 from app.core.deps import AdminUser, CurrentUser, DbSession
-from app.core.middleware.error_handler import NotFoundError
+from app.core.middleware.error_handler import (
+    NotFoundError,
+    TooManyRequestsError,
+)
 from app.models.invite import TeamInvite
+from app.models.user import User
 from app.schemas.auth import (
     AcceptInviteRequest,
     AuthResponse,
@@ -46,7 +55,7 @@ _REFRESH_COOKIE_NAME = "autohr_refresh"
 _REFRESH_COOKIE_MAX_AGE = 7 * 24 * 3600
 # Cookie 安全相关：本地开发 http://localhost，因此 secure=False；
 # 生产同站跨端口需要 SameSite=Lax（前端 3001 → 后端 8000）
-_REFRESH_COOKIE_SAMESITE = "lax"
+_REFRESH_COOKIE_SAMESITE: Literal["lax", "strict", "none"] = "lax"
 
 
 def _set_refresh_cookie(response: Response, refresh_token: str) -> None:
@@ -56,7 +65,8 @@ def _set_refresh_cookie(response: Response, refresh_token: str) -> None:
         value=refresh_token,
         max_age=_REFRESH_COOKIE_MAX_AGE,
         httponly=True,
-        secure=False,  # 本地开发；生产通过 ENV 切换
+        # 生产走 nginx 同域 HTTPS 时强制 Secure；开发（http://localhost）保持 False 可用
+        secure=settings.ENVIRONMENT == "production",
         samesite=_REFRESH_COOKIE_SAMESITE,
         path="/api/auth",
     )
@@ -70,9 +80,37 @@ def _clear_refresh_cookie(response: Response) -> None:
     )
 
 
+# ============================================================================
+# 认证端点限流（进程内滑窗；多实例部署需换 Redis 后端，见 rate_limit 模块注释）
+# ============================================================================
+
+
+def _client_ip(request: Request) -> str:
+    """客户端 IP：生产走 nginx，取 X-Forwarded-For 首段（nginx.conf 已设置该头）。"""
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _guard_auth_rate(
+    request: Request,
+    *,
+    scope: str,
+    extra: str | None = None,
+    limit: int | None = None,
+    window_seconds: int = 60,
+) -> None:
+    """按 (scope, ip[, 身份]) 限流；命中即 429。"""
+    effective_limit = limit if limit is not None else settings.AUTH_RATE_LIMIT_LOGIN
+    key = f"{scope}:{_client_ip(request)}" + (f":{extra}" if extra else "")
+    if not rate_limit.allow(key, limit=effective_limit, window_seconds=window_seconds):
+        raise TooManyRequestsError("请求过于频繁，请稍后再试")
+
+
 def _build_auth_response(
     response: Response,
-    user,
+    user: User,
     access_token: str,
     refresh_token: str,
 ) -> AuthResponse:
@@ -102,10 +140,16 @@ def _build_auth_response(
 )
 async def register(
     payload: RegisterRequest,
+    request: Request,
     response: Response,
     db: DbSession,
 ) -> AuthResponse:
-    """注册新用户。首位用户自动成为 admin 并创建默认 team。"""
+    """注册新用户。首位用户自动成为 admin 并创建默认 team。
+
+    限流：每 IP 高频注册会被 429（配合下方冲突文案模糊化，把邮箱枚举
+    压到不可实用）。
+    """
+    _guard_auth_rate(request, scope="register", limit=settings.AUTH_RATE_LIMIT_REGISTER)
     user = await auth_service.register(
         db,
         email=payload.email,
@@ -129,10 +173,15 @@ async def register(
 @router.post("/login", response_model=AuthResponse)
 async def login(
     payload: LoginRequest,
+    request: Request,
     response: Response,
     db: DbSession,
 ) -> AuthResponse:
-    """邮箱密码登录。"""
+    """邮箱密码登录（按 IP+邮箱双维度限流，防撞库）。"""
+    _guard_auth_rate(request, scope="login")
+    _guard_auth_rate(
+        request, scope="login-id", extra=payload.email.lower().strip()
+    )
     user, access, refresh = await auth_service.authenticate(
         db,
         email=payload.email,
@@ -143,28 +192,54 @@ async def login(
 
 @router.post("/refresh")
 async def refresh_token(
+    request: Request,
     response: Response,
     db: DbSession,
     refresh_token: str | None = Cookie(default=None, alias=_REFRESH_COOKIE_NAME),
     body: RefreshRequest | None = None,
 ) -> dict[str, str]:
-    """使用 refresh token 获取新的 access token。
+    """使用 refresh token 换取全新凭据对（**轮换**：旧 refresh 立即吊销）。
 
-    优先从 httpOnly cookie 读取 refresh；如缺失允许 body 兜底（非浏览器客户端）。
-    refresh token 本身不轮换（仍按原过期时间）。
+    - 优先从 httpOnly cookie 读取；缺失时允许 body 兜底（非浏览器客户端）
+    - 响应同时携带新 refresh_token 并重设 cookie —— 服务端侧旧 jti 已进
+      denylist，泄露的旧凭据在本次调用后即失效
     """
+    _guard_auth_rate(request, scope="refresh", limit=30)
     token = refresh_token or (body.refresh_token if body else None)
     if not token:
         raise NotFoundError("Refresh token 缺失", resource="cookie")
-    access = await auth_service.refresh_access_token(db, refresh_token=token)
-    # 不轮换 refresh，但仍刷新 cookie 续期（max_age 重新计算）
-    _set_refresh_cookie(response, token)
-    return {"access_token": access, "token_type": "Bearer"}
+    _user, access, new_refresh = await auth_service.refresh_access_token(
+        db, refresh_token=token
+    )
+    _set_refresh_cookie(response, new_refresh)
+    return {
+        "access_token": access,
+        "refresh_token": new_refresh,
+        "token_type": "Bearer",
+    }
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-async def logout(response: Response) -> None:
-    """清除 refresh cookie。access token 由前端丢弃。"""
+async def logout(
+    response: Response,
+    refresh_token: str | None = Cookie(default=None, alias=_REFRESH_COOKIE_NAME),
+) -> None:
+    """吊销当前 refresh token 并清除 cookie。access token 由前端丢弃。"""
+    if refresh_token:
+        from app.core.security import decode_token
+        from app.core.token_denylist import revoke
+
+        try:
+            payload = decode_token(refresh_token, expected_type="refresh")
+            exp = payload.get("exp")
+            remaining = (
+                int(float(exp)) - int(time.time())
+                if isinstance(exp, (int, float))
+                else 0
+            )
+            await revoke(str(payload.get("jti") or ""), remaining)
+        except Exception:  # noqa: BLE001 - 无效/过期 token 的登出静默成功
+            pass
     _clear_refresh_cookie(response)
 
 
@@ -214,7 +289,7 @@ async def list_invites(
     result = await db.execute(
         select(TeamInvite)
         .where(TeamInvite.team_id == admin.team_id)
-        .order_by(TeamInvite.created_at.desc())  # type: ignore[attr-defined]
+        .order_by(TeamInvite.created_at.desc())
     )
     invites = result.scalars().all()
     return [

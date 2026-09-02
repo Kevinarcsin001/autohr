@@ -13,7 +13,11 @@ import axios, { AxiosError, type AxiosInstance, type InternalAxiosRequestConfig 
  * - 并发 401 共享同一个 refresh Promise，避免重复刷新
  */
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+// 生产构建（无环境变量注入）→ 空串 = 相对路径，浏览器请求同域经 nginx 反代到 backend；
+// 开发 server / 开发容器 → 兜底直连 localhost:8000（compose 会显式传完整地址覆盖）
+export const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL ??
+  (process.env.NODE_ENV === "development" ? "http://localhost:8000" : "");
 
 export const apiClient: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,

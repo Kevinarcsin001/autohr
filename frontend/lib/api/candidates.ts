@@ -54,7 +54,12 @@ export async function listTeamCandidatesApi(
 // 职位级候选人列表
 // ============================================================================
 
-export type CandidateGroup = "all" | "passed" | "disqualified" | "pending";
+export type CandidateGroup =
+  | "all"
+  | "passed"
+  | "disqualified"
+  | "needs_review"
+  | "pending";
 
 export type SortBy =
   | "total"
@@ -89,6 +94,8 @@ export interface CandidateListItem {
   // 筛选
   screening_id: string | null;
   disqualified: boolean | null;
+  /** 三态筛选：字段缺失/无法判定 → 待复核（与 disqualified 互斥） */
+  needs_review: boolean;
   screening_reasons: string[] | null;
   manually_overridden: boolean;
 
@@ -123,6 +130,7 @@ export interface CandidateListResponse {
   group_counts: {
     passed: number;
     disqualified: number;
+    needs_review: number;
     pending: number;
   };
 }

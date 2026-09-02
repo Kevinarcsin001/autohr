@@ -24,6 +24,7 @@ from app.models.score import Score
 from app.models.team import Team
 from app.models.user import User
 from app.services.scorer import ScorerService
+from tests.db_utils import purge_database
 
 _VALID_SCORES_JSON = json.dumps(
     {
@@ -45,17 +46,7 @@ _VALID_SCORES_JSON = json.dumps(
 
 async def _purge_db() -> None:
     async with AsyncSessionLocal() as session:
-        await session.execute(
-            text(
-                "TRUNCATE users, teams, team_invites, jobs, candidates, "
-                "candidate_resumes, candidate_sources, parsed_structures, "
-                "screening_results, scores, score_reasons, "
-                "interview_questions, interview_feedbacks, dedup_matches, "
-                "manual_overrides, llm_calls, async_jobs, audit_logs, "
-                "email_configs, job_versions, job_hard_requirements "
-                "RESTART IDENTITY CASCADE"
-            )
-        )
+        await purge_database(session)
         await session.commit()
 
 

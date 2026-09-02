@@ -43,6 +43,7 @@ from app.schemas.candidate_detail import (
 from app.schemas.candidate_structure import CandidateStructure
 from app.schemas.score import ScoreOut
 from app.schemas.screening import ScreeningResultOut
+from app.services.timeline_check import detect_timeline_issues
 
 logger = get_logger(__name__)
 
@@ -146,6 +147,13 @@ class CandidateDetailService:
         # 取 latest source（用于 candidate summary）
         source = await self._fetch_latest_source(candidate_id=candidate_id)
 
+        # 时间线真实性核验（纯规则；解析不出的条目跳过不报）
+        timeline_warnings = (
+            detect_timeline_issues(parsed_structure.work_history)
+            if parsed_structure is not None
+            else []
+        )
+
         return CandidateDetailResponse(
             candidate=CandidateSummary(
                 id=candidate.id,
@@ -165,6 +173,7 @@ class CandidateDetailService:
                 ScoreOut.model_validate(score) if score is not None else None
             ),
             parsed_structure=parsed_structure,
+            timeline_warnings=timeline_warnings,
             resume=(
                 CandidateResumeOut(
                     id=latest_resume.id,

@@ -181,6 +181,11 @@ _GENDER_MAP = {
 }
 
 _ATTACHMENT_EXT = {".pdf", ".doc", ".docx", ".png", ".jpg", ".jpeg"}
+
+# zip bomb 守卫：压缩比攻击（小体积包膨胀数十 GB）会直接耗尽内存。
+# 成员数与累计解压字节数双闸门，任一超限即终止导入
+_ZIP_MAX_MEMBERS = 500
+_ZIP_MAX_TOTAL_UNCOMPRESSED = 500 * 1024 * 1024  # 500MB
 _PLATFORM_ALLOWED_MIME = {
     "application/pdf",
     "application/msword",
@@ -615,7 +620,10 @@ class PlatformImportAdapter:
         dedup_key = f"platform:{platform}:{identity}"
 
         existing = await self.db.scalar(
-            select(Candidate).where(Candidate.dedup_key == dedup_key)
+            select(Candidate).where(
+                Candidate.team_id == team_id,
+                Candidate.dedup_key == dedup_key,
+            )
         )
         if existing is not None:
             return ImportedCandidateItem(
@@ -691,12 +699,42 @@ class PlatformImportAdapter:
         results: list[ImportedCandidateItem] = []
         try:
             with zipfile.ZipFile(io.BytesIO(content)) as zf:
+                total_uncompressed = 0
+                members = 0
                 for info in zf.infolist():
                     if info.is_dir():
                         continue
+                    members += 1
+                    if members > _ZIP_MAX_MEMBERS:
+                        logger.warning(
+                            "platform_zip_member_limit_exceeded",
+                            team_id=str(team_id),
+                            members=members,
+                        )
+                        break
                     ext = "." + info.filename.rsplit(".", 1)[-1].lower() if "." in info.filename else ""
                     if ext not in _ATTACHMENT_EXT:
                         continue
+                    # 声明大小先行累加（未解压即拦截，不信任则读后再算）
+                    total_uncompressed += info.file_size
+                    if total_uncompressed > _ZIP_MAX_TOTAL_UNCOMPRESSED:
+                        logger.warning(
+                            "platform_zip_uncompressed_limit_exceeded",
+                            team_id=str(team_id),
+                            total_uncompressed=total_uncompressed,
+                        )
+                        raise UnsupportedPlatformError(
+                            "ZIP 解压后内容超过 500MB 上限",
+                            detection=DetectionResult(
+                                platform=None,
+                                confidence=0.0,
+                                package_kind=None,
+                                threshold=self.threshold,
+                                signals=[],
+                                scores={p: 0.0 for p in _FILENAME_KEYWORDS},
+                            ),
+                            support_feedback_url=self.feedback_url,
+                        )
                     member_bytes = zf.read(info)
                     item = await self._persist_attachment(
                         team_id=team_id,

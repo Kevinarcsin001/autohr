@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { apiClient } from "@/lib/api/client";
+import { API_BASE_URL, apiClient } from "@/lib/api/client";
 
 // ============================================================================
 // 类型（与 backend/app/services/screening_orchestrator.py 的 ProgressEvent 对应）
@@ -73,13 +73,12 @@ export function usePipelineSSE({
       lastEventIdRef.current = -1;
 
       try {
-        const baseURL =
-          process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+        // 相对路径（生产同域经 nginx）或显式配置的完整地址
         const token = apiClient.defaults.headers.common?.Authorization as
           | string
           | undefined;
 
-        const url = `${baseURL}/api/screening/pipeline/${newRunId}/events`;
+        const url = `${API_BASE_URL}/api/screening/pipeline/${newRunId}/events`;
         const headers: Record<string, string> = {
           Accept: "text/event-stream",
         };

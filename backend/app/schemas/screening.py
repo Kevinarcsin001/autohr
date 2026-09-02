@@ -27,6 +27,7 @@ class ScreeningResultOut(BaseModel):
     job_id: uuid.UUID
     candidate_id: uuid.UUID
     disqualified: bool
+    needs_review: bool = False
     reasons: list[str] | None = None
     manually_overridden: bool = False
 
@@ -38,6 +39,7 @@ class ScreeningResultListItem(BaseModel):
     candidate_id: uuid.UUID
     candidate_name: str | None
     disqualified: bool
+    needs_review: bool = False
     reasons: list[str] | None = None
     manually_overridden: bool = False
 
@@ -46,6 +48,7 @@ class ScreeningResultListResponse(BaseModel):
     items: list[ScreeningResultListItem]
     total: int
     disqualified_count: int
+    needs_review_count: int = 0
 
 
 # ============================================================================
@@ -118,6 +121,8 @@ class PipelineSummary(BaseModel):
 
     total: int
     passed: int
+    needs_review: int = 0
+    """三态筛选：待复核计数（不混入 passed 口径）。"""
     disqualified: int
     failed: int
     failed_reasons: list[dict[str, Any]] = Field(default_factory=list)
