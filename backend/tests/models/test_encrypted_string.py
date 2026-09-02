@@ -14,15 +14,25 @@ from __future__ import annotations
 import uuid
 
 import pytest
-from sqlalchemy import String, text
+from sqlalchemy import MetaData, String, text
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from app.core.db import AsyncSessionLocal, Base
+from app.core.db import AsyncSessionLocal
 from app.models.types import EncryptedString
 
 
-class _EncryptedProbe(Base):
+class _ProbeBase(DeclarativeBase):
+    """独立 metadata：探针表不得混入业务 Base.metadata。
+
+    否则 purge_database 的全库 TRUNCATE 清单会带上本表——CI 全新 PG 库
+    首轮 purge（字母序先于本文件的测试）时表尚未创建 → UndefinedTableError。
+    """
+
+    metadata = MetaData()
+
+
+class _EncryptedProbe(_ProbeBase):
     """临时探测表：用 EncryptedString 单字段验证加解密往返。"""
 
     __tablename__ = "_test_encrypted_probe"
