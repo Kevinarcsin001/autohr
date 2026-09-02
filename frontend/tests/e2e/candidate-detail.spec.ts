@@ -219,7 +219,10 @@ test.describe("候选人详情页（任务 24）", () => {
     // tab 切换
     await page.getByRole("tab", { name: "评分" }).click();
     await expect(page.getByText("评分细项")).toBeVisible();
-    await expect(page.getByText("综合", { exact: true })).toBeVisible();
+    // 评分卡含 SVG 图表（tspan）+ 标签 span，用 span 精确匹配避免 strict 冲突
+    await expect(
+      page.locator("span").filter({ hasText: /^综合$/ })
+    ).toBeVisible();
 
     await page.getByRole("tab", { name: "理由" }).click();
     await expect(page.getByText("推荐理由")).toBeVisible();

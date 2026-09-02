@@ -24,12 +24,11 @@ async function mockAuthPages({ page }: { page: Page }) {
 }
 
 test.describe("认证流程（任务 26）", () => {
-  test("未登录访问受保护路由 → 提示前往登录", async ({ page }) => {
+  test("未登录访问受保护路由 → 跳转登录页并携带回跳", async ({ page }) => {
     await mockAuthPages({ page });
     await page.goto("/dashboard");
-    // dashboard 是 client-side 检查 authStore.user，未登录显示「前往登录」链接
-    await expect(page.getByText("未登录")).toBeVisible({ timeout: 5_000 });
-    await expect(page.getByRole("link", { name: /前往登录/ })).toBeVisible();
+    // (app) 路由组客户端守卫：未登录直接 replace 到 /login?from=…（bcf6f90）
+    await expect(page).toHaveURL(/\/login\?from=/, { timeout: 5_000 });
   });
 
   test("注册：happy path 跳转 dashboard", async ({ page }) => {
