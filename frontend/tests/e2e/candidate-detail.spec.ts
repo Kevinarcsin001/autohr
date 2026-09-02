@@ -260,7 +260,10 @@ test.describe("候选人详情页（任务 24）", () => {
 
     // 切到理由 tab
     await page.getByRole("tab", { name: "理由" }).click();
-    await expect(page.getByText("五年 Python 后端开发经验")).toBeVisible();
+    // bullet 文本与简历预览长句（含该短语）子串重名，用 exact 精确匹配
+    await expect(
+      page.getByText("五年 Python 后端开发经验", { exact: true })
+    ).toBeVisible();
 
     // 点击查看依据
     await page.getByRole("button", { name: "查看依据" }).click();
